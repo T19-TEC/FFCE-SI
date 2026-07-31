@@ -175,7 +175,7 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
 .logo{display:flex;align-items:center;gap:12px;color:var(--bleu);padding:10px 0}
 .logo:hover{text-decoration:none}
 .logo img{height:74px;width:auto;display:block}
-.flanc .logo img{height:56px}
+.flanc .logo img{height:66px}
 .pied .logo img{height:64px}
 @media(max-width:600px){.logo img{height:52px}}
 .logo .sigle{font-family:var(--titre);font-size:27px;font-weight:900;
@@ -238,10 +238,32 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
 .app{display:grid;grid-template-columns:252px 1fr;min-height:100vh}
 @media(max-width:900px){.app{grid-template-columns:1fr}}
 .flanc{border-right:1px solid var(--filet);background:var(--blanc);
-  padding:24px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+  padding:18px 0 24px;position:sticky;top:0;height:100vh;overflow-y:auto}
 @media(max-width:900px){.flanc{position:static;height:auto;border-right:0;
   border-bottom:1px solid var(--filet)}}
+.entete-flanc{padding:6px 18px 18px;border-bottom:1px solid var(--filet)}
+.entete-flanc .logo{padding:0}
 .flanc .titre{padding:0 20px 20px;border-bottom:1px solid var(--filet);margin-bottom:12px}
+
+/* Le bloc « moi » : détaché du reste, c'est le point d'entrée du
+   compte et de ses réglages. */
+.moi{display:flex;align-items:center;gap:12px;padding:16px 18px;
+  border-bottom:1px solid var(--filet);color:var(--nuit);
+  border-left:3px solid transparent}
+.moi:hover{background:var(--papier);text-decoration:none}
+.moi.on{border-left-color:var(--bordeaux);background:var(--papier)}
+.moi-nom{display:block;font-family:var(--titre);font-weight:700;font-size:14.5px;
+  color:var(--bleu);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.moi-role{display:block;font-size:12px;color:var(--gris);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.pastille{display:inline-block;min-width:19px;padding:1px 6px;border-radius:10px;
+  background:var(--bordeaux);color:#fff;font-family:var(--titre);font-weight:700;
+  font-size:10.5px;text-align:center;line-height:1.5}
+
+.lien-discret{border:0;background:transparent;padding:0;font-size:13px;
+  color:var(--action);font-family:var(--sans);text-align:left}
+.lien-discret:hover{text-decoration:underline}
 .flanc nav{display:flex;flex-direction:column}
 .flanc nav a{padding:9px 20px;color:var(--nuit);font-size:14.5px;
   border-left:3px solid transparent}
@@ -820,46 +842,145 @@ function CarteFederale({ p, chemin }){
     </div>`;
 }
 
+/* --- Portrait ----------------------------------------------------------
+   Les portraits vivent dans un dépôt privé : on signe une adresse
+   temporaire plutôt que de les rendre publics.
+   --------------------------------------------------------------------- */
+function Portrait({ chemin, nom, taille = 40 }){
+  const [url, setUrl] = useState(null);
+  useEffect(() => { (async () => {
+    if (!chemin) return;
+    const { data } = await db.storage.from('portraits').createSignedUrl(chemin, 3600);
+    if (data) setUrl(data.signedUrl);
+  })(); }, [chemin]);
+
+  const style = `width:${taille}px;height:${taille}px;border-radius:50%;
+    flex:0 0 ${taille}px;object-fit:cover;display:block;border:1px solid var(--filet)`;
+
+  if (url) return html`<img src=${url} alt="" style=${style} />`;
+  return html`
+    <span style=${style + `;background:var(--bleu);color:#fff;display:flex;
+      align-items:center;justify-content:center;font-family:var(--titre);
+      font-weight:900;font-size:${Math.round(taille*0.38)}px;letter-spacing:.02em`}>
+      ${initiales({prenom: (nom||'').split(' ')[0], nom: (nom||'').split(' ')[1]})}
+    </span>`;
+}
+
+/* --- Menu latéral ------------------------------------------------------
+   Trois blocs et pas un de plus : qui je suis, ce que je fais, ce que
+   j'administre. Le guichet et le référentiel ne sont plus des onglets
+   permanents — on y accède au moment où on en a besoin.
+   --------------------------------------------------------------------- */
 function Flanc({ p, apps, page }){
-  const admin = p.niveau >= 90;
   const dispo = c => apps.find(a => a.code === c && a.ouvert);
-  const item = (r, t) => html`<a href=${'#/espace/'+r} class=${page===r?'on':''}>${t}</a>`;
+  const item = (r, t, marque) => html`
+    <a href=${'#/espace/'+r} class=${page===r?'on':''}>
+      <span class="spread" style="gap:8px">
+        <span>${t}</span>
+        ${marque > 0 && html`<span class="pastille">${marque}</span>`}
+      </span>
+    </a>`;
+
+  const admin = p.niveau >= 90;
+  const pilote = admin || (p.postes||[]).length > 0;
+
   return html`
     <aside class="flanc">
-      <div class="titre">
+      <div class="entete-flanc">
         <${Logo} baseline=${false} />
-        <div class="small muted" style="margin-top:4px">${nomComplet(p)}</div>
       </div>
+
+      <a class=${'moi'+(page==='compte'?' on':'')} href="#/espace/compte">
+        <${Portrait} chemin=${p.photo_url} nom=${nomComplet(p)} taille=${42} />
+        <span style="min-width:0">
+          <span class="moi-nom">${nomComplet(p)}</span>
+          <span class="moi-role">${p.fonction_nom} · échelon ${p.echelon}</span>
+        </span>
+      </a>
+
       <nav>
-        ${item('', 'Tableau de bord')}
+        <div class="groupe">Mon activité</div>
+        ${item('', 'Table de contrôle')}
         ${dispo('engagement') && item('engagement','Mon engagement')}
-        ${item('compte', 'Mon compte')}
-        ${item('demandes', 'Mes demandes')}
-        ${item('referentiel', 'Comprendre mes droits')}
+        ${dispo('groupes') && item('groupes','Groupes et missions')}
         ${dispo('formations') && item('formations','Formations')}
-        ${dispo('groupes') && item('groupes','Groupes de travail')}
         ${dispo('messagerie') && item('messagerie','Messagerie')}
-        ${dispo('notes_frais') && item('notes_frais','Notes de frais')}
-        ${dispo('ordonnancement') && item('ordonnancement','Ordonnancement')}
-        ${dispo('tresorerie') && item('tresorerie','Direction financière')}
-        ${dispo('discipline') && item('discipline','Discipline et recours')}
-        ${dispo('annuaire') && html`
-          <div class="groupe">Encadrement</div>
-          ${item('annuaire','Annuaire fédéral')}`}
-        ${admin && html`
-          <div class="groupe">Direction générale</div>
-          ${item('validation','Vérifications')}
-          ${item('reseau','Réseau et fonctions')}
-          ${item('vitrine','Site public')}
-          ${item('habilitations','Habilitations')}`}
-        <div class="groupe">Services externes</div>
+        ${dispo('notes_frais') && item('notes_frais','Mes notes de frais')}
+
+        ${(dispo('annuaire') || dispo('tresorerie') || dispo('ordonnancement')
+           || dispo('discipline')) && html`
+          <div class="groupe">Mes responsabilités</div>
+          ${dispo('annuaire') && item('annuaire','Annuaire fédéral')}
+          ${dispo('ordonnancement') && item('ordonnancement','Ordonnancement')}
+          ${dispo('tresorerie') && item('tresorerie','Direction financière')}
+          ${dispo('discipline') && item('discipline','Discipline et recours')}`}
+
+        ${pilote && html`
+          <div class="groupe">Pilotage</div>
+          ${admin && item('validation','Vérifications')}
+          ${admin && item('habilitations','Réseau et habilitations')}
+          ${admin && item('vitrine','Site public')}`}
+
+        <div class="groupe">Ailleurs</div>
         <a href=${EXTERNE.drive} target="_blank" rel="noopener">Drive ↗</a>
         <a href=${EXTERNE.agenda} target="_blank" rel="noopener">Agenda ↗</a>
         ${p.webmail && html`<a href=${EXTERNE.webmail} target="_blank" rel="noopener">Webmail ↗</a>`}
-        <div class="groupe">&nbsp;</div>
         <a href="#/" onClick=${()=>db.auth.signOut()}>Se déconnecter</a>
       </nav>
     </aside>`;
+}
+
+/* --- Progression : les points d'échelon ------------------------------- */
+function Progression(){
+  const [x, setX] = useState(null);
+  const [ouvert, setOuvert] = useState(false);
+  useEffect(() => { db.rpc('points_membre').then(({data}) => setX(data)); }, []);
+  if (!x) return null;
+
+  const socle = Number(x.palier_actuel || 0);
+  const cible = x.prochain ? Number(x.prochain.points) : null;
+  const pct = cible ? Math.min(Math.round((x.total - socle) / (cible - socle) * 100), 100) : 100;
+
+  return html`
+    <div class="panneau">
+      <div class="tete">
+        <div class="row" style="gap:8px">
+          <h3 style="font-size:17px">Échelon ${x.echelon} · ${x.echelon_nom}</h3>
+          <${Info} texte="Les points se calculent à la lecture, jamais stockés : ils sont donc toujours justes. Atteindre un palier ne promeut pas automatiquement — la Direction générale décide, et doit motiver." />
+        </div>
+        <span style="font-family:var(--titre);font-weight:900;font-size:26px;
+                     color:var(--bordeaux);line-height:1">${x.total}
+          <span style="font-size:13px;color:var(--gris);font-weight:700"> pts</span></span>
+      </div>
+      <div class="corps">
+        ${x.prochain
+          ? html`
+            <div class="spread small">
+              <span class="muted">Vers ${x.prochain.nom}</span>
+              <span class="mono">${x.total} / ${cible}</span>
+            </div>
+            <div class="jauge" style="margin-top:8px;height:6px">
+              <i style=${'width:'+pct+'%;background:var(--bordeaux)'}></i></div>
+            ${x.prochain.ouvre && html`<p class="small muted" style="margin:10px 0 0">
+              Cet échelon ouvre : ${x.prochain.ouvre}</p>`}
+            ${x.atteint_le_palier && html`<div class="alerte ok" style="margin-top:12px">
+              Vous avez atteint le palier. La Direction générale examinera votre
+              progression.</div>`}`
+          : html`<p class="small muted" style="margin:0">
+              Vous occupez le dernier échelon de la fédération.</p>`}
+
+        <button class="lien-discret" style="margin-top:14px"
+          onClick=${()=>setOuvert(o=>!o)}>
+          ${ouvert ? 'Masquer le détail' : 'D\u2019où viennent mes points ?'}</button>
+        ${ouvert && html`
+          <div style="margin-top:12px">
+            ${Object.entries(x.detail).map(([k,v]) => html`
+              <div class="spread small" style="padding:4px 0">
+                <span class="muted">${k}</span><span class="mono">${v}</span>
+              </div>`)}
+          </div>`}
+      </div>
+    </div>`;
 }
 
 
@@ -905,18 +1026,26 @@ function TableauDeBord({ p, apps, chemin, demandes }){
   const ouvertes = demandes.filter(d => d.statut === 'ouverte' || d.statut === 'en_cours');
   return html`
     <div class="stack" style="gap:32px;display:flex;flex-direction:column">
-      <div>
-        <div class="eyebrow">Tableau de bord</div>
-        <h1 style="margin-top:6px">Bonjour, ${p.prenom || 'bienvenue'}.</h1>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Table de contrôle</div>
+          <h1 style="margin-top:6px">Bonjour, ${p.prenom || 'bienvenue'}.</h1>
+        </div>
+        <a class="btn light" href="#/espace/demandes">Guichet des demandes</a>
       </div>
 
       <${MonDossier} p=${p} entier=${false} />
 
-      <${CurseurEngagement} compact=${true} />
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px">
+        <${CurseurEngagement} compact=${true} />
+        <${Progression} />
+      </div>
 
       <${CeQuiAttend} />
 
-      <${CarteFederale} p=${p} chemin=${chemin} />
+      <div class="spread" style="align-items:stretch;gap:24px;flex-wrap:wrap">
+        <div style="flex:1;min-width:280px"><${CarteFederale} p=${p} chemin=${chemin} /></div>
+      </div>
 
       ${ouvertes.length > 0 && html`
         <div class="alerte">
@@ -960,6 +1089,62 @@ function TableauDeBord({ p, apps, chemin, demandes }){
     </div>`;
 }
 
+/* --- Mon portrait ------------------------------------------------------
+   Deux mégaoctets, dépôt privé, dossier nommé par l'identifiant : nul
+   ne peut déposer chez un autre.
+   --------------------------------------------------------------------- */
+function MonPortrait({ p, recharger }){
+  const [msg, setMsg] = useState('');
+  const [envoi, setEnvoi] = useState(false);
+
+  async function deposer(e){
+    const fichier = e.target.files[0];
+    if (!fichier) return;
+    setEnvoi(true); setMsg('');
+    try {
+      if (fichier.size > 2 * 1024 * 1024)
+        throw new Error('Le portrait ne doit pas dépasser 2 Mo.');
+      const ext = fichier.name.split('.').pop();
+      const chemin = p.id + '/portrait-' + Date.now() + '.' + ext;
+      const { error: eUp } = await db.storage.from('portraits').upload(chemin, fichier);
+      if (eUp) throw eUp;
+      const { error } = await db.from('profils').update({ photo_url: chemin }).eq('id', p.id);
+      if (error) throw error;
+      setMsg('Portrait mis à jour.');
+      recharger();
+    } catch (err){ setMsg(err.message || 'Dépôt impossible.'); }
+    setEnvoi(false);
+  }
+
+  async function retirer(){
+    await db.from('profils').update({ photo_url: null }).eq('id', p.id);
+    setMsg('Portrait retiré.'); recharger();
+  }
+
+  return html`
+    <div class="panneau" style="margin-top:24px">
+      <div class="corps row" style="gap:20px">
+        <${Portrait} chemin=${p.photo_url} nom=${nomComplet(p)} taille=${88} />
+        <div style="flex:1;min-width:220px">
+          <div style="font-family:var(--titre);font-weight:700;font-size:16px;
+                      color:var(--bleu)">${nomComplet(p)}</div>
+          <div class="small muted">${p.fonction_nom} · ${p.territoire_nom || 'sans rattachement'}</div>
+          ${p.devise && html`<div class="small" style="margin-top:6px;font-style:italic">
+            « ${p.devise} »</div>`}
+          <div class="row" style="margin-top:12px;gap:10px">
+            <label class="btn sm light" style="margin:0;text-transform:none;
+                letter-spacing:.02em;cursor:pointer;display:inline-block">
+              ${envoi ? 'Envoi…' : (p.photo_url ? 'Changer' : 'Ajouter un portrait')}
+              <input type="file" accept="image/*" style="display:none" onChange=${deposer} />
+            </label>
+            ${p.photo_url && html`<button class="btn sm light" onClick=${retirer}>Retirer</button>`}
+          </div>
+          ${msg && html`<p class="small" style="margin:10px 0 0;color:var(--gris)">${msg}</p>`}
+        </div>
+      </div>
+    </div>`;
+}
+
 function MonCompte({ p, recharger }){
   const [f, setF] = useState({
     prenom:p.prenom, nom:p.nom, telephone:p.telephone||'',
@@ -978,8 +1163,19 @@ function MonCompte({ p, recharger }){
 
   return html`
     <div>
-      <div class="eyebrow">Mon compte</div>
-      <h1 style="margin:6px 0 32px">Mes informations</h1>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Mon compte</div>
+          <h1 style="margin:6px 0 0">Mes informations</h1>
+        </div>
+        <div class="row">
+          <a class="btn light" href="#/espace/demandes">Mes demandes</a>
+          <a class="btn light" href="#/espace/referentiel">Comprendre mes droits</a>
+        </div>
+      </div>
+
+      <${MonPortrait} p=${p} recharger=${recharger} />
+      <div style="height:24px"></div>
 
       <form onSubmit=${enregistrer} class="panneau">
         <div class="corps stack">
@@ -3134,8 +3330,8 @@ function Habilitations({ p }){
 
   return html`
     <div>
-      <div class="eyebrow">Direction générale</div>
-      <h1 style="margin:6px 0 8px">Habilitations</h1>
+      <div class="eyebrow">Pilotage</div>
+      <h1 style="margin:6px 0 8px">Réseau et habilitations</h1>
       <p class="muted" style="max-width:60ch">
         Un droit ouvre une action. Un poste regroupe des droits sous un nom.
         Une nomination confie un poste à quelqu\u2019un, pour un territoire et
@@ -3145,13 +3341,15 @@ function Habilitations({ p }){
         style="margin-top:16px">${msg}</div>`}
 
       <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
-        ${[['nominations','Nominations'],['postes','Postes'],
-           ['matrice','Matrice des accès'],['acces','Accès nominatifs']]
+        ${[['reseau','Réseau et fonctions'],['nominations','Nominations'],
+           ['postes','Postes'],['matrice','Matrice des accès'],['acces','Accès nominatifs']]
           .map(([k,t]) => html`
           <button class="btn light" style=${'border:0;border-bottom:2px solid '+
             (onglet===k?'var(--encre)':'transparent')+';border-radius:0;background:transparent'}
             onClick=${()=>setOnglet(k)}>${t}</button>`)}
       </div>
+
+      ${onglet === 'reseau' && html`<${ReseauAdmin} />`}
 
       ${onglet === 'nominations' && html`<${Nominations} postes=${postes} noms=${noms}
         gens=${gens} terr=${terr} nomDe=${nomDe} actif=${actif}
@@ -3633,8 +3831,7 @@ function MonDossier({ p, entier }){
           <div class="small muted"><span class="mono">${dos.reference}</span>
             · ouvert le ${jour(dos.ouvert_le)}</div>
         </div>
-        <span class=${'tag '+(GRAVITE[dos.gravite]||['',''])[1]}>
-          ${(GRAVITE[dos.gravite]||['',''])[0]}</span>
+        <span class="tag">${ETAPE_NOM[dos.statut]}</span>
       </div>
       <div class="corps">
         <${FilDossier} d=${dos} />
@@ -3875,7 +4072,7 @@ function Discipline({ p }){
   const [onglet, setOnglet] = useState('ouverts');
   const [dossiers, setDossiers] = useState([]);
   const [archives, setArchives] = useState([]);
-  const [alertes, setAlertes] = useState([]);
+  const [suivis, setSuivis] = useState([]);
   const [gens, setGens] = useState([]);
   const [detail, setDetail] = useState(null);
   const [creation, setCreation] = useState(false);
@@ -3886,12 +4083,11 @@ function Discipline({ p }){
     const [a,b,c,d] = await Promise.all([
       db.rpc('dossiers_discipline', { p_filtre: 'ouverts' }),
       db.rpc('dossiers_discipline', { p_filtre: 'archives' }),
-      db.from('alertes_suivi').select('*').is('vue_le', null).order('cree_le',{ascending:false}),
-      db.from('v_annuaire').select('id,prenom,nom,matricule,fonction_nom,territoire_nom')
-        .order('nom')
+      db.rpc('suivi_en_cours'),
+      db.rpc('membres_pour_discipline', { p_recherche: null })
     ]);
     setDossiers(a.data||[]); setArchives(b.data||[]);
-    setAlertes(c.data||[]); setGens(d.data||[]);
+    setSuivis(c.data||[]); setGens(d.data||[]);
     if (detail){
       const maj = [...(a.data||[]), ...(b.data||[])].find(x => x.id === detail.id);
       if (maj) setDetail(maj);
@@ -3984,6 +4180,7 @@ function Discipline({ p }){
                 <option value="">Choisir…</option>
                 ${gens.map(g => html`<option value=${g.id}>
                   ${nomComplet(g)} — ${g.fonction_nom}${g.territoire_nom?' · '+g.territoire_nom:''}
+                  ${g.dossiers_ouverts > 0 ? ' · '+g.dossiers_ouverts+' dossier(s) en cours' : ''}
                 </option>`)}
               </select></div>
             <div class="field"><label>Objet</label>
@@ -4016,11 +4213,11 @@ function Discipline({ p }){
       </div>
 
       <div class="row" style="margin:24px 0;gap:0;border-bottom:1px solid var(--filet)">
-        ${[['ouverts','En cours'],['alertes','Alertes de suivi'],['archives','Archives']]
+        ${[['ouverts','En cours'],['suivi','Suivi des usages'],['archives','Archives']]
           .map(([k,t]) => html`
           <button class="btn light" style=${'border:0;border-bottom:2px solid '+
             (onglet===k?'var(--encre)':'transparent')+';border-radius:0;background:transparent'}
-            onClick=${()=>setOnglet(k)}>${t}${k==='alertes'&&alertes.length?' ('+alertes.length+')':''}</button>`)}
+            onClick=${()=>setOnglet(k)}>${t}${k==='suivi'&&suivis.length?' ('+suivis.length+')':''}</button>`)}
       </div>
 
       ${onglet === 'ouverts' && html`
@@ -4037,29 +4234,109 @@ function Discipline({ p }){
             : archives.map(ligne)}
         </div>`}
 
-      ${onglet === 'alertes' && html`
-        <div class="panneau">
-          <div class="tete"><h3 style="font-size:17px">Comptes sous suivi des usages</h3></div>
-          ${alertes.length === 0
-            ? html`<div class="vide">Aucune alerte en attente.</div>`
-            : alertes.map(al => {
-              const g = gens.find(x => x.id === al.profil_id);
-              return html`
-                <div class="ligne">
-                  <div>
-                    <div>${g ? nomComplet(g) : 'Membre'} — ${al.application || 'activité'}</div>
-                    <div class="small muted">${al.detail} ·
-                      ${new Date(al.cree_le).toLocaleString('fr-FR',
-                        {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
-                  </div>
-                  <button class="btn sm light" onClick=${async ()=>{
-                    await db.from('alertes_suivi').update({
-                      vue_par: p.id, vue_le: new Date().toISOString() }).eq('id', al.id);
-                    charger();
-                  }}>Pris connaissance</button>
-                </div>`;
-            })}
-        </div>`}
+      ${onglet === 'suivi' && html`<${SuiviUsages} recharger=${charger} />`}
+    </div>`;
+}
+
+/* --- Suivi des usages, agrégé par membre -------------------------------
+   Une liste d'événements bruts ne se suit pas. On regroupe par
+   personne, avec la dernière activité et ce qui reste à examiner.
+   --------------------------------------------------------------------- */
+function SuiviUsages({ recharger }){
+  const [liste, setListe] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [evenements, setEvenements] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const { data } = await db.rpc('suivi_en_cours');
+    setListe(data || []);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function ouvrir(x){
+    setDetail(x);
+    const { data } = await db.rpc('detail_suivi', { p_profil: x.profil_id });
+    setEvenements(data || []);
+  }
+
+  async function marquer(x){
+    const { data, error } = await db.rpc('marquer_suivi_vu', { p_profil: x.profil_id });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setMsg('Alertes classées.'); charger(); recharger && recharger();
+  }
+
+  if (!liste) return html`<div class="vide">Chargement…</div>`;
+
+  if (detail) return html`
+    <div>
+      <button class="lien-discret" onClick=${()=>setDetail(null)}>← Tous les suivis</button>
+      <h2 style="font-size:23px;margin:12px 0 4px">${detail.membre}</h2>
+      <div class="small muted"><span class="mono">${detail.matricule}</span>
+        ${detail.territoire_nom ? ' · ' + detail.territoire_nom : ''}
+        · dossier <span class="mono">${detail.dossier_reference}</span></div>
+      <div class="alerte" style="margin-top:16px">${detail.motif}</div>
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Activité enregistrée</h3>
+          <span class="tag">${evenements.length}</span></div>
+        ${evenements.length === 0
+          ? html`<div class="vide">Aucune activité depuis la mise sous suivi.</div>`
+          : evenements.map(e => html`
+            <div class="ligne">
+              <span>${e.app_nom || e.application}</span>
+              <div class="row">
+                ${!e.vue_le && html`<span class="tag or">Non examinée</span>`}
+                <span class="small muted">${new Date(e.cree_le).toLocaleString('fr-FR',
+                  {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+              </div>
+            </div>`)}
+      </div>
+    </div>`;
+
+  return html`
+    <div>
+      ${msg && html`<div class="alerte ok" style="margin-bottom:16px">${msg}</div>`}
+      <p class="small muted" style="margin-bottom:16px;max-width:62ch">
+        Ces comptes font l\u2019objet d\u2019une mesure de suivi prononcée et notifiée.
+        Chaque ouverture d\u2019application y est enregistrée. La mesure s\u2019éteint
+        seule à sa date de fin.
+      </p>
+      <div class="panneau">
+        ${liste.length === 0
+          ? html`<div class="vide">Aucun compte sous mesure de suivi.</div>`
+          : liste.map(x => html`
+            <div class="ligne" style="align-items:flex-start">
+              <div style="flex:1;min-width:240px;cursor:pointer" onClick=${()=>ouvrir(x)}>
+                <div class="row" style="gap:8px">
+                  <strong>${x.membre}</strong>
+                  ${x.alertes_non_vues > 0 && html`
+                    <span class="pastille">${x.alertes_non_vues}</span>`}
+                </div>
+                <div class="small muted">
+                  <span class="mono">${x.matricule}</span>
+                  ${x.territoire_nom ? ' · ' + x.territoire_nom : ''}
+                  · dossier <span class="mono">${x.dossier_reference}</span>
+                  ${x.instructeur ? ' · instruit par ' + x.instructeur : ''}
+                </div>
+                <div class="small muted" style="margin-top:4px">
+                  Effet au ${jour(x.date_effet)}
+                  ${x.date_fin ? ' · fin le ' + jour(x.date_fin) : ' · sans terme'}
+                  · ${x.alertes_total} événement${x.alertes_total>1?'s':''}
+                  ${x.derniere_activite
+                    ? ' · dernière activité ' + jour(x.derniere_activite)
+                    : ' · aucune activité'}
+                </div>
+                ${x.applications && html`<div class="small muted" style="margin-top:4px">
+                  Trente derniers jours : ${x.applications}</div>`}
+              </div>
+              <div class="row">
+                <button class="btn sm light" onClick=${()=>ouvrir(x)}>Détail</button>
+                ${x.alertes_non_vues > 0 && html`
+                  <button class="btn sm" onClick=${()=>marquer(x)}>Tout classer</button>`}
+              </div>
+            </div>`)}
+      </div>
     </div>`;
 }
 
@@ -4069,6 +4346,18 @@ function DossierDetail({ p, d, gens, fermer }){
   const [recours, setRecours] = useState([]);
   const [piece, setPiece] = useState({type:'note_instruction', titre:'', contenu:'', communicable:false});
   const [fichier, setFichier] = useState(null);
+  const [courrier, setCourrier] = useState(null);
+
+  // Dépôt d'un courrier dans le dépôt privé des dossiers.
+  async function deposerCourrier(f){
+    if (!f) return null;
+    if (f.size > 10 * 1024 * 1024) throw new Error('Le courrier ne doit pas dépasser 10 Mo.');
+    const ext = f.name.split('.').pop();
+    const chemin = p.id + '/' + d.id + '-' + Date.now() + '.' + ext;
+    const { error } = await db.storage.from('dossiers').upload(chemin, f);
+    if (error) throw error;
+    return chemin;
+  }
   const [mes, setMes] = useState({type:'avertissement', motif:'', texte:'', effet:'', fin:''});
   const [msg, setMsg] = useState('');
 
@@ -4123,30 +4412,43 @@ function DossierDetail({ p, d, gens, fermer }){
 
   async function prononcer(e){
     e.preventDefault();
+    let chemin = null;
+    try { chemin = await deposerCourrier(courrier); }
+    catch (err){ return setMsg('Erreur : ' + err.message); }
     const { data, error } = await db.rpc('prononcer_mesure', {
       p_dossier: d.id, p_type: mes.type, p_motif: mes.motif,
-      p_texte: mes.texte || null, p_effet: mes.effet || null, p_fin: mes.fin || null
+      p_texte: mes.texte || null, p_effet: mes.effet || null, p_fin: mes.fin || null,
+      p_fichier: chemin
     });
     if (error) return setMsg('Erreur : ' + error.message);
     if (!data.ok) return setMsg('Erreur : ' + data.message);
     setMes({type:'avertissement', motif:'', texte:'', effet:'', fin:''});
+    setCourrier(null);
     setMsg('Mesure prononcée. Elle ne produira effet qu\u2019une fois notifiée.');
     charger();
   }
 
-  async function notifier(m){
+  async function notifier(m, f){
     if (!confirm('Notifier cette décision ? Elle deviendra exécutoire et le délai de recours s\u2019ouvrira.')) return;
-    const { data, error } = await db.rpc('notifier_mesure', { p_mesure: m.id });
+    let chemin = null;
+    try { chemin = await deposerCourrier(f); }
+    catch (err){ return setMsg('Erreur : ' + err.message); }
+    const { data, error } = await db.rpc('notifier_mesure',
+      { p_mesure: m.id, p_courrier: chemin });
     if (error) return setMsg('Erreur : ' + error.message);
     if (!data.ok) return setMsg('Erreur : ' + data.message);
     setMsg('Décision notifiée.'); charger();
   }
 
-  async function statuer(r, issue){
+  async function statuer(r, issue, f){
     const decision = prompt('Décision motivée (obligatoire)');
     if (!decision) return;
+    let chemin = null;
+    try { chemin = await deposerCourrier(f); }
+    catch (err){ return setMsg('Erreur : ' + err.message); }
     const { data, error } = await db.rpc('statuer_recours', {
-      p_recours: r.id, p_issue: issue, p_decision: decision, p_suspensif: false
+      p_recours: r.id, p_issue: issue, p_decision: decision,
+      p_suspensif: false, p_fichier: chemin
     });
     if (error) return setMsg('Erreur : ' + error.message);
     if (!data.ok) return setMsg('Erreur : ' + data.message);
@@ -4218,9 +4520,9 @@ function DossierDetail({ p, d, gens, fermer }){
                         ? html`<p class="small muted" style="margin:8px 0 0">
                             Décision : ${r.decision}</p>`
                         : html`<div class="row" style="margin-top:12px">
-                            <button class="btn sm" onClick=${()=>statuer(r,'accepte')}>Accueillir</button>
-                            <button class="btn sm light" onClick=${()=>statuer(r,'rejete')}>Rejeter</button>
-                            <button class="btn sm light" onClick=${()=>statuer(r,'irrecevable')}>Irrecevable</button>
+                            <button class="btn sm" onClick=${()=>statuer(r,'accepte',null)}>Accueillir</button>
+                            <button class="btn sm light" onClick=${()=>statuer(r,'rejete',null)}>Rejeter</button>
+                            <button class="btn sm light" onClick=${()=>statuer(r,'irrecevable',null)}>Irrecevable</button>
                           </div>`}
                     </div>`)}
                 </div>
@@ -4228,7 +4530,15 @@ function DossierDetail({ p, d, gens, fermer }){
                   <span class=${'tag '+(m.statut==='executee'?'rouge':m.statut==='annulee'?'vert':'')}>
                     ${m.statut}</span>
                   ${!m.notifiee_le && html`
-                    <button class="btn sm" onClick=${()=>notifier(m)}>Notifier</button>`}
+                    <label class="btn sm light" style="margin:0;cursor:pointer;
+                        text-transform:none;letter-spacing:.02em">
+                      Joindre le courrier
+                      <input type="file" accept=".pdf,image/*" style="display:none"
+                        onChange=${ev => notifier(m, ev.target.files[0])} />
+                    </label>
+                    <button class="btn sm" onClick=${()=>notifier(m, null)}>Notifier</button>`}
+                  ${m.fichier && html`<button class="btn sm light"
+                    onClick=${()=>ouvrirFichier({fichier:m.fichier})}>Courrier</button>`}
                 </div>
               </div>`;
           })}
@@ -4262,6 +4572,12 @@ function DossierDetail({ p, d, gens, fermer }){
             <div class="field" style="flex:1;min-width:150px;margin:0"><label>Fin (facultatif)</label>
               <input type="date" value=${mes.fin}
                 onInput=${e=>setMes(o=>({...o,fin:e.target.value}))} /></div>
+          </div>
+          <div class="field"><label>Courrier de décision (PDF)</label>
+            <input type="file" accept=".pdf,image/*"
+              onChange=${e=>setCourrier(e.target.files[0]||null)} />
+            <p class="small muted" style="margin:6px 0 0">
+              Il sera versé au dossier et communicable à l\u2019intéressé.</p>
           </div>
           <div><button class="btn">Prononcer</button></div>
           <p class="small muted">
@@ -5459,9 +5775,10 @@ function ReseauAdmin(){
 
   return html`
     <div>
-      <div class="eyebrow">Direction générale</div>
-      <h1 style="margin:6px 0 8px">Réseau et fonctions</h1>
-      <p class="muted">Nommer, muter, faire progresser. Chaque modification est immédiate.</p>
+      <p class="muted" style="max-width:60ch">
+        Nommer, muter, faire progresser, protéger un dossier. Chaque
+        modification est immédiate et inscrite au journal.
+      </p>
       ${msg && html`<div class="alerte ok" style="margin:16px 0">${msg}</div>`}
 
       <div class="field" style="max-width:360px;margin:24px 0">
@@ -5651,7 +5968,7 @@ function Espace({ session, sous }){
     case 'demandes':   vue = html`<${MesDemandes} p=${p} apps=${apps} demandes=${demandes} recharger=${charger} />`; break;
     case 'annuaire':   vue = acces('annuaire') ? html`<${Annuaire} p=${p} />` : refus; break;
     case 'validation': vue = admin ? html`<${Validation} />` : refus; break;
-    case 'reseau':     vue = admin ? html`<${ReseauAdmin} />` : refus; break;
+    case 'reseau':     vue = admin ? html`<${Habilitations} p=${p} />` : refus; break;
     case 'vitrine':    vue = admin ? html`<${VitrineAdmin} />` : refus; break;
     case 'habilitations': vue = (admin || p.droits?.includes('habilitations.gerer'))
                           ? html`<${Habilitations} p=${p} />` : refus; break;
