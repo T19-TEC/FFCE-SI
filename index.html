@@ -175,7 +175,8 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
 .logo{display:flex;align-items:center;gap:12px;color:var(--bleu);padding:10px 0}
 .logo:hover{text-decoration:none}
 .logo img{height:74px;width:auto;display:block}
-.flanc .logo img{height:66px}
+.flanc .logo{width:100%;justify-content:center}
+.flanc .logo img{height:auto;width:100%;max-width:186px}
 .pied .logo img{height:64px}
 @media(max-width:600px){.logo img{height:52px}}
 .logo .sigle{font-family:var(--titre);font-size:27px;font-weight:900;
@@ -241,7 +242,7 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
   padding:18px 0 24px;position:sticky;top:0;height:100vh;overflow-y:auto}
 @media(max-width:900px){.flanc{position:static;height:auto;border-right:0;
   border-bottom:1px solid var(--filet)}}
-.entete-flanc{padding:6px 18px 18px;border-bottom:1px solid var(--filet)}
+.entete-flanc{padding:4px 18px 20px;border-bottom:1px solid var(--filet)}
 .entete-flanc .logo{padding:0}
 .flanc .titre{padding:0 20px 20px;border-bottom:1px solid var(--filet);margin-bottom:12px}
 
@@ -267,6 +268,18 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
 .flanc nav{display:flex;flex-direction:column}
 .flanc nav a{padding:9px 20px;color:var(--nuit);font-size:14.5px;
   border-left:3px solid transparent}
+
+/* La table de contrôle est le point de retour : elle se distingue
+   même quand elle n'est pas la page courante. */
+.flanc nav a.pivot{margin:4px 14px 10px;padding:11px 16px;border-left:0;
+  border:1px solid var(--filet);border-radius:2px;background:var(--ciel);
+  font-family:var(--titre);font-weight:700;color:var(--bleu);
+  display:flex;align-items:center;gap:9px}
+.flanc nav a.pivot::before{content:'';width:7px;height:7px;border-radius:50%;
+  background:var(--bordeaux);flex:0 0 7px}
+.flanc nav a.pivot:hover{background:var(--action-clair);border-color:var(--action)}
+.flanc nav a.pivot.on{background:var(--bleu);border-color:var(--bleu);color:#fff}
+.flanc nav a.pivot.on::before{background:#fff}
 .flanc nav a:hover{background:var(--papier);text-decoration:none}
 .flanc nav a.on{border-left-color:var(--bordeaux);background:var(--papier);
   color:var(--bleu);font-weight:700}
@@ -941,8 +954,9 @@ function Portrait({ chemin, nom, taille = 40 }){
    --------------------------------------------------------------------- */
 function Flanc({ p, apps, page }){
   const dispo = c => apps.find(a => a.code === c && a.ouvert);
-  const item = (r, t, marque) => html`
-    <a href=${'#/espace/'+r} class=${page===r?'on':''}>
+  const item = (r, t, marque, pivot) => html`
+    <a href=${'#/espace/'+r}
+       class=${(pivot?'pivot ':'') + (page===r?'on':'')}>
       <span class="spread" style="gap:8px">
         <span>${t}</span>
         ${marque > 0 && html`<span class="pastille">${marque}</span>`}
@@ -967,8 +981,8 @@ function Flanc({ p, apps, page }){
       </a>
 
       <nav>
+        ${item('', 'Table de contrôle', 0, true)}
         <div class="groupe">Mon activité</div>
-        ${item('', 'Table de contrôle')}
         ${dispo('engagement') && item('engagement','Mon engagement')}
         ${dispo('groupes') && item('groupes','Groupes et missions')}
         ${dispo('formations') && item('formations','Formations')}
@@ -1136,8 +1150,8 @@ function TableauDeBord({ p, apps, chemin, demandes }){
             const cible = a.externe_url ? '_blank' : null;
             if (!a.ouvert) return html`
               <div class="tuile bloquee">
-                <h3>${a.nom}</h3>
-                <p>${a.description}</p>
+                <h3>${a.nom_court || a.nom}</h3>
+                <p>${a.accroche || a.description}</p>
                 <div style="margin-top:12px">
                   ${a.demande_en_cours
                     ? html`<span class="tag bleu">Demande en cours</span>`
@@ -1146,11 +1160,19 @@ function TableauDeBord({ p, apps, chemin, demandes }){
                       : html`<span class="tag">Non ouverte à votre fonction</span>`}
                 </div>
               </div>`;
+            const teinte = {bleu:'var(--bleu)', bordeaux:'var(--bordeaux)',
+              nuit:'var(--nuit)', brun:'var(--brun)', action:'var(--action)',
+              framboise:'var(--framboise)'}[a.couleur] || 'var(--bleu)';
             return html`
               <a class="tuile" href=${lien} target=${cible} rel="noopener"
+                 style=${'border-top:3px solid '+teinte}
                  onClick=${()=>db.rpc('tracer_acces', { p_app: a.code })}>
-                <h3>${a.nom}${a.externe_url ? ' ↗' : ''}</h3>
-                <p>${a.description}</p>
+                <div class="row" style="gap:10px;align-items:flex-start">
+                  ${a.logo && html`<img src=${urlPublique(a.logo)} alt=""
+                    style="width:30px;height:30px;object-fit:contain;flex:0 0 30px" />`}
+                  <h3 style=${'color:'+teinte}>${a.nom_court || a.nom}${a.externe_url ? ' ↗' : ''}</h3>
+                </div>
+                <p style="margin-top:8px">${a.accroche || a.description}</p>
               </a>`;
           })}
         </div>
@@ -3362,75 +3384,585 @@ function MonRib(){
    nomination confie un poste, avec un périmètre et un terme.
    ===================================================================== */
 
+/* =====================================================================
+   RÉSEAU ET HABILITATIONS
+   Réorganisé autour de deux objets, pas de cinq tables : la PERSONNE
+   et la STRUCTURE. On ouvre une fiche, et tout se fait là.
+   ===================================================================== */
 function Habilitations({ p }){
-  const [onglet, setOnglet] = useState('nominations');
-  const [postes, setPostes] = useState([]);
-  const [droits, setDroits] = useState([]);
-  const [liens, setLiens] = useState([]);
-  const [noms, setNoms] = useState([]);
-  const [gens, setGens] = useState([]);
-  const [terr, setTerr] = useState([]);
-  const [acces, setAcces] = useState([]);
-  const [apps, setApps] = useState([]);
+  const [onglet, setOnglet] = useState('membres');
   const [msg, setMsg] = useState('');
+  const [fiche, setFiche] = useState(null);
 
-  const charger = useCallback(async () => {
-    const [a,b,c,d,e,f,g] = await Promise.all([
-      db.from('postes').select('*').order('nom'),
-      db.from('droits').select('*').order('ordre'),
-      db.from('poste_droits').select('*'),
-      db.from('nominations').select('*').order('cree_le', {ascending:false}),
-      db.from('v_annuaire').select('id,prenom,nom,matricule,fonction_nom')
-        .eq('statut','actif').order('nom'),
-      db.from('territoires').select('id,nom,echelle').order('echelle').order('nom'),
-      db.rpc('pilotage_acces')
-    ]);
-    setPostes(a.data||[]); setDroits(b.data||[]); setLiens(c.data||[]);
-    setNoms(d.data||[]); setGens(e.data||[]); setTerr(f.data||[]);
-    setAcces(g.data||[]);
-    const { data: ap } = await db.from('applications').select('code,nom').eq('actif',true).order('ordre');
-    setApps(ap||[]);
-  }, []);
-  useEffect(() => { charger(); }, [charger]);
-
-  const nomDe = i => { const x = gens.find(y => y.id === i); return x ? nomComplet(x) : '—'; };
-  const actif = n => !n.revoque_le &&
-    (!n.fin || new Date(n.fin) >= new Date(new Date().toDateString()));
+  if (fiche) return html`<${FicheAdmin} p=${p} id=${fiche}
+    fermer=${()=>setFiche(null)} setMsg=${setMsg} />`;
 
   return html`
     <div>
       <div class="eyebrow">Pilotage</div>
       <h1 style="margin:6px 0 8px">Réseau et habilitations</h1>
-      <p class="muted" style="max-width:60ch">
-        Un droit ouvre une action. Un poste regroupe des droits sous un nom.
-        Une nomination confie un poste à quelqu\u2019un, pour un territoire et
-        une durée. Ces trois notions restent séparées.
+      <p class="muted" style="max-width:62ch">
+        Deux entrées : par la <strong>personne</strong>, pour tout régler sur une
+        fiche unique ; par la <strong>structure</strong>, pour voir où le réseau
+        tient et où il manque du monde.
       </p>
       ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
         style="margin-top:16px">${msg}</div>`}
 
       <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
-        ${[['reseau','Réseau et fonctions'],['nominations','Nominations'],
-           ['postes','Postes'],['matrice','Matrice des accès'],['acces','Accès nominatifs']]
+        ${[['membres','Membres'],['structures','Structures'],
+           ['postes','Postes et droits'],['applications','Applications']]
           .map(([k,t]) => html`
           <button class="btn light" style=${'border:0;border-bottom:2px solid '+
-            (onglet===k?'var(--encre)':'transparent')+';border-radius:0;background:transparent'}
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
             onClick=${()=>setOnglet(k)}>${t}</button>`)}
       </div>
 
-      ${onglet === 'reseau' && html`<${ReseauAdmin} />`}
+      ${onglet === 'membres'      && html`<${ListeMembres} ouvrir=${setFiche} />`}
+      ${onglet === 'structures'   && html`<${Structures} setMsg=${setMsg} ouvrir=${setFiche} />`}
+      ${onglet === 'postes'       && html`<${PostesEtDroits} setMsg=${setMsg} />`}
+      ${onglet === 'applications' && html`<${IdentiteApplications} setMsg=${setMsg} />`}
+    </div>`;
+}
 
-      ${onglet === 'nominations' && html`<${Nominations} postes=${postes} noms=${noms}
-        gens=${gens} terr=${terr} nomDe=${nomDe} actif=${actif}
-        recharger=${charger} setMsg=${setMsg} />`}
+/* --- Liste des membres, une seule porte d'entrée ---------------------- */
+function ListeMembres({ ouvrir }){
+  const [m, setM] = useState(null);
+  const [q, setQ] = useState('');
+  const [filtre, setFiltre] = useState('actifs');
 
-      ${onglet === 'postes' && html`<${Postes} postes=${postes} droits=${droits}
+  useEffect(() => {
+    db.from('v_annuaire').select('*').order('niveau',{ascending:false}).order('nom')
+      .then(({data}) => setM(data||[]));
+  }, []);
+  if (!m) return html`<div class="vide">Chargement…</div>`;
+
+  const liste = m
+    .filter(x => filtre === 'tous' ? true
+      : filtre === 'actifs' ? x.statut === 'actif'
+      : filtre === 'attente' ? x.statut === 'en_attente'
+      : x.statut === 'suspendu')
+    .filter(x => (nomComplet(x)+' '+(x.territoire_nom||'')+' '+x.matricule+' '+x.fonction_nom)
+      .toLowerCase().includes(q.toLowerCase()));
+
+  return html`
+    <div>
+      <div class="row" style="margin-bottom:20px;gap:12px">
+        <div class="field" style="flex:1;min-width:220px;margin:0">
+          <input placeholder="Rechercher un nom, un matricule, un territoire…"
+            value=${q} onInput=${e=>setQ(e.target.value)} />
+        </div>
+        <div class="field" style="width:auto;margin:0">
+          <select value=${filtre} onChange=${e=>setFiltre(e.target.value)}>
+            <option value="actifs">Actifs</option>
+            <option value="attente">En attente</option>
+            <option value="suspendus">Suspendus</option>
+            <option value="tous">Tous</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="panneau">
+        <div class="tete"><span class="small muted">
+          ${liste.length} membre${liste.length>1?'s':''}</span></div>
+        ${liste.length === 0
+          ? html`<div class="vide">Aucun résultat.</div>`
+          : liste.slice(0, 200).map(x => html`
+            <div class="ligne" style="cursor:pointer" onClick=${()=>ouvrir(x.id)}>
+              <div style="flex:1;min-width:200px">
+                <div class="row" style="gap:8px">
+                  <a href="#" onClick=${e=>e.preventDefault()}>${nomComplet(x)}</a>
+                  ${x.protege && html`<span class="tag or">Protégé</span>`}
+                </div>
+                <div class="small muted">
+                  <span class="mono">${x.matricule}</span> · ${x.fonction_nom}
+                  ${x.territoire_nom ? ' · ' + x.territoire_nom : ''}
+                </div>
+              </div>
+              <div class="row">
+                <span class="tag or">Éch. ${x.echelon}</span>
+                <span class=${'tag '+(x.statut==='actif'?'vert':
+                  x.statut==='suspendu'?'rouge':'')}>${x.statut.replace('_',' ')}</span>
+              </div>
+            </div>`)}
+        ${liste.length > 200 && html`<div class="corps small muted">
+          Seuls les 200 premiers résultats sont affichés. Affinez votre recherche.</div>`}
+      </div>
+    </div>`;
+}
+
+/* --- La fiche unique : tout se règle ici ------------------------------ */
+function FicheAdmin({ p, id, fermer, setMsg }){
+  const [f, setF] = useState(null);
+  const [ref, setRef] = useState({fonctions:[], terr:[], postes:[], apps:[]});
+  const [nouveauPoste, setNouveauPoste] = useState({poste:'', territoire:'', fin:'', motif:''});
+  const [nouvelAcces, setNouvelAcces] = useState({app:'', motif:'', expire:''});
+  const [local, setLocal] = useState('');
+
+  const charger = useCallback(async () => {
+    const { data } = await db.rpc('fiche_admin', { p_profil: id });
+    setF(data);
+  }, [id]);
+  useEffect(() => { charger(); }, [charger]);
+
+  useEffect(() => { (async () => {
+    const [a,b,c,d] = await Promise.all([
+      db.from('fonctions').select('*').order('niveau'),
+      db.from('territoires').select('id,nom,echelle').order('echelle').order('nom'),
+      db.from('postes').select('code,nom').eq('actif',true).order('nom'),
+      db.from('applications').select('code,nom').eq('actif',true).order('ordre')
+    ]);
+    setRef({fonctions:a.data||[], terr:b.data||[], postes:c.data||[], apps:d.data||[]});
+  })(); }, []);
+
+  if (!f) return html`<div class="vide">Chargement…</div>`;
+  if (f.erreur) return html`<div class="alerte err">${f.erreur}</div>`;
+  const i = f.identite;
+
+  async function modifier(champ, valeur){
+    const { error } = await db.from('profils').update({ [champ]: valeur }).eq('id', id);
+    setLocal(error ? 'Erreur : ' + error.message : 'Enregistré.');
+    setTimeout(()=>setLocal(''), 2000);
+    charger();
+  }
+
+  async function nommerA(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('nommer', {
+      p_profil: id, p_poste: nouveauPoste.poste,
+      p_territoire: nouveauPoste.territoire || null,
+      p_fin: nouveauPoste.fin || null, p_motif: nouveauPoste.motif || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setNouveauPoste({poste:'', territoire:'', fin:'', motif:''});
+    setMsg('Nomination enregistrée.'); charger();
+  }
+
+  async function revoquerPoste(n){
+    const motif = prompt('Motif de la révocation (obligatoire)');
+    if (!motif) return;
+    const { data, error } = await db.rpc('revoquer',
+      { p_nomination: n.nomination_id, p_motif: motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Nomination révoquée.'); charger();
+  }
+
+  async function ouvrirAcces(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('accorder_acces', {
+      p_profil: id, p_app: nouvelAcces.app,
+      p_motif: nouvelAcces.motif || null, p_expire: nouvelAcces.expire || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setNouvelAcces({app:'', motif:'', expire:''});
+    setMsg('Accès ouvert.'); charger();
+  }
+
+  async function fermerAcces(a){
+    const motif = prompt('Motif de la révocation (obligatoire)');
+    if (!motif) return;
+    const { data, error } = await db.rpc('revoquer_acces',
+      { p_profil: id, p_app: a.application, p_motif: motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Accès révoqué.'); charger();
+  }
+
+  const c = f.completude;
+
+  return html`
+    <div>
+      <button class="lien-discret" onClick=${fermer}>← Tous les membres</button>
+
+      <div class="row" style="margin-top:16px;gap:18px;align-items:flex-start">
+        <${Portrait} chemin=${i.photo_url} nom=${[i.prenom,i.nom].join(' ')} taille=${72} />
+        <div style="flex:1;min-width:220px">
+          <h1 style="font-size:29px">${[i.prenom,i.nom].filter(Boolean).join(' ') || i.matricule}</h1>
+          <div class="small muted" style="margin-top:4px">
+            <span class="mono">${i.matricule}</span> · ${i.email}
+            ${i.telephone ? ' · ' + i.telephone : ''}
+          </div>
+          <div class="row" style="margin-top:10px;gap:6px">
+            <span class="tag or">${f.points.total} points</span>
+            <span class=${'tag '+(i.statut==='actif'?'vert':i.statut==='suspendu'?'rouge':'')}>
+              ${i.statut.replace('_',' ')}</span>
+            ${i.protege && html`<span class="tag or">Dossier protégé</span>`}
+            ${i.sous_suivi && html`<span class="tag rouge">Sous suivi</span>`}
+            ${f.dossiers.ouverts > 0 && html`
+              <span class="tag rouge">${f.dossiers.ouverts} dossier(s) en cours</span>`}
+          </div>
+        </div>
+      </div>
+      ${local && html`<div class="alerte ok" style="margin-top:16px">${local}</div>`}
+
+      ${!c.complet && html`
+        <div class="alerte" style="margin-top:24px;border-left-color:var(--brun)">
+          Dossier d\u2019adhésion à ${c.pourcent} %. Manque : ${c.manques.join(', ')}.
+        </div>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Position dans la fédération</h3></div>
+        <div class="corps stack">
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:190px;margin:0"><label>Fonction</label>
+              <select value=${i.fonction} onChange=${e=>modifier('fonction', e.target.value)}>
+                ${ref.fonctions.map(x => html`<option value=${x.code}>${x.nom}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:190px;margin:0"><label>Territoire</label>
+              <select value=${i.territoire_id||''}
+                onChange=${e=>modifier('territoire_id', e.target.value||null)}>
+                <option value="">—</option>
+                ${ref.terr.map(t => html`<option value=${t.id}>${t.nom} (${t.echelle})</option>`)}
+              </select></div>
+          </div>
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:130px;margin:0"><label>Échelon</label>
+              <select value=${i.echelon}
+                onChange=${e=>modifier('echelon', Number(e.target.value))}>
+                ${[1,2,3,4,5,6,7].map(n => html`<option value=${n}>${n}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:150px;margin:0"><label>Statut</label>
+              <select value=${i.statut} onChange=${e=>modifier('statut', e.target.value)}>
+                ${['en_attente','actif','suspendu','archive'].map(x =>
+                  html`<option value=${x}>${x.replace('_',' ')}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:170px;margin:0"><label>Protection</label>
+              <select value=${i.protege ? 'oui':'non'}
+                onChange=${e=>modifier('protege', e.target.value==='oui')}>
+                <option value="non">Normale</option>
+                <option value="oui">Renforcée — consultations tracées</option>
+              </select></div>
+          </div>
+          <p class="small muted">
+            ${i.chemin || 'Sans rattachement'} · membre depuis ${jour(i.cree_le)}
+            ${i.date_adhesion ? ' · adhésion au ' + jour(i.date_adhesion) : ''}
+          </p>
+        </div>
+      </div>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Postes occupés</h3>
+          <span class="tag">${f.postes.length}</span></div>
+        ${f.postes.length === 0
+          ? html`<div class="corps small muted">Aucun mandat en cours.</div>`
+          : f.postes.map(x => html`
+            <div class="ligne">
+              <div>
+                <div class="row" style="gap:8px">
+                  <span class=${'tag '+(x.couleur==='neutre'?'':x.couleur)}>${x.nom}</span>
+                </div>
+                <div class="small muted" style="margin-top:4px">
+                  ${x.territoire || 'National'} · depuis le ${jour(x.debut)}
+                  ${x.fin ? ' · jusqu\u2019au ' + jour(x.fin) : ' · sans terme'}
+                </div>
+              </div>
+              <button class="btn sm light" onClick=${()=>revoquerPoste(x)}>Révoquer</button>
+            </div>`)}
+        <form onSubmit=${nommerA} class="corps"
+          style="border-top:1px solid var(--filet)">
+          <div class="row" style="gap:12px;align-items:flex-end">
+            <div class="field" style="flex:1;min-width:170px;margin:0"><label>Nommer à</label>
+              <select required value=${nouveauPoste.poste}
+                onChange=${e=>setNouveauPoste(o=>({...o,poste:e.target.value}))}>
+                <option value="">Choisir…</option>
+                ${ref.postes.map(x => html`<option value=${x.code}>${x.nom}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:150px;margin:0"><label>Périmètre</label>
+              <select value=${nouveauPoste.territoire}
+                onChange=${e=>setNouveauPoste(o=>({...o,territoire:e.target.value}))}>
+                <option value="">National</option>
+                ${ref.terr.map(t => html`<option value=${t.id}>${t.nom}</option>`)}
+              </select></div>
+            <div class="field" style="flex:0 0 150px;margin:0"><label>Fin</label>
+              <input type="date" value=${nouveauPoste.fin}
+                onInput=${e=>setNouveauPoste(o=>({...o,fin:e.target.value}))} /></div>
+            <button class="btn sm">Nommer</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Accès applicatifs nominatifs</h3></div>
+        ${f.acces.length === 0
+          ? html`<div class="corps small muted">
+              Aucun accès nominatif. Le membre dispose de ce que sa fonction ouvre.</div>`
+          : f.acces.map(a => html`
+            <div class="ligne">
+              <div>
+                <div>${a.nom}</div>
+                <div class="small muted">
+                  ${a.motif || 'sans motif'}
+                  ${a.expire_le ? ' · expire le ' + jour(a.expire_le) : ''}
+                  ${a.derniere_utilisation
+                    ? ' · dernier usage ' + jour(a.derniere_utilisation)
+                    : ' · jamais utilisé'}
+                </div>
+              </div>
+              <div class="row">
+                <span class=${'tag '+(a.statut==='accorde'?'vert':'rouge')}>
+                  ${a.statut === 'accorde' ? 'Ouvert' : 'Révoqué'}</span>
+                ${a.statut === 'accorde' && html`
+                  <button class="btn sm light" onClick=${()=>fermerAcces(a)}>Révoquer</button>`}
+              </div>
+            </div>`)}
+        <form onSubmit=${ouvrirAcces} class="corps" style="border-top:1px solid var(--filet)">
+          <div class="row" style="gap:12px;align-items:flex-end">
+            <div class="field" style="flex:1;min-width:170px;margin:0"><label>Ouvrir</label>
+              <select required value=${nouvelAcces.app}
+                onChange=${e=>setNouvelAcces(o=>({...o,app:e.target.value}))}>
+                <option value="">Choisir…</option>
+                ${ref.apps.map(x => html`<option value=${x.code}>${x.nom}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:150px;margin:0"><label>Motif</label>
+              <input value=${nouvelAcces.motif}
+                onInput=${e=>setNouvelAcces(o=>({...o,motif:e.target.value}))} /></div>
+            <div class="field" style="flex:0 0 150px;margin:0"><label>Expire le</label>
+              <input type="date" value=${nouvelAcces.expire}
+                onInput=${e=>setNouvelAcces(o=>({...o,expire:e.target.value}))} /></div>
+            <button class="btn sm">Ouvrir</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="row" style="margin-top:24px;gap:24px;align-items:flex-start">
+        <div class="panneau" style="flex:1;min-width:260px">
+          <div class="tete"><h3 style="font-size:17px">Formations</h3></div>
+          ${f.formations.length === 0
+            ? html`<div class="corps small muted">Aucune certification.</div>`
+            : f.formations.map(x => html`
+              <div class="ligne"><span>${x.nom}</span>
+                <span class="small muted">${jour(x.obtenue_le)}</span></div>`)}
+        </div>
+        <div class="panneau" style="flex:1;min-width:260px">
+          <div class="tete"><h3 style="font-size:17px">Groupes de travail</h3></div>
+          ${f.groupes.length === 0
+            ? html`<div class="corps small muted">Aucun groupe.</div>`
+            : f.groupes.map(x => html`
+              <div class="ligne"><span>${x.nom}</span>
+                ${x.role === 'responsable' && html`<span class="tag or">Responsable</span>`}</div>`)}
+        </div>
+      </div>
+    </div>`;
+}
+
+/* --- Les structures : où le réseau tient, où il manque du monde ------- */
+function Structures({ setMsg, ouvrir }){
+  const [echelle, setEchelle] = useState('departement');
+  const [liste, setListe] = useState(null);
+  const [q, setQ] = useState('');
+  const [vacants, setVacants] = useState(false);
+
+  useEffect(() => {
+    setListe(null);
+    db.rpc('etat_reseau', { p_echelle: echelle }).then(({data}) => setListe(data||[]));
+  }, [echelle]);
+
+  if (!liste) return html`<div class="vide">Chargement…</div>`;
+
+  const filtre = liste
+    .filter(x => !vacants || x.mandats_pourvus < 3)
+    .filter(x => (x.territoire + ' ' + (x.parent||'')).toLowerCase().includes(q.toLowerCase()));
+
+  const sansPersonne = liste.filter(x => x.membres === 0).length;
+  const sansBureau = liste.filter(x => x.mandats_pourvus === 0).length;
+
+  return html`
+    <div>
+      <div class="chiffres" style="margin:0 0 24px">
+        <div><div class="n" style="font-size:30px">${liste.length}</div>
+          <div class="l">Structures</div></div>
+        <div><div class="n" style="font-size:30px">
+          ${liste.reduce((n,x)=>n+x.actifs,0)}</div>
+          <div class="l">Membres actifs</div></div>
+        <div><div class="n" style="font-size:30px">${sansPersonne}</div>
+          <div class="l">Sans aucun membre</div></div>
+        <div><div class="n" style="font-size:30px">${sansBureau}</div>
+          <div class="l">Sans bureau constitué</div></div>
+      </div>
+
+      <div class="row" style="margin-bottom:20px;gap:12px">
+        <div class="field" style="width:auto;margin:0">
+          <select value=${echelle} onChange=${e=>setEchelle(e.target.value)}>
+            <option value="region">Régions</option>
+            <option value="departement">Départements</option>
+            <option value="local">Antennes locales</option>
+          </select>
+        </div>
+        <div class="field" style="flex:1;min-width:200px;margin:0">
+          <input placeholder="Rechercher…" value=${q} onInput=${e=>setQ(e.target.value)} />
+        </div>
+        <label class="row" style="text-transform:none;letter-spacing:0;font-size:13.5px;
+            color:var(--nuit);margin:0;cursor:pointer;width:auto">
+          <input type="checkbox" style="width:auto" checked=${vacants}
+            onChange=${e=>setVacants(e.target.checked)} />
+          <span>Bureaux incomplets seulement</span>
+        </label>
+      </div>
+
+      <div class="panneau" style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>Structure</th><th>Membres</th><th>Encadrants</th>
+            <th>Président</th><th>Trésorier</th><th>Secrétaire</th>
+            <th>Groupes</th><th>Heures ce mois</th>
+          </tr></thead>
+          <tbody>
+            ${filtre.map(x => html`
+              <tr>
+                <td>
+                  <div>${x.territoire}</div>
+                  ${x.parent && html`<div class="small muted">${x.parent}</div>`}
+                </td>
+                <td class="mono">${x.actifs}${x.membres > x.actifs
+                  ? html`<span class="small muted"> /${x.membres}</span>` : ''}</td>
+                <td class="mono">${x.encadrants}</td>
+                <td class="small">${x.president
+                  || html`<span class="tag rouge">Vacant</span>`}</td>
+                <td class="small">${x.tresorier
+                  || html`<span class="tag">Vacant</span>`}</td>
+                <td class="small">${x.secretaire
+                  || html`<span class="tag">Vacant</span>`}</td>
+                <td class="mono">${x.groupes}</td>
+                <td class="mono">${Number(x.engagement_mois||0)} h</td>
+              </tr>`)}
+          </tbody>
+        </table>
+        ${filtre.length === 0 && html`<div class="vide">Aucun résultat.</div>`}
+      </div>
+      <p class="small muted" style="margin-top:12px;max-width:62ch">
+        Les mandats de bureau se confient depuis la fiche d\u2019un membre, onglet
+        Membres : postes Président, Trésorier et Secrétaire de structure, avec le
+        territoire comme périmètre.
+      </p>
+    </div>`;
+}
+
+/* --- Postes et droits, réunis ----------------------------------------- */
+function PostesEtDroits({ setMsg }){
+  const [vue, setVue] = useState('postes');
+  const [postes, setPostes] = useState([]);
+  const [droits, setDroits] = useState([]);
+  const [liens, setLiens] = useState([]);
+
+  const charger = useCallback(async () => {
+    const [a,b,c] = await Promise.all([
+      db.from('postes').select('*').order('nom'),
+      db.from('droits').select('*').order('ordre'),
+      db.from('poste_droits').select('*')
+    ]);
+    setPostes(a.data||[]); setDroits(b.data||[]); setLiens(c.data||[]);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  return html`
+    <div>
+      <div class="row" style="margin-bottom:20px;gap:10px">
+        ${[['postes','Postes'],['matrice','Matrice des accès']].map(([k,t]) => html`
+          <button class=${'btn sm '+(vue===k?'':'light')} onClick=${()=>setVue(k)}>${t}</button>`)}
+      </div>
+      ${vue === 'postes'  && html`<${Postes} postes=${postes} droits=${droits}
         liens=${liens} recharger=${charger} setMsg=${setMsg} />`}
+      ${vue === 'matrice' && html`<${Matrice} setMsg=${setMsg} />`}
+    </div>`;
+}
 
-      ${onglet === 'matrice' && html`<${Matrice} setMsg=${setMsg} />`}
+/* --- Identité des applications ---------------------------------------- */
+function IdentiteApplications({ setMsg }){
+  const [apps, setApps] = useState([]);
+  const [ouvert, setOuvert] = useState(null);
+  const [f, setF] = useState({});
+  const [fichier, setFichier] = useState(null);
 
-      ${onglet === 'acces' && html`<${PilotageAcces} acces=${acces} apps=${apps}
-        gens=${gens} recharger=${charger} setMsg=${setMsg} />`}
+  const charger = useCallback(() =>
+    db.from('applications').select('*').eq('actif',true).order('ordre')
+      .then(({data}) => setApps(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const TEINTES = { bleu:'Bleu profond', bordeaux:'Rouge bordeaux', nuit:'Bleu nuit',
+                    brun:'Brun chaud', action:'Bleu vif', framboise:'Rose framboise' };
+  const HEX = { bleu:'#00325B', bordeaux:'#A5053C', nuit:'#1E2A38',
+                brun:'#6B4C3B', action:'#0045D1', framboise:'#E80855' };
+
+  function editer(a){
+    setOuvert(a.code);
+    setF({nom:a.nom, nom_court:a.nom_court||'', description:a.description||'',
+          accroche:a.accroche||'', couleur:a.couleur||'bleu', logo:a.logo||''});
+    setFichier(null);
+  }
+
+  async function enregistrer(e, code){
+    e.preventDefault();
+    let logo = f.logo;
+    try { if (fichier) logo = await deposerImage(fichier, 'apps'); }
+    catch (err){ return setMsg('Erreur : ' + err.message); }
+    const { data, error } = await db.rpc('regler_application', {
+      p_code: code, p_nom: f.nom, p_nom_court: f.nom_court,
+      p_description: f.description, p_accroche: f.accroche,
+      p_couleur: f.couleur, p_logo: logo
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setOuvert(null); setMsg('Application mise à jour.'); charger();
+  }
+
+  return html`
+    <div>
+      <p class="small muted" style="margin-bottom:20px;max-width:62ch">
+        Chaque outil porte le nom que la fédération lui donne. Un nom court pour
+        la tuile, une accroche d\u2019une ligne, une couleur de la charte et, si
+        vous le souhaitez, un pictogramme.
+      </p>
+      ${apps.map(a => html`
+        <div class="panneau" style="margin-bottom:16px">
+          <div class="tete">
+            <div class="row" style="gap:12px">
+              ${a.logo
+                ? html`<img src=${urlPublique(a.logo)} alt=""
+                    style="width:28px;height:28px;object-fit:contain" />`
+                : html`<span style=${'width:14px;height:14px;border-radius:2px;background:'
+                    +(HEX[a.couleur]||HEX.bleu)}></span>`}
+              <div>
+                <h3 style="font-size:17px">${a.nom_court || a.nom}</h3>
+                <div class="small muted">${a.accroche || a.description || ''}</div>
+              </div>
+            </div>
+            <button class="btn sm light" onClick=${()=>ouvert===a.code?setOuvert(null):editer(a)}>
+              ${ouvert===a.code ? 'Annuler' : 'Personnaliser'}</button>
+          </div>
+          ${ouvert === a.code && html`
+            <form onSubmit=${e=>enregistrer(e, a.code)} class="corps stack">
+              <div class="row" style="gap:16px;align-items:flex-start">
+                <div class="field" style="flex:2;min-width:200px;margin:0"><label>Nom complet</label>
+                  <input value=${f.nom} onInput=${e=>setF(o=>({...o,nom:e.target.value}))} /></div>
+                <div class="field" style="flex:1;min-width:150px;margin:0"><label>Nom court</label>
+                  <input value=${f.nom_court} placeholder="Sur la tuile"
+                    onInput=${e=>setF(o=>({...o,nom_court:e.target.value}))} /></div>
+              </div>
+              <div class="field"><label>Accroche</label>
+                <input value=${f.accroche} maxlength="90"
+                  onInput=${e=>setF(o=>({...o,accroche:e.target.value}))} /></div>
+              <div class="field"><label>Description</label>
+                <textarea value=${f.description}
+                  onInput=${e=>setF(o=>({...o,description:e.target.value}))} /></div>
+              <div class="field"><label>Couleur</label>
+                <select value=${f.couleur} onChange=${e=>setF(o=>({...o,couleur:e.target.value}))}>
+                  ${Object.entries(TEINTES).map(([k,v]) => html`<option value=${k}>${v}</option>`)}
+                </select></div>
+              <div class="field"><label>Pictogramme</label>
+                ${f.logo && html`<img src=${urlPublique(f.logo)} alt=""
+                  style="width:44px;height:44px;object-fit:contain;display:block;margin-bottom:8px" />`}
+                <input type="file" accept="image/png,image/svg+xml"
+                  onChange=${e=>setFichier(e.target.files[0]||null)} />
+                <p class="small muted" style="margin:6px 0 0">
+                  PNG transparent ou SVG, carré. Le logo de la fédération ne se
+                  décline pas : n\u2019utilisez pas ses éléments ici.</p>
+              </div>
+              <div><button class="btn">Enregistrer</button></div>
+            </form>`}
+        </div>`)}
     </div>`;
 }
 
@@ -5448,10 +5980,13 @@ function DossierAdhesion(){
       ${msg && html`<div class="corps"><div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}>
         ${msg}</div></div>`}
       ${!ouvert && html`
-        <div class="corps small muted">
-          ${rempli
-            ? 'Dossier complété' + (a.maj_le ? ' — mis à jour le ' + jour(a.maj_le) : '') + '.'
-            : 'Votre dossier est incomplet. Le compléter aide la fédération à vous proposer des missions qui vous correspondent.'}
+        <div class="corps">
+          <${Completude} id=${null} />
+          <p class="small muted" style="margin:12px 0 0">
+            ${rempli
+              ? 'Dossier complété' + (a.maj_le ? ' — mis à jour le ' + jour(a.maj_le) : '') + '.'
+              : 'Un dossier complet est nécessaire pour que votre adhésion soit validée.'}
+          </p>
         </div>`}
       ${ouvert && html`
         <form onSubmit=${enregistrer} class="corps stack">
@@ -5509,6 +6044,27 @@ function DossierAdhesion(){
    Replié par défaut : on ne consulte pas des données personnelles par
    inadvertance, on les ouvre parce qu'on en a besoin.
    --------------------------------------------------------------------- */
+/* --- Complétude d'un dossier ------------------------------------------ */
+function Completude({ id }){
+  const [c, setC] = useState(null);
+  useEffect(() => {
+    db.rpc('completude_dossier', { p_profil: id || null }).then(({data}) => setC(data));
+  }, [id]);
+  if (!c) return null;
+  return html`
+    <div style="margin-top:8px">
+      <div class="row" style="gap:8px">
+        <div class="jauge" style="flex:1;max-width:180px;margin:0;height:5px">
+          <i style=${'width:'+c.pourcent+'%;background:'+
+            (c.complet?'var(--valide)':'var(--brun)')}></i></div>
+        <span class=${'small '+(c.complet?'':'muted')}
+          style=${c.complet?'color:var(--valide)':''}>
+          ${c.complet ? 'Dossier complet' : c.pourcent + ' % — manque ' + c.manques.join(', ')}
+        </span>
+      </div>
+    </div>`;
+}
+
 function ApercuAdhesion({ id }){
   const [d, setD] = useState(null);
   const [ouvert, setOuvert] = useState(false);
@@ -6017,12 +6573,19 @@ function Validation(){
   }, []);
   useEffect(() => { charger(); }, [charger]);
 
-  async function validerMembre(id, ok){
-    const { error } = await db.from('profils')
-      .update({ statut: ok ? 'actif' : 'suspendu',
-                date_adhesion: ok ? new Date().toISOString().slice(0,10) : null })
-      .eq('id', id);
-    setMsg(error ? error.message : (ok ? 'Compte activé.' : 'Compte suspendu.'));
+  async function validerMembre(id, ok, forcer){
+    const { data, error } = await db.rpc('valider_inscription',
+      { p_profil: id, p_accepter: ok, p_forcer: !!forcer });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok){
+      if (data.incomplet){
+        if (confirm(data.message + '\n\nActiver quand même ? Le forçage sera inscrit au journal.'))
+          return validerMembre(id, true, true);
+        return setMsg(data.message);
+      }
+      return setMsg('Erreur : ' + data.message);
+    }
+    setMsg(ok ? 'Compte activé.' : 'Compte écarté.');
     charger();
   }
 
@@ -6207,6 +6770,7 @@ function Validation(){
                 <div>${nomComplet(m)} <span class="mono muted">${m.matricule}</span></div>
                 <div class="small muted">${m.email} · ${m.territoire_nom || 'sans territoire'}
                   · inscrit le ${jour(m.cree_le)}</div>
+                <${Completude} id=${m.id} />
                 <${ApercuAdhesion} id=${m.id} />
               </div>
               <div class="row">
