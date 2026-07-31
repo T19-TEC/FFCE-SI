@@ -735,6 +735,7 @@ function Flanc({ p, apps, page }){
         ${item('demandes', 'Mes demandes')}
         ${dispo('formations') && item('formations','Formations')}
         ${dispo('groupes') && item('groupes','Groupes de travail')}
+        ${dispo('messagerie') && item('messagerie','Messagerie')}
         ${dispo('annuaire') && html`
           <div class="groupe">Encadrement</div>
           ${item('annuaire','Annuaire fédéral')}`}
@@ -1548,6 +1549,13 @@ function Groupe({ p, id }){
       </div>
       <p class="muted" style="max-width:60ch;margin-top:16px">${g.objet||''}</p>
 
+      <div style="margin-top:24px">
+        <button class="btn light" onClick=${async ()=>{
+          const { data } = await db.rpc('conversation_groupe', { p_groupe: id });
+          if (data?.ok) aller('/espace/messagerie'); else setMsg(data?.message||'');
+        }}>Ouvrir la discussion du groupe</button>
+      </div>
+
       <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
         ${[['taches','Tâches'],['documents','Documents'],['membres','Membres']].map(([k,t]) => html`
           <button class="btn light" style=${'border:0;border-bottom:2px solid '+
@@ -1854,6 +1862,256 @@ function GtMembres({ p, groupe, membres, gens, responsable, recharger }){
       <div style="margin-top:32px">
         <button class="btn light" onClick=${partir}>Quitter ce groupe</button>
       </div>
+    </div>`;
+}
+
+
+/* =====================================================================
+   5 quater. MESSAGERIE
+   Conversations privées et de groupe. La supervision hiérarchique est
+   annoncée à l'écran, toujours — c'est une obligation, pas une option.
+   ===================================================================== */
+
+function Messagerie({ p, ouvrir }){
+  const [convs, setConvs] = useState(null);
+  const [active, setActive] = useState(ouvrir || null);
+  const [nouvelle, setNouvelle] = useState(false);
+  const [candidats, setCandidats] = useState([]);
+  const [mesGroupes, setMesGroupes] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const { data, error } = await db.rpc('mes_conversations');
+    if (error) setMsg(error.message);
+    setConvs(data || []);
+  }, []);
+
+  useEffect(() => { charger(); }, [charger]);
+
+  useEffect(() => { (async () => {
+    const [{ data: ps }, { data: ms }] = await Promise.all([
+      db.from('v_annuaire').select('id,prenom,nom,matricule,fonction_nom,territoire_nom')
+        .eq('statut','actif').order('nom'),
+      db.from('gt_membres').select('groupe_id').eq('profil_id', p.id).eq('statut','actif')
+    ]);
+    setCandidats((ps||[]).filter(x => x.id !== p.id));
+    if (ms && ms.length){
+      const { data: gs } = await db.from('v_groupes').select('id,nom')
+        .in('id', ms.map(m => m.groupe_id));
+      setMesGroupes(gs || []);
+    }
+  })(); }, [p.id]);
+
+  async function ouvrirPrivee(idAutre){
+    setMsg('');
+    const { data, error } = await db.rpc('conversation_privee', { p_autre: idAutre });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setNouvelle(false); setActive(data.id); charger();
+  }
+
+  async function ouvrirGroupe(idG){
+    setMsg('');
+    const { data, error } = await db.rpc('conversation_groupe', { p_groupe: idG });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setNouvelle(false); setActive(data.id); charger();
+  }
+
+  if (!convs) return html`<div class="vide">Chargement…</div>`;
+
+  if (active) return html`<${Conversation} p=${p} id=${active}
+    fermer=${() => { setActive(null); charger(); }} />`;
+
+  const nonLus = convs.reduce((n,c) => n + (c.non_lus||0), 0);
+
+  return html`
+    <div>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Messagerie</div>
+          <h1 style="margin:6px 0 0">Échanges</h1>
+        </div>
+        <button class="btn" onClick=${()=>setNouvelle(n=>!n)}>
+          ${nouvelle ? 'Annuler' : 'Nouvelle conversation'}</button>
+      </div>
+
+      <div class="alerte" style="margin-top:24px">
+        Les échanges de la plateforme sont supervisés. La Direction générale y
+        accède, ainsi que votre encadrement à partir du niveau référent
+        départemental. Un superviseur peut lire ; il ne peut pas écrire à votre
+        place. Pour un échange strictement personnel, utilisez un autre moyen.
+      </div>
+
+      ${msg && html`<div class="alerte err" style="margin-top:16px">${msg}</div>`}
+
+      ${nouvelle && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Écrire à</h3></div>
+          <div class="corps stack">
+            <div class="field">
+              <label>Un membre</label>
+              <select onChange=${e => e.target.value && ouvrirPrivee(e.target.value)}>
+                <option value="">Choisir…</option>
+                ${candidats.map(c => html`<option value=${c.id}>
+                  ${nomComplet(c)} — ${c.fonction_nom}${c.territoire_nom ? ' · '+c.territoire_nom : ''}
+                </option>`)}
+              </select>
+            </div>
+            ${mesGroupes.length > 0 && html`
+              <div class="field">
+                <label>Un de mes groupes</label>
+                <select onChange=${e => e.target.value && ouvrirGroupe(e.target.value)}>
+                  <option value="">Choisir…</option>
+                  ${mesGroupes.map(g => html`<option value=${g.id}>${g.nom}</option>`)}
+                </select>
+              </div>`}
+          </div>
+        </div>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete">
+          <h3 style="font-size:17px">Conversations</h3>
+          ${nonLus > 0 && html`<span class="tag bleu">${nonLus} non lu${nonLus>1?'s':''}</span>`}
+        </div>
+        ${convs.length === 0
+          ? html`<div class="vide">Aucune conversation. Commencez par en ouvrir une.</div>`
+          : convs.map(c => html`
+            <div class="ligne" style="cursor:pointer" onClick=${()=>setActive(c.id)}>
+              <div style="flex:1;min-width:200px">
+                <div class="row" style="gap:8px">
+                  <span style=${c.non_lus>0 ? 'font-weight:600' : ''}>${c.titre||'Conversation'}</span>
+                  ${c.type === 'groupe' && html`<span class="tag">Groupe</span>`}
+                  ${c.superviseur && html`<span class="tag or">Supervision</span>`}
+                </div>
+                <div class="small muted" style="margin-top:4px;max-width:52ch;
+                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                  ${c.dernier_message || 'Pas encore de message'}
+                </div>
+              </div>
+              <div class="row">
+                ${c.non_lus > 0 && html`<span class="tag bleu">${c.non_lus}</span>`}
+                <span class="small muted">${jour(c.derniere_activite)}</span>
+              </div>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+function Conversation({ p, id, fermer }){
+  const [entete, setEntete] = useState(null);
+  const [gens, setGens] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [texte, setTexte] = useState('');
+  const [msg, setMsg] = useState('');
+  const [envoi, setEnvoi] = useState(false);
+
+  const charger = useCallback(async () => {
+    const [{ data: cs }, { data: ps }, { data: ms }] = await Promise.all([
+      db.rpc('mes_conversations'),
+      db.rpc('participants_conversation', { p_conv: id }),
+      db.from('messages').select('*').eq('conversation_id', id)
+        .order('cree_le', { ascending: true })
+    ]);
+    setEntete((cs||[]).find(c => c.id === id) || null);
+    setGens(ps || []);
+    setMessages(ms || []);
+    await db.rpc('marquer_lu', { p_conv: id });
+  }, [id]);
+
+  useEffect(() => { charger(); }, [charger]);
+
+  // Rafraîchissement discret, toutes les quinze secondes.
+  useEffect(() => {
+    const t = setInterval(charger, 15000);
+    return () => clearInterval(t);
+  }, [charger]);
+
+  async function envoyer(e){
+    e.preventDefault();
+    if (!texte.trim()) return;
+    setEnvoi(true); setMsg('');
+    const { data, error } = await db.rpc('envoyer_message',
+      { p_conv: id, p_contenu: texte });
+    setEnvoi(false);
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setTexte(''); charger();
+  }
+
+  async function retirer(m){
+    if (!confirm('Retirer ce message ?')) return;
+    await db.from('messages').update({ retire: true, retire_par: p.id }).eq('id', m.id);
+    charger();
+  }
+
+  const nom = i => {
+    const g = gens.find(x => x.profil_id === i);
+    return g ? [g.prenom, g.nom].filter(Boolean).join(' ') || g.matricule : 'Membre';
+  };
+  const superviseur = entete?.superviseur;
+
+  return html`
+    <div>
+      <a class="small" href="#" onClick=${e=>{e.preventDefault();fermer()}}>← Toutes les conversations</a>
+      <div class="spread" style="margin-top:12px">
+        <h1 style="font-size:28px">${entete?.titre || 'Conversation'}</h1>
+        ${entete?.type === 'groupe' && html`<span class="tag">Groupe de travail</span>`}
+      </div>
+      <div class="small muted" style="margin-top:6px">
+        ${gens.map(g => [g.prenom,g.nom].filter(Boolean).join(' ')).join(' · ')}
+      </div>
+
+      ${superviseur && html`
+        <div class="alerte" style="margin-top:24px;border-left-color:var(--laiton)">
+          Vous consultez cette conversation au titre de la supervision. Vous n\u2019en
+          êtes pas participant et ne pouvez pas y écrire.
+        </div>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="corps" style="max-height:52vh;overflow-y:auto">
+          ${messages.length === 0
+            ? html`<div class="vide">Aucun message. À vous d\u2019ouvrir l\u2019échange.</div>`
+            : messages.map(m => {
+              const moi = m.auteur_id === p.id;
+              return html`
+                <div style=${'margin-bottom:20px;'+(moi?'text-align:right':'')}>
+                  <div class="small muted" style="margin-bottom:4px">
+                    ${moi ? 'Vous' : nom(m.auteur_id)} ·
+                    ${new Date(m.cree_le).toLocaleString('fr-FR',
+                      {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+                  </div>
+                  <div style=${'display:inline-block;text-align:left;max-width:80%;'+
+                    'padding:10px 14px;border:1px solid var(--filet);border-radius:2px;'+
+                    'white-space:pre-wrap;'+
+                    (moi ? 'background:var(--bleu-clair);border-color:#C9D8EC' : 'background:#fff')}>
+                    ${m.retire
+                      ? html`<span class="muted"><em>Message retiré</em></span>`
+                      : m.contenu}
+                  </div>
+                  ${!m.retire && (moi || p.echelon >= 6 || p.niveau >= 90) && html`
+                    <div><button class="btn sm light" style="margin-top:6px;border:0;
+                      background:transparent;padding:2px 0;font-size:12px"
+                      onClick=${()=>retirer(m)}>Retirer</button></div>`}
+                </div>`;
+            })}
+        </div>
+
+        ${!superviseur && html`
+          <form onSubmit=${envoyer} style="border-top:1px solid var(--filet);padding:16px 20px">
+            <div class="field" style="margin:0">
+              <textarea value=${texte} onInput=${e=>setTexte(e.target.value)}
+                placeholder="Votre message" style="min-height:80px"
+                onKeyDown=${e => { if (e.key==='Enter' && (e.metaKey||e.ctrlKey)) envoyer(e); }} />
+            </div>
+            <div class="spread" style="margin-top:12px">
+              <span class="small muted">Ctrl + Entrée pour envoyer</span>
+              <button class="btn" disabled=${envoi || !texte.trim()}>
+                ${envoi ? 'Envoi…' : 'Envoyer'}</button>
+            </div>
+          </form>`}
+      </div>
+      ${msg && html`<div class="alerte err" style="margin-top:16px">${msg}</div>`}
     </div>`;
 }
 
@@ -2186,7 +2444,7 @@ function Espace({ session, sous }){
     case 'vitrine':    vue = admin ? html`<${VitrineAdmin} />` : refus; break;
     case 'formations': vue = acces('formations') ? html`<${Formations} p=${p} />` : refus; break;
     case 'groupes':    vue = acces('groupes') ? html`<${Groupes} p=${p} />` : refus; break;
-    case 'messagerie': vue = acces('messagerie') ? bientot('Messagerie interne') : refus; break;
+    case 'messagerie': vue = acces('messagerie') ? html`<${Messagerie} p=${p} />` : refus; break;
     case 'notes_frais':vue = acces('notes_frais')? bientot('Notes de frais') : refus; break;
     case 'tresorerie': vue = acces('tresorerie') ? bientot('Direction financière') : refus; break;
     default:           vue = html`<div class="vide">Page inconnue.</div>`;
