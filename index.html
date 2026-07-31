@@ -174,7 +174,10 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
 /* Zone de protection du logo : la largeur du E de FFCE tout autour. */
 .logo{display:flex;align-items:center;gap:12px;color:var(--bleu);padding:8px}
 .logo:hover{text-decoration:none}
-.logo img{height:44px;width:auto;display:block}
+.logo img{height:52px;width:auto;display:block}
+.flanc .logo img{height:40px}
+.pied .logo img{height:48px}
+@media(max-width:600px){.logo img{height:42px}}
 .logo .sigle{font-family:var(--titre);font-size:27px;font-weight:900;
   letter-spacing:.01em;color:#000;line-height:1}
 .logo .baseline{font-size:10px;letter-spacing:.06em;text-transform:uppercase;
@@ -362,12 +365,17 @@ function Maillage(){
    absent, repli sur le sigle composé en Raleway Black — jamais sur une
    imitation du symbole.
    --------------------------------------------------------------------- */
-function Logo({ href = '#/', baseline = true }){
+function Logo({ href = '#/', baseline = true, clair = false }){
   const [image, setImage] = useState(true);
+  // Le logo porte déjà le sigle et la dénomination : rien ne doit
+  // l'accompagner. Le texte n'apparaît que si le fichier est absent.
+  if (image) return html`
+    <a class="logo" href=${href}>
+      <img src=${clair ? 'logo-blanc.png' : 'logo.png'} alt="FFCE — Fédération française pour la citoyenneté et l\u2019égalité des chances"
+        onError=${() => setImage(false)} />
+    </a>`;
   return html`
     <a class="logo" href=${href}>
-      ${image && html`<img src="logo.png" alt="FFCE"
-        onError=${() => setImage(false)} />`}
       <span>
         <span class="sigle">FFCE</span>
         ${baseline && html`<span class="baseline">
@@ -801,7 +809,10 @@ function CarteFederale({ p, chemin }){
             ${x.nom}${x.territoire_nom ? ' · '+x.territoire_nom : ''}</span>`)}
         </div>`}
       <div class="ech">
-        <span class="tag or">Échelon ${e} · ${p.echelon_nom}</span>
+        <span class="row" style="gap:6px">
+          <span class="tag or">Échelon ${e} · ${p.echelon_nom}</span>
+          <${Info} texte="La fonction donne le pouvoir, l'échelon reconnaît le parcours. Les deux sont indépendants : un bénévole de longue date peut être échelon 5 sans encadrer personne." />
+        </span>
         <span class="mono muted">${p.statut === 'actif' ? 'Actif' : p.statut}</span>
       </div>
       <div class="jauge"><i style=${`width:${Math.round(e/7*100)}%`}></i></div>
@@ -822,6 +833,7 @@ function Flanc({ p, apps, page }){
         ${item('', 'Tableau de bord')}
         ${item('compte', 'Mon compte')}
         ${item('demandes', 'Mes demandes')}
+        ${item('referentiel', 'Comprendre mes droits')}
         ${dispo('formations') && item('formations','Formations')}
         ${dispo('groupes') && item('groupes','Groupes de travail')}
         ${dispo('messagerie') && item('messagerie','Messagerie')}
@@ -910,8 +922,11 @@ function TableauDeBord({ p, apps, chemin, demandes }){
 
       <div>
         <div class="spread" style="margin-bottom:16px">
-          <h2 style="font-size:22px">Mes applications</h2>
-          <a class="small" href="#/espace/demandes">Demander un accès</a>
+          <div class="row" style="gap:8px">
+            <h2 style="font-size:22px">Mes applications</h2>
+            <${Info} texte="Ce que vous voyez ici dépend de votre fonction. Une application grisée peut être demandée au guichet ; une application absente n'est pas ouverte à votre fonction. La page « Comprendre mes droits » détaille tout." />
+          </div>
+          <a class="small" href="#/espace/referentiel">Comprendre mes droits</a>
         </div>
         <div class="tuiles">
           ${apps.filter(a => a.actif).map(a => {
@@ -921,7 +936,13 @@ function TableauDeBord({ p, apps, chemin, demandes }){
               <div class="tuile bloquee">
                 <h3>${a.nom}</h3>
                 <p>${a.description}</p>
-                <div style="margin-top:10px"><span class="tag">Accès non ouvert</span></div>
+                <div style="margin-top:12px">
+                  ${a.demande_en_cours
+                    ? html`<span class="tag bleu">Demande en cours</span>`
+                    : a.etat === 'sur_demande'
+                      ? html`<a class="btn sm light" href="#/espace/demandes">Demander l\u2019accès</a>`
+                      : html`<span class="tag">Non ouverte à votre fonction</span>`}
+                </div>
               </div>`;
             return html`
               <a class="tuile" href=${lien} target=${cible} rel="noopener"
@@ -1009,6 +1030,43 @@ function MonCompte({ p, recharger }){
       </div>
 
       <${MonRib} />
+
+      <${QuiMaConsulte} />
+    </div>`;
+}
+
+/* --- Qui a consulté mon dossier ---------------------------------------
+   Droit RGPD, exercé en un clic plutôt que par courrier.
+   --------------------------------------------------------------------- */
+function QuiMaConsulte(){
+  const [v, setV] = useState(null);
+  const [ouvert, setOuvert] = useState(false);
+  useEffect(() => { db.rpc('qui_ma_consulte').then(({data}) => setV(data||[])); }, []);
+  if (!v) return null;
+  return html`
+    <div class="panneau" style="margin-top:24px">
+      <div class="tete">
+        <div class="row" style="gap:8px">
+          <h3 style="font-size:17px">Consultations de mon dossier</h3>
+          <${Info} texte="Chaque fois que quelqu'un affiche vos coordonnées, la consultation est enregistrée. Vous avez le droit de savoir qui, et quand." />
+        </div>
+        <div class="row">
+          <span class="tag">${v.length}</span>
+          ${v.length > 0 && html`<button class="btn sm light"
+            onClick=${()=>setOuvert(o=>!o)}>${ouvert?'Masquer':'Voir'}</button>`}
+        </div>
+      </div>
+      ${v.length === 0
+        ? html`<div class="corps small muted">Personne n\u2019a consulté vos coordonnées.</div>`
+        : ouvert && html`<div>
+            ${v.map(x => html`
+              <div class="ligne">
+                <div><div>${x.observateur}</div>
+                  <div class="small muted">${x.fonction}${x.contexte ? ' · '+x.contexte : ''}</div></div>
+                <span class="small muted">${new Date(x.cree_le).toLocaleString('fr-FR',
+                  {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</span>
+              </div>`)}
+          </div>`}
     </div>`;
 }
 
@@ -1102,12 +1160,14 @@ function MesDemandes({ p, apps, demandes, recharger }){
 function Annuaire({ p }){
   const [membres, setMembres] = useState(null);
   const [q, setQ] = useState('');
+  const [fiche, setFiche] = useState(null);
   useEffect(() => {
     db.from('v_annuaire').select('*').neq('statut','archive')
       .order('niveau', {ascending:false}).order('nom')
       .then(({data}) => setMembres(data || []));
   }, []);
 
+  if (fiche) return html`<${FicheMembre} id=${fiche} fermer=${()=>setFiche(null)} />`;
   if (!membres) return html`<div class="vide">Chargement…</div>`;
   const filtre = membres.filter(m => {
     const s = (nomComplet(m)+' '+(m.territoire_nom||'')+' '+m.fonction_nom).toLowerCase();
@@ -1118,9 +1178,11 @@ function Annuaire({ p }){
     <div>
       <div class="eyebrow">Annuaire fédéral</div>
       <h1 style="margin:6px 0 8px">Mon périmètre</h1>
-      <p class="muted" style="max-width:56ch">
+      <p class="muted" style="max-width:58ch">
         Vous voyez les membres rattachés à votre territoire et à tous ceux qui
         en dépendent. Cette limite est appliquée par la base de données.
+        Ouvrez une fiche pour en savoir plus : les coordonnées ne s\u2019affichent
+        que sur demande, et cette demande est enregistrée.
       </p>
 
       <div class="field" style="max-width:360px;margin:24px 0">
@@ -1139,9 +1201,9 @@ function Annuaire({ p }){
             </tr></thead>
             <tbody>
               ${filtre.map(m => html`
-                <tr>
+                <tr style="cursor:pointer" onClick=${()=>setFiche(m.id)}>
                   <td>
-                    <div>${nomComplet(m)}</div>
+                    <div><a href="#" onClick=${e=>e.preventDefault()}>${nomComplet(m)}</a></div>
                     <div class="mono muted">${m.matricule}</div>
                   </td>
                   <td>${m.fonction_nom}</td>
@@ -3058,7 +3120,8 @@ function Habilitations({ p }){
         style="margin-top:16px">${msg}</div>`}
 
       <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
-        ${[['nominations','Nominations'],['postes','Postes'],['acces','Accès applicatifs']]
+        ${[['nominations','Nominations'],['postes','Postes'],
+           ['matrice','Matrice des accès'],['acces','Accès nominatifs']]
           .map(([k,t]) => html`
           <button class="btn light" style=${'border:0;border-bottom:2px solid '+
             (onglet===k?'var(--encre)':'transparent')+';border-radius:0;background:transparent'}
@@ -3071,6 +3134,8 @@ function Habilitations({ p }){
 
       ${onglet === 'postes' && html`<${Postes} postes=${postes} droits=${droits}
         liens=${liens} recharger=${charger} setMsg=${setMsg} />`}
+
+      ${onglet === 'matrice' && html`<${Matrice} setMsg=${setMsg} />`}
 
       ${onglet === 'acces' && html`<${PilotageAcces} acces=${acces} apps=${apps}
         gens=${gens} recharger=${charger} setMsg=${setMsg} />`}
@@ -4252,6 +4317,369 @@ function DossierDetail({ p, d, gens, fermer }){
     </div>`;
 }
 
+
+/* =====================================================================
+   LISIBILITÉ DES DROITS
+   Une infobulle, une fiche membre graduée, un référentiel ouvert, et
+   la matrice des accès.
+   ===================================================================== */
+
+/* Une explication brève, à la demande. Pas un long texte : une phrase
+   au moment où la question se pose. */
+function Info({ texte }){
+  const [ouvert, setOuvert] = useState(false);
+  return html`
+    <span style="position:relative;display:inline-block">
+      <button onClick=${()=>setOuvert(o=>!o)} aria-label="Explication"
+        style="border:1px solid var(--filet);background:#fff;color:var(--gris);
+               width:17px;height:17px;border-radius:50%;font-size:11px;
+               line-height:1;padding:0;font-family:var(--titre);font-weight:700">i</button>
+      ${ouvert && html`
+        <span onClick=${()=>setOuvert(false)} style="position:absolute;z-index:60;
+          left:0;top:22px;width:270px;padding:12px 14px;background:#fff;
+          border:1px solid var(--nuit);border-radius:2px;font-size:13px;
+          line-height:1.45;color:var(--nuit);font-weight:400;text-transform:none;
+          letter-spacing:0;display:block">${texte}</span>`}
+    </span>`;
+}
+
+/* --- Fiche membre ------------------------------------------------------
+   Trois paliers. Les coordonnées ne sortent que si on les demande, et
+   la demande est tracée — c'est ce qui rend la trace honnête.
+   --------------------------------------------------------------------- */
+function FicheMembre({ id, fermer }){
+  const [f, setF] = useState(null);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async (reveler) => {
+    const { data, error } = await db.rpc('fiche_membre',
+      { p_profil: id, p_reveler: !!reveler });
+    if (error) return setMsg(error.message);
+    setF(data);
+    if (reveler) setMsg('Consultation enregistrée. Le membre peut la voir.');
+  }, [id]);
+  useEffect(() => { charger(false); }, [charger]);
+
+  if (!f) return html`<div class="vide">Chargement…</div>`;
+  if (f.erreur) return html`
+    <div>
+      <a class="small" href="#" onClick=${e=>{e.preventDefault();fermer()}}>← Annuaire</a>
+      <div class="alerte err" style="margin-top:16px">${f.erreur}</div>
+    </div>`;
+
+  const nom = [f.prenom, f.nom].filter(Boolean).join(' ') || f.matricule;
+
+  return html`
+    <div>
+      <a class="small" href="#" onClick=${e=>{e.preventDefault();fermer()}}>← Annuaire</a>
+      ${msg && html`<div class="alerte ok" style="margin-top:16px">${msg}</div>`}
+
+      <div class="carte" style="margin-top:16px">
+        <div class="matricule">${f.matricule}</div>
+        <div class="nom">${nom}</div>
+        <div class="poste">${f.fonction}</div>
+        <div class="lieu">${f.chemin || f.territoire || 'Sans rattachement'}</div>
+        ${f.postes.length > 0 && html`
+          <div class="row" style="margin-top:12px;gap:6px">
+            ${f.postes.map(x => html`<span class=${'tag '+(x.couleur==='neutre'?'':x.couleur)}>
+              ${x.nom}${x.territoire ? ' · '+x.territoire : ''}</span>`)}
+          </div>`}
+        <div class="ech">
+          <span class="tag or">Échelon ${f.echelon} · ${f.echelon_nom}</span>
+          <span class="small muted">Membre depuis ${jour(f.membre_depuis)}</span>
+        </div>
+        <div class="jauge"><i style=${'width:'+Math.round(f.echelon/7*100)+'%'}></i></div>
+      </div>
+
+      ${f.bio && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Présentation</h3></div>
+          <div class="corps" style="white-space:pre-wrap">${f.bio}</div>
+        </div>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete">
+          <div class="row" style="gap:8px">
+            <h3 style="font-size:17px">Coordonnées</h3>
+            <${Info} texte="Les coordonnées d'un membre ne s'affichent pas d'emblée. Il faut les demander, et la demande est enregistrée : l'intéressé peut voir qui a consulté son dossier." />
+          </div>
+          ${!f.revele && f.droit_encadrement && html`
+            <button class="btn sm light" onClick=${()=>charger(true)}>Afficher</button>`}
+        </div>
+        ${f.revele
+          ? html`
+            <div>
+              <div class="ligne"><span class="muted">Adresse</span>
+                <a href=${'mailto:'+f.email}>${f.email}</a></div>
+              ${f.telephone && html`<div class="ligne"><span class="muted">Téléphone</span>
+                <span>${f.telephone}</span></div>`}
+              ${f.webmail && html`<div class="ligne"><span class="muted">Webmail</span>
+                <span class="mono">${f.webmail}</span></div>`}
+              ${f.date_adhesion && html`<div class="ligne"><span class="muted">Adhésion</span>
+                <span>${jour(f.date_adhesion)}</span></div>`}
+            </div>`
+          : html`<div class="corps small muted">
+              ${f.droit_encadrement
+                ? 'Réservées. Cliquez sur Afficher : votre consultation sera enregistrée.'
+                : 'Réservées à l\u2019encadrement du territoire de ce membre.'}
+            </div>`}
+      </div>
+
+      ${f.revele && f.droit_habilite && html`
+        <div class="panneau" style="margin-top:24px;border-color:var(--brun)">
+          <div class="tete" style="border-bottom-color:var(--brun)">
+            <h3 style="font-size:17px">Situation administrative</h3>
+            <span class="tag or">Habilitation requise</span>
+          </div>
+          <div class="ligne"><span class="muted">Statut du compte</span>
+            <span class=${'tag '+(f.statut==='actif'?'vert':'rouge')}>${f.statut}</span></div>
+          ${f.protege && html`<div class="ligne"><span class="muted">Protection renforcée</span>
+            <span>${f.motif_protection||'Oui'}</span></div>`}
+          ${f.sous_suivi && html`<div class="ligne"><span class="muted">Suivi des usages</span>
+            <span class="tag rouge">Sous mesure</span></div>`}
+          <div class="ligne"><span class="muted">Dossiers disciplinaires</span>
+            <span>${f.dossiers_ouverts} en cours · ${f.dossiers_clos} clos</span></div>
+          ${(f.acces_nominatifs||[]).length > 0 && html`
+            <div class="ligne"><span class="muted">Accès nominatifs</span>
+              <div class="row" style="gap:6px;justify-content:flex-end">
+                ${f.acces_nominatifs.map(x => html`
+                  <span class=${'tag '+(x.statut==='accorde'?'vert':'rouge')}>${x.app}</span>`)}
+              </div></div>`}
+        </div>`}
+
+      ${f.certifications.length > 0 && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Certifications</h3></div>
+          ${f.certifications.map(c => html`
+            <div class="ligne">
+              <div><div>${c.nom}</div>
+                <div class="small muted">Délivrée le ${jour(c.obtenue_le)}
+                  ${c.expire_le ? ' · valable jusqu\u2019au ' + jour(c.expire_le) : ''}</div></div>
+              <span class="mono muted">${c.numero}</span>
+            </div>`)}
+        </div>`}
+
+      ${f.groupes.length > 0 && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Groupes de travail</h3></div>
+          ${f.groupes.map(g => html`
+            <div class="ligne"><span>${g.nom}</span>
+              ${g.role === 'responsable' && html`<span class="tag or">Responsable</span>`}</div>`)}
+        </div>`}
+    </div>`;
+}
+
+/* --- Le référentiel, ouvert à tous ------------------------------------ */
+function Referentiel(){
+  const [r, setR] = useState(null);
+  const [onglet, setOnglet] = useState('fonctions');
+  useEffect(() => { db.rpc('referentiel').then(({data}) => setR(data)); }, []);
+  if (!r) return html`<div class="vide">Chargement…</div>`;
+
+  const etat = e => ({
+    ouverte:    html`<span class="tag vert">Ouverte</span>`,
+    sur_demande:html`<span class="tag or">Sur demande</span>`,
+    invisible:  html`<span class="tag">Non ouverte</span>`
+  })[e];
+
+  return html`
+    <div>
+      <div class="eyebrow">Référentiel</div>
+      <h1 style="margin:6px 0 12px">Comprendre les droits</h1>
+      <p class="muted" style="max-width:62ch">
+        Rien n\u2019est caché ici. Un système de droits que personne ne comprend
+        n\u2019est pas accepté : il est subi. Vous êtes
+        <strong>${r.ma_fonction}</strong>, à l\u2019échelon <strong>${r.mon_echelon}</strong>.
+      </p>
+
+      <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['fonctions','Fonctions'],['echelons','Échelons'],['postes','Postes'],
+           ['applications','Applications']].map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'fonctions' && html`
+        <div>
+          <p class="intro" style="margin-bottom:20px">
+            La fonction est le poste que vous occupez dans la fédération. Elle
+            détermine votre <strong>périmètre</strong> : vous voyez et accompagnez
+            votre territoire et tout ce qui en dépend, jamais celui du voisin.
+          </p>
+          <div class="panneau" style="overflow-x:auto">
+            <table>
+              <thead><tr><th>Fonction</th><th>Famille</th><th>Échelle</th>
+                <th>Niveau</th><th>Membres</th></tr></thead>
+              <tbody>
+                ${r.fonctions.map(f => html`
+                  <tr>
+                    <td>${f.nom}</td>
+                    <td class="small muted">${f.famille}</td>
+                    <td class="small muted">${f.echelle || '—'}</td>
+                    <td class="mono">${f.niveau}</td>
+                    <td class="mono">${f.effectif}</td>
+                  </tr>`)}
+              </tbody>
+            </table>
+          </div>
+        </div>`}
+
+      ${onglet === 'echelons' && html`
+        <div>
+          <p class="intro" style="margin-bottom:20px">
+            L\u2019échelon reconnaît l\u2019expérience, indépendamment du poste.
+            <strong>La fonction donne le pouvoir, l\u2019échelon reconnaît le parcours.</strong>
+            Un bénévole de longue date peut être échelon 5 sans encadrer personne.
+          </p>
+          <div class="panneau">
+            ${r.echelons.map(e => html`
+              <div class="ligne">
+                <div>
+                  <div><strong>${e.niveau}. ${e.nom}</strong></div>
+                  <div class="small muted">${e.ouvre || 'Aucun pouvoir particulier'}</div>
+                </div>
+                <div class="row">
+                  <span class="tag">${e.points} points</span>
+                  <span class="tag or">${e.effectif} membre${e.effectif>1?'s':''}</span>
+                </div>
+              </div>`)}
+          </div>
+        </div>`}
+
+      ${onglet === 'postes' && html`
+        <div>
+          <p class="intro" style="margin-bottom:20px">
+            Un poste est un mandat nommé, cumulable et révocable, indépendant du
+            grade. Il ouvre des droits que la fonction ne donne pas. Savoir qui
+            est référent RGPD ou membre du conseil de discipline fait partie du
+            fonctionnement normal d\u2019une association.
+          </p>
+          ${r.postes.map(po => html`
+            <div class="panneau" style="margin-bottom:16px">
+              <div class="tete">
+                <div>
+                  <h3 style="font-size:17px">${po.nom}</h3>
+                  ${po.description && html`<div class="small muted"
+                    style="margin-top:4px;max-width:58ch">${po.description}</div>`}
+                </div>
+                <span class=${'tag '+(po.couleur==='neutre'?'':po.couleur)}>
+                  ${(po.titulaires||[]).length} titulaire${(po.titulaires||[]).length>1?'s':''}</span>
+              </div>
+              <div class="corps">
+                <div class="eyebrow" style="margin-bottom:8px">Droits ouverts</div>
+                <div class="row" style="gap:6px">
+                  ${(po.droits||[]).map(d => html`<span class="tag">${d}</span>`)}
+                  ${(po.droits||[]).length === 0 && html`<span class="small muted">Aucun</span>`}
+                </div>
+                ${(po.titulaires||[]).length > 0 && html`
+                  <div style="margin-top:16px">
+                    <div class="eyebrow" style="margin-bottom:8px">Titulaires</div>
+                    <div class="small">${po.titulaires.join(' · ')}</div>
+                  </div>`}
+              </div>
+            </div>`)}
+        </div>`}
+
+      ${onglet === 'applications' && html`
+        <div>
+          <p class="intro" style="margin-bottom:20px">
+            Voici ce que votre fonction vous ouvre aujourd\u2019hui.
+            <strong>Ouverte</strong> : accessible immédiatement.
+            <strong>Sur demande</strong> : à solliciter au guichet, la Direction
+            générale décide. <strong>Non ouverte</strong> : hors de votre fonction,
+            sauf poste particulier.
+          </p>
+          <div class="panneau">
+            ${r.applications.map(a => html`
+              <div class="ligne">
+                <div style="flex:1;min-width:220px">
+                  <div>${a.nom}</div>
+                  <div class="small muted">${a.description || ''}</div>
+                  ${a.droit_requis && html`<div class="small muted" style="margin-top:4px">
+                    Exige le droit : ${a.droit_requis}</div>`}
+                </div>
+                ${etat(a.mon_etat)}
+              </div>`)}
+          </div>
+        </div>`}
+    </div>`;
+}
+
+/* --- La matrice des accès, côté pilotage ------------------------------ */
+function Matrice({ setMsg }){
+  const [m, setM] = useState([]);
+  const charger = useCallback(async () => {
+    const { data } = await db.rpc('matrice_acces');
+    setM(data || []);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const suivant = { ouverte:'sur_demande', sur_demande:'invisible', invisible:'ouverte' };
+  const style = {
+    ouverte:    'background:var(--valide-clair);color:var(--valide);border-color:#C8DED3',
+    sur_demande:'background:var(--brun-clair);color:var(--brun);border-color:#E0D5CC',
+    invisible:  'background:var(--papier);color:var(--gris-bleu);border-color:var(--filet)'
+  };
+  const signe = { ouverte:'Ouverte', sur_demande:'Sur demande', invisible:'—' };
+
+  async function basculer(c){
+    const { data, error } = await db.rpc('regler_matrice',
+      { p_app: c.application, p_fonction: c.fonction, p_etat: suivant[c.etat] });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    charger();
+  }
+
+  const apps = [...new Map(m.map(x => [x.application,
+    {code:x.application, nom:x.app_nom, droit:x.droit_requis}])).values()];
+  const fonctions = [...new Map(m.map(x => [x.fonction,
+    {code:x.fonction, nom:x.fonction_nom, niveau:x.niveau}])).values()]
+    .sort((a,b) => a.niveau - b.niveau);
+
+  return html`
+    <div>
+      <p class="small muted" style="margin-bottom:16px;max-width:64ch">
+        Cliquez une case pour la faire tourner : ouverte → sur demande → non
+        ouverte. Une application <strong>ouverte</strong> apparaît et fonctionne.
+        <strong>Sur demande</strong>, elle apparaît grisée avec un bouton de
+        demande. <strong>Non ouverte</strong>, elle n\u2019apparaît pas du tout.
+        Un poste passe outre : un référent RGPD atteint son outil quelle que soit
+        sa fonction.
+      </p>
+      <div class="panneau" style="overflow-x:auto">
+        <table style="font-size:12.5px">
+          <thead><tr>
+            <th style="position:sticky;left:0;background:#fff;min-width:190px">Application</th>
+            ${fonctions.map(f => html`<th style="text-align:center;min-width:96px">
+              ${f.nom}</th>`)}
+          </tr></thead>
+          <tbody>
+            ${apps.map(a => html`
+              <tr>
+                <td style="position:sticky;left:0;background:#fff">
+                  <div>${a.nom}</div>
+                  ${a.droit && html`<div class="small muted">poste requis</div>`}
+                </td>
+                ${fonctions.map(f => {
+                  const c = m.find(x => x.application === a.code && x.fonction === f.code);
+                  if (!c) return html`<td></td>`;
+                  return html`
+                    <td style="text-align:center;padding:6px">
+                      <button onClick=${()=>basculer(c)}
+                        style=${'width:100%;padding:6px 4px;border:1px solid;border-radius:2px;'+
+                          'font-family:var(--titre);font-weight:700;font-size:10px;'+
+                          'letter-spacing:.04em;text-transform:uppercase;'+style[c.etat]}>
+                        ${signe[c.etat]}</button>
+                    </td>`;
+                })}
+              </tr>`)}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
@@ -4642,17 +5070,14 @@ function Espace({ session, sous }){
     if (!profil){ setPret(true); return; }
     setP(profil);
 
-    const [{ data: liste }, { data: mesAcces }, { data: mesDem }] = await Promise.all([
-      db.from('applications').select('*').eq('actif',true).order('ordre'),
-      db.from('acces_applications').select('application,statut').eq('profil_id', session.user.id),
-      db.from('demandes').select('*').eq('profil_id', session.user.id).order('cree_le',{ascending:false})
+    // La matrice décide de ce qui s'affiche, de ce qui est grisé, et de
+    // ce qui n'apparaît pas du tout. Elle se règle dans Habilitations.
+    const [{ data: liste }, { data: mesDem }] = await Promise.all([
+      db.rpc('mes_applications'),
+      db.from('demandes').select('*').eq('profil_id', session.user.id)
+        .order('cree_le',{ascending:false})
     ]);
-    const accordes = new Set((mesAcces||[]).filter(a=>a.statut==='accorde').map(a=>a.application));
-    setApps((liste||[]).map(a => ({
-      ...a,
-      ouvert: profil.statut === 'actif' &&
-              ((!a.sur_demande && profil.niveau >= a.niveau_min) || accordes.has(a.code))
-    })));
+    setApps((liste||[]).map(a => ({ ...a, actif: true })));
     setDemandes(mesDem || []);
 
     // Les postes occupés : ils ouvrent des droits que la fonction ne
@@ -4706,6 +5131,7 @@ function Espace({ session, sous }){
     case '':           vue = html`<${TableauDeBord} p=${p} apps=${apps} chemin=${chemin} demandes=${demandes} />`; break;
     case 'compte':     vue = html`<${MonCompte} p=${p} recharger=${charger} />`; break;
     case 'mon-dossier':vue = html`<${MonDossier} p=${p} entier=${true} />`; break;
+    case 'referentiel':vue = html`<${Referentiel} />`; break;
     case 'discipline': vue = acces('discipline') ? html`<${Discipline} p=${p} />` : refus; break;
     case 'demandes':   vue = html`<${MesDemandes} p=${p} apps=${apps} demandes=${demandes} recharger=${charger} />`; break;
     case 'annuaire':   vue = acces('annuaire') ? html`<${Annuaire} p=${p} />` : refus; break;
