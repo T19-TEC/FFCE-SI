@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FFCE — Fédération Française des Cadres et Encadrants</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background-color: #F8FAFC; color: #0F172A; }
+    h1, h2, h3, .font-serif { font-family: 'Merriweather', serif; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <div id="app"></div>
+
+  <script type="module">
+    import { h, render } from 'https://esm.sh/preact';
+    import { useState, useEffect } from 'https://esm.sh/preact/hooks';
+    import htm from 'https://esm.sh/htm';
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    const html = htm.bind(h);
+
+    // Vos identifiants Supabase pré-intégrés
+    const SUPABASE_URL = "https://ibxydmtqdyynteiopjiv.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_A-2UHxGyxQ1--eEnsULBlQ_eyebc9dh";
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    function App() {
+      const [session, setSession] = useState(null);
+      const [profile, setProfile] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [activeTab, setActiveTab] = useState('vitrine');
+      const [authMode, setAuthMode] = useState(null);
+
+      const [email, setEmail] = useState('');
+      const [password, setPassword] = useState('');
+      const [nom, setNom] = useState('');
+      const [prenom, setPrenom] = useState('');
+      const [authError, setAuthError] = useState('');
+
+      const [demandes, setDemandes] = useState([]);
+      const [groupes, setGroupes] = useState([]);
+      const [formations, setFormations] = useState([]);
+
+      useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          setSession(session);
+          if (session) fetchProfile(session.user.id);
+          else setLoading(false);
+        });
+
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+          setSession(session);
+          if (session) fetchProfile(session.user.id);
+          else {
+            setProfile(null);
+            setLoading(false);
+          }
+        });
+
+        return () => subscription.unsubscribe();
+      }, []);
+
+      async function fetchProfile(userId) {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*, grades(nom, niveau), territoires(nom, code)')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (!error && data) {
+          setProfile(data);
+          if (activeTab === 'vitrine') setActiveTab('dashboard');
+          loadAppData(data);
+        }
+        setLoading(false);
+      }
+
+      async function loadAppData(userProfile) {
+        const { data: formRes } = await supabase.from('formations').select('*');
+        if (formRes) setFormations(formRes);
+
+        const { data: gtRes } = await supabase.from('groupes_travail').select('*');
+        if (gtRes) setGroupes(gtRes);
+
+        if (['admin', 'direction'].includes(userProfile.role)) {
+          const { data: demRes } = await supabase
+            .from('demandes_acces')
+            .select('*, profiles(nom, prenom, email)')
+            .eq('statut', 'en_attente');
+          if (demRes) setDemandes(demRes);
+        }
+      }
+
+      async function handleRegister(e) {
+        e.preventDefault();
+        setAuthError('');
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { nom, prenom } }
+        });
+
+        if (error) setAuthError(error.message);
+        else {
+          alert('Inscription enregistrée ! Votre compte sera validé par l\'administrateur.');
+          setAuthMode(null);
+        }
+      }
+
+      async function handleLogin(e) {
+        e.preventDefault();
+        setAuthError('');
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) setAuthError(error.message);
+        else setAuthMode(null);
+      }
+
+      async function handleLogout() {
+        await supabase.auth.signOut();
+        setActiveTab('vitrine');
+      }
+
+      async function handleDemandeExtension(typeDemande, details) {
+        if (!profile) return;
+        const { error } = await supabase.from('demandes_acces').insert({
+          user_id: profile.id,
+          type_demande: typeDemande,
+          details: details
+        });
+        if (error) alert('Erreur : ' + error.message);
+        else alert('Demande transmise à la Direction générale.');
+      }
+
+      async function handleValiderDemande(demandeId, userId, typeDemande) {
+        await supabase.from('demandes_acces').update({ statut: 'valide', traite_par: profile.id }).eq('id', demandeId);
+        
+        if (typeDemande === 'validation_compte') {
+          await supabase.from('profiles').update({ est_valide: true }).eq('id', userId);
+        }
+
+        loadAppData(profile);
+      }
+
+      if (loading) {
+        return html`
+          <div class="min-h-screen flex items-center justify-center bg-slate-50">
+            <div class="text-center">
+              <div class="w-12 h-12 border-4 border-slate-900 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <p class="text-slate-600 font-medium">Chargement de la plateforme FFCE...</p>
+            </div>
+          </div>
+        `;
+      }
+
+      return html`
+        <div class="min-h-screen flex flex-col">
+          <header class="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+              
+              <div class="flex items-center space-x-3 cursor-pointer" onClick=${() => setActiveTab('vitrine')}>
+                <div class="bg-red-700 text-white font-bold p-2 rounded text-xl font-serif">FFCE</div>
+                <div>
+                  <div class="font-bold tracking-wide text-sm leading-tight">FFCE ASSOCIATIF</div>
+                  <div class="text-xs text-slate-400">Système d'Information Intégré</div>
+                </div>
+              </div>
+
+              <nav class="flex items-center space-x-4">
+                ${session && profile ? html`
+                  <button onClick=${() => setActiveTab('dashboard')} class="px-3 py-2 rounded text-sm ${activeTab === 'dashboard' ? 'bg-slate-800 text-white font-medium' : 'text-slate-300 hover:text-white'}">Tableau de Bord</button>
+                  <button onClick=${() => setActiveTab('formations')} class="px-3 py-2 rounded text-sm ${activeTab === 'formations' ? 'bg-slate-800 text-white font-medium' : 'text-slate-300 hover:text-white'}">Formations</button>
+                  <button onClick=${() => setActiveTab('gt')} class="px-3 py-2 rounded text-sm ${activeTab === 'gt' ? 'bg-slate-800 text-white font-medium' : 'text-slate-300 hover:text-white'}">Groupes de Travail</button>
+                  
+                  ${['admin', 'direction'].includes(profile.role) ? html`
+                    <button onClick=${() => setActiveTab('admin')} class="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded text-sm font-medium flex items-center space-x-1">
+                      <span>Vérification Admin</span>
+                      ${demandes.length > 0 ? html`<span class="bg-white text-amber-900 text-xs px-1.5 py-0.5 rounded-full font-bold ml-1">${demandes.length}</span>` : ''}
+                    </button>
+                  ` : ''}
+
+                  <div class="flex items-center space-x-3 border-l border-slate-700 pl-4 ml-2">
+                    <div class="text-right hidden sm:block">
+                      <div class="text-xs font-bold text-white">${profile.prenom} ${profile.nom}</div>
+                      <div class="text-[10px] text-amber-400 font-medium">${profile.grades?.nom || 'Membre'} (${profile.role})</div>
+                    </div>
+                    <button onClick=${handleLogout} class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded border border-slate-700">Déconnexion</button>
+                  </div>
+                ` : html`
+                  <button onClick=${() => setAuthMode('login')} class="text-sm font-medium text-slate-300 hover:text-white px-3 py-2">Espace Membre</button>
+                  <button onClick=${() => setAuthMode('register')} class="bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded text-sm font-medium">Rejoindre la FFCE</button>
+                `}
+              </nav>
+
+            </div>
+          </header>
+
+          ${profile && !profile.est_valide ? html`
+            <div class="bg-amber-500 text-amber-950 px-4 py-3 text-center text-sm font-medium shadow-inner">
+              ⚠️ Votre compte est <strong>en attente de validation</strong> par la Direction Générale.
+            </div>
+          ` : ''}
+
+          <main class="flex-grow">
+            ${activeTab === 'vitrine' ? html`<${VitrineView} onRegister=${() => setAuthMode('register')} onLogin=${() => setAuthMode('login')} />` : ''}
+            ${activeTab === 'dashboard' && profile ? html`<${DashboardView} profile=${profile} onDemande=${handleDemandeExtension} />` : ''}
+            ${activeTab === 'formations' ? html`<${FormationsView} formations=${formations} profile=${profile} />` : ''}
+            ${activeTab === 'gt' ? html`<${GTView} groupes=${groupes} profile=${profile} />` : ''}
+            ${activeTab === 'admin' && profile ? html`<${AdminView} demandes=${demandes} onValider=${handleValiderDemande} />` : ''}
+          </main>
+
+          ${authMode ? html`
+            <div class="fixed inset-0 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+              <div class="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md p-6 relative">
+                <button onClick=${() => setAuthMode(null)} class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 font-bold">✕</button>
+                
+                <h2 class="text-2xl font-serif font-bold text-slate-900 mb-2">
+                  ${authMode === 'login' ? 'Connexion à l\'Intranet' : 'Créer un compte FFCE'}
+                </h2>
+                <p class="text-sm text-slate-600 mb-6">
+                  ${authMode === 'login' ? 'Accédez à vos espaces de travail et formations.' : 'Remplissez vos informations pour solliciter votre adhésion.'}
+                </p>
+
+                ${authError ? html`<div class="bg-red-50 text-red-700 p-3 rounded text-sm mb-4 border border-red-200">${authError}</div>` : ''}
+
+                <form onSubmit=${authMode === 'login' ? handleLogin : handleRegister} class="space-y-4">
+                  ${authMode === 'register' ? html`
+                    <div class="grid grid-cols-2 gap-4">
+                      <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Prénom</label>
+                        <input type="text" required value=${prenom} onInput=${e => setPrenom(e.target.value)} class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                      </div>
+                      <div>
+                        <label class="block text-xs font-bold text-slate-700 mb-1">Nom</label>
+                        <input type="text" required value=${nom} onInput=${e => setNom(e.target.value)} class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                      </div>
+                    </div>
+                  ` : ''}
+
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Adresse E-mail</label>
+                    <input type="email" required value=${email} onInput=${e => setEmail(e.target.value)} class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                  </div>
+
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Mot de passe</label>
+                    <input type="password" required value=${password} onInput=${e => setPassword(e.target.value)} class="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                  </div>
+
+                  <button type="submit" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded shadow transition text-sm">
+                    ${authMode === 'login' ? 'Se connecter' : 'Soumettre mon inscription'}
+                  </button>
+                </form>
+
+                <div class="mt-4 text-center">
+                  <button onClick=${() => setAuthMode(authMode === 'login' ? 'register' : 'login')} class="text-xs text-slate-600 hover:text-slate-900 underline">
+                    ${authMode === 'login' ? 'Pas encore membre ? S\'inscrire' : 'Déjà inscrit ? Se connecter'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ` : ''}
+
+          <footer class="bg-slate-900 text-slate-400 py-8 border-t border-slate-800 text-xs">
+            <div class="max-w-7xl mx-auto px-4 text-center space-y-2">
+              <p class="font-bold text-slate-200">Fédération Française des Cadres et Encadrants (FFCE)</p>
+              <p>Plateforme Intranet & Système d'Information Officiel</p>
+              <p class="text-slate-600">© 2026 FFCE — Tous droits réservés.</p>
+            </div>
+          </footer>
+        </div>
+      `;
+    }
+
+    function VitrineView({ onRegister, onLogin }) {
+      return html`
+        <div>
+          <div class="bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-white py-24 px-4 text-center border-b border-slate-800">
+            <div class="max-w-4xl mx-auto">
+              <span class="bg-red-700/30 text-red-400 border border-red-500/30 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest inline-block mb-4">Engagés & Structurés</span>
+              <h1 class="text-4xl sm:text-6xl font-serif font-bold tracking-tight mb-6 leading-tight">Fédération Française des Cadres et Encadrants</h1>
+              <p class="text-lg sm:text-xl text-slate-300 font-light mb-8 max-w-2xl mx-auto leading-relaxed">
+                L'organisation de référence pour le perfectionnement, le soutien et l'encadrement des équipes sur le territoire national.
+              </p>
+              <div class="flex flex-col sm:flex-row justify-center gap-4">
+                <button onClick=${onRegister} class="bg-red-700 hover:bg-red-800 text-white font-bold px-8 py-3.5 rounded-lg text-base shadow-lg transition">Demander une adhésion</button>
+                <button onClick=${onLogin} class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-medium px-8 py-3.5 rounded-lg text-base transition">Espace Interne Connecté</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="max-w-7xl mx-auto px-4 py-16 grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <div class="w-12 h-12 bg-red-100 text-red-700 rounded-lg flex items-center justify-center font-bold text-xl mb-4">01</div>
+              <h3 class="text-xl font-bold font-serif mb-2">Structure & Hiérarchie</h3>
+              <p class="text-sm text-slate-600 leading-relaxed">Un parcours d'échelons et de grades permettant de monter en responsabilité, de l'antenne locale à la direction nationale.</p>
+            </div>
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <div class="w-12 h-12 bg-red-100 text-red-700 rounded-lg flex items-center justify-center font-bold text-xl mb-4">02</div>
+              <h3 class="text-xl font-bold font-serif mb-2">Formation & Quizz</h3>
+              <p class="text-sm text-slate-600 leading-relaxed">Accédez à des parcours de formation certifiants et débloquez des qualifications sur votre profil.</p>
+            </div>
+            <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+              <div class="w-12 h-12 bg-red-100 text-red-700 rounded-lg flex items-center justify-center font-bold text-xl mb-4">03</div>
+              <h3 class="text-xl font-bold font-serif mb-2">Outils Collaboratifs</h3>
+              <p class="text-sm text-slate-600 leading-relaxed">Groupes de travail intégrés, liaison Google Workspace, webmail dédié et gestion financière.</p>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function DashboardView({ profile, onDemande }) {
+      return html`
+        <div class="max-w-7xl mx-auto px-4 py-8 space-y-8">
+          <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div class="flex items-center space-x-4">
+              <div class="w-16 h-16 bg-slate-900 text-amber-400 font-bold font-serif text-2xl rounded-full flex items-center justify-center border-2 border-amber-400">
+                ${profile.prenom ? profile.prenom[0] : 'M'}${profile.nom ? profile.nom[0] : 'E'}
+              </div>
+              <div>
+                <h2 class="text-2xl font-serif font-bold text-slate-900">${profile.prenom} ${profile.nom}</h2>
+                <div class="flex items-center space-x-2 text-xs text-slate-500 mt-1">
+                  <span class="bg-slate-100 text-slate-800 font-bold px-2 py-0.5 rounded border border-slate-300">${profile.grades?.nom || 'Adhérent'}</span>
+                  <span>•</span>
+                  <span>${profile.territoires?.nom || 'Siège National FFCE'}</span>
+                  <span>•</span>
+                  <span class="text-slate-400">${profile.email}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="bg-slate-50 p-4 rounded-lg border border-slate-200 text-right w-full md:w-auto">
+              <div class="text-xs text-slate-500 font-medium">Adresse Webmail Officielle</div>
+              <div class="text-sm font-bold text-slate-900">${profile.webmail_google || 'Aucun compte webmail actif'}</div>
+              ${!profile.webmail_google ? html`
+                <button onClick=${() => onDemande('webmail', 'Demande d\'adresse @ffce-asso.fr')} class="mt-2 text-xs bg-red-700 hover:bg-red-800 text-white font-bold px-3 py-1 rounded">
+                  Demander une adresse @ffce-asso.fr
+                </button>
+              ` : ''}
+            </div>
+          </div>
+
+          <div>
+            <h3 class="text-lg font-serif font-bold text-slate-900 mb-4">Vos Applications & Services Internes</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+              <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:border-slate-400 transition">
+                <div class="text-2xl mb-2">📂</div>
+                <h4 class="font-bold text-slate-900 mb-1">Google Workspace FFCE</h4>
+                <p class="text-xs text-slate-600 mb-4">Accès direct à votre Drive partagé et documents d'équipe.</p>
+                <a href="https://workspace.google.com" target="_blank" class="inline-block text-xs font-bold text-red-700 hover:underline">Accéder au Workspace →</a>
+              </div>
+
+              <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:border-slate-400 transition">
+                <div class="text-2xl mb-2">💳</div>
+                <h4 class="font-bold text-slate-900 mb-1">Notes de Frais & Comptabilité</h4>
+                <p class="text-xs text-slate-600 mb-4">Module réservé pour la gestion des frais d'association.</p>
+                <button onClick=${() => onDemande('application', 'Module Notes de frais')} class="text-xs font-bold text-slate-600 hover:text-slate-900">Demander l'accès →</button>
+              </div>
+
+              <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm hover:border-slate-400 transition">
+                <div class="text-2xl mb-2">🎖️</div>
+                <h4 class="font-bold text-slate-900 mb-1">Progression & Grades</h4>
+                <p class="text-xs text-slate-600 mb-4">Niveau actuel : <strong>${profile.grades?.niveau || 1}</strong>.</p>
+                <span class="text-xs text-slate-400">Progression continue</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function FormationsView({ formations, profile }) {
+      return html`
+        <div class="max-w-7xl mx-auto px-4 py-8 space-y-6">
+          <div>
+            <h2 class="text-2xl font-serif font-bold text-slate-900">Catalogue des Formations & Certifications</h2>
+            <p class="text-sm text-slate-600">Suivez les modules pour monter en grade dans la FFCE.</p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            ${formations.length === 0 ? html`
+              <div class="col-span-2 bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-500">
+                Aucune formation publiée pour le moment.
+              </div>
+            ` : formations.map(f => html`
+              <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
+                <div>
+                  <div class="flex justify-between items-start mb-2">
+                    <span class="text-[10px] font-bold uppercase bg-amber-100 text-amber-900 px-2 py-0.5 rounded">Niveau ${f.niveau_requis} Requis</span>
+                    <span class="text-xs text-slate-400">⏱️ ${f.duree_minutes} min</span>
+                  </div>
+                  <h3 class="text-xl font-bold font-serif text-slate-900 mb-2">${f.titre}</h3>
+                  <p class="text-xs text-slate-600 leading-relaxed mb-4">${f.description}</p>
+                </div>
+                <button class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded text-xs transition">
+                  Commencer le cours & Quizz
+                </button>
+              </div>
+            `)}
+          </div>
+        </div>
+      `;
+    }
+
+    function GTView({ groupes, profile }) {
+      return html`
+        <div class="max-w-7xl mx-auto px-4 py-8 space-y-6">
+          <div>
+            <h2 class="text-2xl font-serif font-bold text-slate-900">Groupes de Travail (GT)</h2>
+            <p class="text-sm text-slate-600">Espaces de collaboration technique et projets nationaux.</p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            ${groupes.length === 0 ? html`
+              <div class="col-span-3 bg-white p-8 rounded-xl border border-slate-200 text-center text-slate-500">
+                Vous n'avez rejoint aucun Groupe de Travail actif pour l'instant.
+              </div>
+            ` : groupes.map(gt => html`
+              <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                <h3 class="text-lg font-bold font-serif text-slate-900">${gt.nom}</h3>
+                <p class="text-xs text-slate-600 leading-relaxed">${gt.description}</p>
+              </div>
+            `)}
+          </div>
+        </div>
+      `;
+    }
+
+    function AdminView({ demandes, onValider }) {
+      return html`
+        <div class="max-w-7xl mx-auto px-4 py-8 space-y-6">
+          <div>
+            <h2 class="text-2xl font-serif font-bold text-slate-900">Direction Générale — Vérifications</h2>
+            <p class="text-sm text-slate-600">Demandes d'accès et de validation de compte en attente.</p>
+          </div>
+
+          <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <table class="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                  <th class="p-4">Membre</th>
+                  <th class="p-4">Demande</th>
+                  <th class="p-4">Détails</th>
+                  <th class="p-4 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-200">
+                ${demandes.length === 0 ? html`
+                  <tr>
+                    <td colspan="4" class="p-8 text-center text-slate-500">
+                      🎉 Aucune demande en attente. Tout est à jour !
+                    </td>
+                  </tr>
+                ` : demandes.map(d => html`
+                  <tr class="hover:bg-slate-50">
+                    <td class="p-4 font-bold text-slate-900">
+                      ${d.profiles?.prenom} ${d.profiles?.nom}
+                      <div class="text-xs font-normal text-slate-500">${d.profiles?.email}</div>
+                    </td>
+                    <td class="p-4">
+                      <span class="bg-amber-100 text-amber-900 text-xs font-bold px-2 py-0.5 rounded uppercase">
+                        ${d.type_demande}
+                      </span>
+                    </td>
+                    <td class="p-4 text-xs text-slate-600">${d.details}</td>
+                    <td class="p-4 text-right">
+                      <button onClick=${() => onValider(d.id, d.user_id, d.type_demande)} class="bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs px-3 py-1.5 rounded shadow">
+                        Approuver
+                      </button>
+                    </td>
+                  </tr>
+                `)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    render(html`<${App} />`, document.getElementById('app'));
+  </script>
+</body>
+</html>
