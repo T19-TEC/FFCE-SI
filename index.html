@@ -764,6 +764,45 @@ function Flanc({ p, apps, page }){
     </aside>`;
 }
 
+
+/* --- Ce qui attend : la file de travail personnelle -------------------
+   Les alertes se perdaient au fond des onglets. Elles remontent ici,
+   en tête du tableau de bord, triées par urgence.
+   --------------------------------------------------------------------- */
+function CeQuiAttend(){
+  const [items, setItems] = useState([]);
+  useEffect(() => {
+    db.rpc('ce_qui_attend').then(({data}) => setItems(data || []));
+  }, []);
+  if (items.length === 0) return null;
+
+  const urgents = items.filter(x => x.urgence === 'haute');
+  const normaux = items.filter(x => x.urgence !== 'haute');
+
+  const carte = (x, haute) => html`
+    <a href=${x.lien} style=${'display:block;background:var(--blanc);padding:18px 20px;'+
+        'color:var(--encre);border-left:3px solid '+(haute?'var(--rouge)':'var(--bleu)')}>
+      <div class="row" style="gap:10px;align-items:baseline">
+        <span style=${'font-family:var(--serif);font-size:30px;line-height:1;color:'+
+          (haute?'var(--rouge)':'var(--bleu)')}>${x.nombre}</span>
+        <span class="small">${x.libelle}</span>
+      </div>
+    </a>`;
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:12px">
+        <div class="eyebrow">Ce qui attend</div>
+        ${urgents.length > 0 && html`
+          <span class="tag rouge">${urgents.reduce((n,x)=>n+x.nombre,0)} à traiter sans délai</span>`}
+      </div>
+      <div class="tuiles" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">
+        ${urgents.map(x => carte(x, true))}
+        ${normaux.map(x => carte(x, false))}
+      </div>
+    </div>`;
+}
+
 function TableauDeBord({ p, apps, chemin, demandes }){
   const ouvertes = demandes.filter(d => d.statut === 'ouverte' || d.statut === 'en_cours');
   return html`
@@ -774,6 +813,8 @@ function TableauDeBord({ p, apps, chemin, demandes }){
       </div>
 
       <${MonDossier} p=${p} entier=${false} />
+
+      <${CeQuiAttend} />
 
       <${CarteFederale} p=${p} chemin=${chemin} />
 
@@ -3324,6 +3365,8 @@ function MonDossier({ p, entier }){
   const [msg, setMsg] = useState('');
   const [obs, setObs] = useState({});
   const [rec, setRec] = useState({});
+  const [doc, setDoc] = useState({});
+  const [renonce, setRenonce] = useState({});
 
   const charger = useCallback(async () => {
     const { data } = await db.rpc('mon_dossier');
@@ -3346,17 +3389,53 @@ function MonDossier({ p, entier }){
   async function deposerObs(dos, e){
     e.preventDefault();
     const texte = obs[dos.id] || '';
-    if (!texte.trim()) return;
+    const fichier = doc[dos.id];
+    if (!texte.trim() && !fichier) return;
+    let chemin = null;
+    try {
+      if (fichier){
+        if (fichier.size > 10 * 1024 * 1024)
+          throw new Error('Le document ne doit pas dépasser 10 Mo.');
+        const ext = fichier.name.split('.').pop();
+        chemin = p.id + '/' + dos.id + '-' + Date.now() + '.' + ext;
+        const { error: eUp } = await db.storage.from('dossiers').upload(chemin, fichier);
+        if (eUp) throw eUp;
+      }
+    } catch (err){ return setMsg(err.message || 'Téléversement impossible.'); }
+
     const { data, error } = await db.rpc('verser_piece', {
-      p_dossier: dos.id, p_type: 'observation',
-      p_titre: 'Observations', p_contenu: texte,
-      p_fichier: null, p_communicable: true
+      p_dossier: dos.id, p_type: fichier ? 'piece_jointe' : 'observation',
+      p_titre: fichier ? fichier.name : 'Observations',
+      p_contenu: texte || null, p_fichier: chemin, p_communicable: true
     });
     if (error) return setMsg(error.message);
     if (!data.ok) return setMsg(data.message);
     setObs(o => ({...o, [dos.id]: ''}));
+    setDoc(o => ({...o, [dos.id]: null}));
     setMsg('Vos observations sont versées au dossier.');
     charger();
+  }
+
+  async function renoncer(dos, e){
+    e.preventDefault();
+    const texte = renonce[dos.id] || '';
+    if (!texte.trim()) return;
+    if (!confirm('Cette renonciation est définitive. Confirmez-vous ?')) return;
+    const { data, error } = await db.rpc('renoncer_gracieux',
+      { p_dossier: dos.id, p_texte: texte });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setRenonce(o => { const c = {...o}; delete c[dos.id]; return c; });
+    setMsg('Renonciation enregistrée et versée au dossier.');
+    charger();
+  }
+
+  async function ouvrirPiece(pc){
+    if (!pc.fichier) return;
+    const { data, error } = await db.storage.from('dossiers')
+      .createSignedUrl(pc.fichier, 120);
+    if (error) return setMsg('Document introuvable.');
+    window.open(data.signedUrl, '_blank', 'noopener');
   }
 
   async function deposerRecours(m, e){
@@ -3413,9 +3492,18 @@ function MonDossier({ p, entier }){
                   réception, ou à défaut quinze jours après la notification.</p>
               </div>`}
 
-            ${m.limite_recours && html`
+            ${m.recours_ouvert && m.limite_recours && html`
               <p class="small muted" style="margin-top:8px">
-                Recours possible jusqu\u2019au ${jour(m.limite_recours)}.</p>`}
+                Recours possible jusqu\u2019au ${jour(m.limite_recours)}
+                — ${m.recours_restants} recours restant${m.recours_restants>1?'s':''}.</p>`}
+            ${!m.recours_ouvert && m.motif_fermeture && html`
+              <p class="small muted" style="margin-top:8px">${m.motif_fermeture}</p>`}
+            ${m.renonce_le && html`
+              <div style="margin-top:12px;padding:12px;background:var(--papier);
+                   border:1px solid var(--filet);border-radius:2px">
+                <div class="small muted">Renonciation du ${jour(m.renonce_le)}</div>
+                <p class="small" style="margin:6px 0 0;white-space:pre-wrap">${m.renonce_texte}</p>
+              </div>`}
 
             ${(m.recours||[]).map(r => html`
               <div style="margin-top:12px;padding:12px;background:var(--papier);
@@ -3447,7 +3535,10 @@ function MonDossier({ p, entier }){
             ${dos.pieces.map(pc => html`
               <div style="padding:10px 0;border-bottom:1px solid var(--filet)">
                 <div class="spread">
-                  <span>${pc.titre}</span>
+                  <span>${pc.fichier
+                    ? html`<a href="#" onClick=${e=>{e.preventDefault();ouvrirPiece(pc)}}>
+                        ${pc.titre} ↗</a>`
+                    : pc.titre}</span>
                   <span class="small muted">${jour(pc.cree_le)}</span>
                 </div>
                 ${pc.contenu && html`<p class="small muted"
@@ -3461,7 +3552,13 @@ function MonDossier({ p, entier }){
                 l\u2019identité de personnes tierces.</p>`}
           </div>`}
 
-        ${dos.statut !== 'clos' && html`
+        ${dos.scelle && html`
+          <p class="small muted" style="margin-top:24px;padding-top:24px;
+             border-top:1px solid var(--filet)">
+            Ce dossier est clos et scellé. Plus aucune pièce ne peut y être versée.
+          </p>`}
+
+        ${!dos.scelle && html`
           <form onSubmit=${e=>deposerObs(dos, e)} style="margin-top:24px;
                padding-top:24px;border-top:1px solid var(--filet)">
             <div class="field">
@@ -3470,8 +3567,45 @@ function MonDossier({ p, entier }){
                 onInput=${e=>setObs(o=>({...o,[dos.id]:e.target.value}))}
                 placeholder="Tout ce que vous souhaitez porter à la connaissance de l\u2019instruction." />
             </div>
+            <div class="field">
+              <label>Joindre un document</label>
+              <input type="file" accept="image/*,.pdf,.doc,.docx"
+                onChange=${e=>setDoc(o=>({...o,[dos.id]:e.target.files[0]||null}))} />
+              <p class="small muted" style="margin:6px 0 0">
+                Photo, PDF ou document, 10 Mo maximum.</p>
+            </div>
             <button class="btn sm" style="margin-top:8px">Verser au dossier</button>
-          </form>`}
+          </form>
+
+          ${dos.peut_renoncer && html`
+            <div style="margin-top:24px;padding-top:24px;border-top:1px solid var(--filet)">
+              ${renonce[dos.id] === undefined
+                ? html`<button class="btn light" style="border:0;background:transparent;
+                    padding:0;font-size:13px;color:var(--gris)"
+                    onClick=${()=>setRenonce(o=>({...o,[dos.id]:''}))}>
+                    Renoncer à mes voies de recours gracieux</button>`
+                : html`
+                  <form onSubmit=${e=>renoncer(dos, e)}>
+                    <div class="alerte err" style="margin-bottom:16px">
+                      La renonciation est définitive. Elle met fin aux recours en cours
+                      et ferme la voie gracieuse pour toutes les décisions déjà notifiées
+                      de ce dossier. Elle ne vous prive d\u2019aucun droit devant les
+                      juridictions compétentes.
+                    </div>
+                    <div class="field">
+                      <label>Écrivez votre renonciation</label>
+                      <textarea required value=${renonce[dos.id]}
+                        onInput=${e=>setRenonce(o=>({...o,[dos.id]:e.target.value}))}
+                        placeholder="Je soussigné(e) …, renonce expressément aux voies de recours gracieux ouvertes contre les décisions du présent dossier." />
+                    </div>
+                    <div class="row" style="margin-top:12px">
+                      <button class="btn danger">Je renonce</button>
+                      <button type="button" class="btn light"
+                        onClick=${()=>setRenonce(o=>{const c={...o};delete c[dos.id];return c})}>
+                        Annuler</button>
+                    </div>
+                  </form>`}
+            </div>`}`}
       </div>
     </div>`;
 
@@ -3592,6 +3726,33 @@ function Discipline({ p }){
   }, [detail]);
   useEffect(() => { charger(); }, []);
 
+  // Extraction du registre : la DAJ a dans sa mission de tenir une
+  // sauvegarde à jour. Chaque extraction est tracée au journal.
+  async function exporter(){
+    const { data, error } = await db.rpc('registre_discipline');
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data || data.length === 0) return setMsg('Erreur : registre vide ou accès refusé.');
+
+    const colonnes = Object.keys(data[0]);
+    const echappe = v => {
+      if (v === null || v === undefined) return '';
+      const t = String(v).replace(/"/g, '""');
+      return /[";\n]/.test(t) ? '"' + t + '"' : t;
+    };
+    const csv = '\ufeff' + colonnes.join(';') + '\n' +
+      data.map(l => colonnes.map(c => echappe(l[c])).join(';')).join('\n');
+
+    const nom = 'FFCE-registre-discipline-' +
+      new Date().toISOString().slice(0,10) + '.csv';
+    const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+    const a = document.createElement('a');
+    a.href = url; a.download = nom; a.click();
+    URL.revokeObjectURL(url);
+
+    await db.rpc('tracer_export', { p_objet: nom, p_lignes: data.length });
+    setMsg(data.length + ' ligne(s) extraites. Déposez le fichier sur le Drive de la fédération.');
+  }
+
   async function ouvrir(e){
     e.preventDefault();
     const { data, error } = await db.rpc('ouvrir_dossier', {
@@ -3673,7 +3834,15 @@ function Discipline({ p }){
           </div>
         </form>`}
 
-      <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+      <div class="spread" style="margin-top:24px">
+        <span class="small muted">
+          ${dossiers.length} dossier${dossiers.length>1?'s':''} en cours
+          · ${archives.length} archivé${archives.length>1?'s':''}
+        </span>
+        <button class="btn light" onClick=${exporter}>Extraire le registre</button>
+      </div>
+
+      <div class="row" style="margin:24px 0;gap:0;border-bottom:1px solid var(--filet)">
         ${[['ouverts','En cours'],['alertes','Alertes de suivi'],['archives','Archives']]
           .map(([k,t]) => html`
           <button class="btn light" style=${'border:0;border-bottom:2px solid '+
@@ -3726,6 +3895,7 @@ function DossierDetail({ p, d, gens, fermer }){
   const [mesures, setMesures] = useState([]);
   const [recours, setRecours] = useState([]);
   const [piece, setPiece] = useState({type:'note_instruction', titre:'', contenu:'', communicable:false});
+  const [fichier, setFichier] = useState(null);
   const [mes, setMes] = useState({type:'avertissement', motif:'', texte:'', effet:'', fin:''});
   const [msg, setMsg] = useState('');
 
@@ -3747,15 +3917,35 @@ function DossierDetail({ p, d, gens, fermer }){
 
   async function verser(e){
     e.preventDefault();
+    let chemin = null;
+    try {
+      if (fichier){
+        if (fichier.size > 10 * 1024 * 1024)
+          throw new Error('Le document ne doit pas dépasser 10 Mo.');
+        const ext = fichier.name.split('.').pop();
+        chemin = p.id + '/' + d.id + '-' + Date.now() + '.' + ext;
+        const { error: eUp } = await db.storage.from('dossiers').upload(chemin, fichier);
+        if (eUp) throw eUp;
+      }
+    } catch (err){ return setMsg('Erreur : ' + (err.message||'téléversement impossible')); }
+
     const { data, error } = await db.rpc('verser_piece', {
       p_dossier: d.id, p_type: piece.type, p_titre: piece.titre,
-      p_contenu: piece.contenu || null, p_fichier: null,
+      p_contenu: piece.contenu || null, p_fichier: chemin,
       p_communicable: piece.communicable
     });
     if (error) return setMsg('Erreur : ' + error.message);
     if (!data.ok) return setMsg('Erreur : ' + data.message);
     setPiece({type:'note_instruction', titre:'', contenu:'', communicable:false});
+    setFichier(null);
     setMsg('Pièce versée au dossier.'); charger();
+  }
+
+  async function ouvrirFichier(pc){
+    const { data, error } = await db.storage.from('dossiers')
+      .createSignedUrl(pc.fichier, 120);
+    if (error) return setMsg('Document introuvable.');
+    window.open(data.signedUrl, '_blank', 'noopener');
   }
 
   async function prononcer(e){
@@ -3871,6 +4061,14 @@ function DossierDetail({ p, d, gens, fermer }){
           })}
       </div>
 
+      ${d.statut === 'clos' && html`
+        <div class="alerte" style="margin-top:24px;border-left-color:var(--laiton)">
+          Ce dossier est clos et scellé le ${jour(d.clos_le)}. Aucune pièce, mesure
+          ou recours ne peut plus y être versé.
+          ${d.conclusion ? ' Conclusion : ' + d.conclusion : ''}
+        </div>`}
+
+      ${d.statut !== 'clos' && html`
       <form onSubmit=${prononcer} class="panneau" style="margin-top:24px">
         <div class="tete"><h3 style="font-size:17px">Prononcer une mesure</h3></div>
         <div class="corps stack">
@@ -3898,7 +4096,7 @@ function DossierDetail({ p, d, gens, fermer }){
             notifiée. La notification ouvre le délai de recours.
           </p>
         </div>
-      </form>
+      </form>`}
 
       <div class="panneau" style="margin-top:24px">
         <div class="tete"><h3 style="font-size:17px">Pièces</h3>
@@ -3906,7 +4104,10 @@ function DossierDetail({ p, d, gens, fermer }){
         ${pieces.map(pc => html`
           <div class="ligne">
             <div style="flex:1;min-width:240px">
-              <div>${pc.titre}</div>
+              <div>${pc.fichier
+                ? html`<a href="#" onClick=${e=>{e.preventDefault();ouvrirFichier(pc)}}>
+                    ${pc.titre} ↗</a>`
+                : pc.titre}</div>
               ${pc.contenu && html`<div class="small muted"
                 style="margin-top:4px;white-space:pre-wrap;max-width:60ch">${pc.contenu}</div>`}
               <div class="small muted" style="margin-top:4px">
@@ -3918,6 +4119,7 @@ function DossierDetail({ p, d, gens, fermer }){
           </div>`)}
       </div>
 
+      ${d.statut !== 'clos' && html`
       <form onSubmit=${verser} class="panneau" style="margin-top:24px">
         <div class="tete"><h3 style="font-size:17px">Verser une pièce</h3></div>
         <div class="corps stack">
@@ -3947,13 +4149,22 @@ function DossierDetail({ p, d, gens, fermer }){
             contenu n\u2019est pas ouvert — cela protège l\u2019identité d\u2019un témoin.
             Le contradictoire suppose que ce soit l\u2019exception.
           </p>
+          <div class="field">
+            <label>Document</label>
+            <input type="file" accept="image/*,.pdf,.doc,.docx"
+              onChange=${e=>setFichier(e.target.files[0]||null)} />
+          </div>
           <div><button class="btn">Verser</button></div>
         </div>
-      </form>
+      </form>`}
 
       ${d.statut !== 'clos' && html`
         <div style="margin-top:32px">
           <button class="btn light" onClick=${clore}>Clore le dossier</button>
+          <p class="small muted" style="margin-top:8px">
+            La clôture scelle le dossier. Tous les recours doivent avoir été
+            tranchés au préalable.
+          </p>
         </div>`}
     </div>`;
 }
