@@ -734,6 +734,7 @@ function Flanc({ p, apps, page }){
         ${item('compte', 'Mon compte')}
         ${item('demandes', 'Mes demandes')}
         ${dispo('formations') && item('formations','Formations')}
+        ${dispo('groupes') && item('groupes','Groupes de travail')}
         ${dispo('annuaire') && html`
           <div class="groupe">Encadrement</div>
           ${item('annuaire','Annuaire fédéral')}`}
@@ -1296,6 +1297,566 @@ function Lecon({ lecon, suivante, dejaFaite, fermer, allerSuivante }){
     </div>`;
 }
 
+
+/* =====================================================================
+   5 ter. GROUPES DE TRAVAIL
+   Le catalogue, l'entrée dans un groupe, les documents, les tâches.
+   Un groupe peut exiger une certification : la formation conditionne
+   alors l'accès au projet.
+   ===================================================================== */
+
+function Groupes({ p }){
+  const [liste, setListe] = useState(null);
+  const [miens, setMiens] = useState({});
+  const [certifs, setCertifs] = useState([]);
+  const [terr, setTerr] = useState([]);
+  const [creer, setCreer] = useState(false);
+  const [f, setF] = useState({nom:'',objet:'',territoire:'',certification:'',niveau:'10',ouvert:'true'});
+  const [msg, setMsg] = useState('');
+
+  const peutCreer = p.echelon >= 3 || p.niveau >= 50;
+
+  const charger = useCallback(async () => {
+    const [{ data: gs }, { data: ms }, { data: cs }, { data: ts }] = await Promise.all([
+      db.from('v_groupes').select('*').eq('statut','actif').order('nom'),
+      db.from('gt_membres').select('groupe_id,role,statut').eq('profil_id', p.id),
+      db.from('certifications').select('code,nom').eq('actif', true).order('nom'),
+      db.from('territoires').select('id,nom,echelle').order('echelle').order('nom')
+    ]);
+    setListe(gs || []);
+    setMiens(Object.fromEntries((ms||[]).map(m => [m.groupe_id, m])));
+    setCertifs(cs || []); setTerr(ts || []);
+  }, [p.id]);
+
+  useEffect(() => { charger(); }, [charger]);
+
+  async function rejoindre(id){
+    setMsg('');
+    const { data, error } = await db.rpc('rejoindre_groupe', { p_groupe: id });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    charger();
+  }
+
+  async function repondre(id, oui){
+    await db.rpc('repondre_invitation', { p_groupe: id, p_accepte: oui });
+    charger();
+  }
+
+  async function envoyerCreation(e){
+    e.preventDefault(); setMsg('');
+    const { data, error } = await db.rpc('creer_groupe', {
+      p_nom: f.nom, p_objet: f.objet,
+      p_territoire: f.territoire || null,
+      p_certification: f.certification || null,
+      p_niveau_min: Number(f.niveau),
+      p_ouvert: f.ouvert === 'true'
+    });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setCreer(false); setF({nom:'',objet:'',territoire:'',certification:'',niveau:'10',ouvert:'true'});
+    aller('/espace/groupe/' + data.id);
+  }
+
+  if (!liste) return html`<div class="vide">Chargement…</div>`;
+
+  const invitations = liste.filter(g => miens[g.id]?.statut === 'invite');
+  const mesGroupes  = liste.filter(g => miens[g.id]?.statut === 'actif');
+  const autres      = liste.filter(g => !miens[g.id] || miens[g.id].statut === 'parti');
+
+  const carteGroupe = (g, action) => html`
+    <div class="ligne">
+      <div style="flex:1;min-width:220px">
+        <div>${g.nom}</div>
+        <div class="small muted">${g.objet || ''}</div>
+        <div class="row" style="margin-top:8px;gap:6px">
+          <span class="tag">${g.nb_membres} membre${g.nb_membres>1?'s':''}</span>
+          ${g.territoire_nom && html`<span class="tag">${g.territoire_nom}</span>`}
+          ${g.certification_nom && html`<span class="tag or">${g.certification_nom} requis</span>`}
+          ${!g.ouvert && html`<span class="tag">Sur invitation</span>`}
+        </div>
+      </div>
+      ${action}
+    </div>`;
+
+  return html`
+    <div>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Groupes de travail</div>
+          <h1 style="margin:6px 0 0">Projets et chantiers</h1>
+        </div>
+        ${peutCreer && html`<button class="btn" onClick=${()=>setCreer(c=>!c)}>
+          ${creer ? 'Annuler' : 'Créer un groupe'}</button>`}
+      </div>
+      <p class="muted" style="max-width:58ch;margin-top:12px">
+        Certains groupes exigent une certification. Vous l\u2019obtenez en
+        achevant la formation correspondante.
+      </p>
+
+      ${msg && html`<div class="alerte err" style="margin-top:24px">${msg}</div>`}
+
+      ${creer && html`
+        <form onSubmit=${envoyerCreation} class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Nouveau groupe</h3></div>
+          <div class="corps stack">
+            <div class="field"><label>Nom</label>
+              <input required value=${f.nom} onInput=${e=>setF(o=>({...o,nom:e.target.value}))} /></div>
+            <div class="field"><label>Objet</label>
+              <textarea required value=${f.objet}
+                onInput=${e=>setF(o=>({...o,objet:e.target.value}))}
+                placeholder="À quoi sert ce groupe, en deux phrases."></textarea></div>
+            <div class="field"><label>Périmètre</label>
+              <select value=${f.territoire} onChange=${e=>setF(o=>({...o,territoire:e.target.value}))}>
+                <option value="">National — ouvert à tous</option>
+                ${terr.map(t => html`<option value=${t.id}>${t.nom} (${t.echelle})</option>`)}
+              </select></div>
+            <div class="field"><label>Certification exigée</label>
+              <select value=${f.certification} onChange=${e=>setF(o=>({...o,certification:e.target.value}))}>
+                <option value="">Aucune</option>
+                ${certifs.map(c => html`<option value=${c.code}>${c.nom}</option>`)}
+              </select></div>
+            <div class="field"><label>Entrée</label>
+              <select value=${f.ouvert} onChange=${e=>setF(o=>({...o,ouvert:e.target.value}))}>
+                <option value="true">Libre — on rejoint seul</option>
+                <option value="false">Sur invitation du responsable</option>
+              </select></div>
+            <div><button class="btn">Créer le groupe</button></div>
+            <p class="small muted">Vous en serez le responsable.</p>
+          </div>
+        </form>`}
+
+      ${invitations.length > 0 && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Invitations reçues</h3>
+            <span class="tag bleu">${invitations.length}</span></div>
+          ${invitations.map(g => carteGroupe(g, html`
+            <div class="row">
+              <button class="btn sm" onClick=${()=>repondre(g.id,true)}>Accepter</button>
+              <button class="btn sm light" onClick=${()=>repondre(g.id,false)}>Décliner</button>
+            </div>`))}
+        </div>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Mes groupes</h3>
+          <span class="tag">${mesGroupes.length}</span></div>
+        ${mesGroupes.length === 0
+          ? html`<div class="vide">Vous ne participez à aucun groupe pour l\u2019instant.</div>`
+          : mesGroupes.map(g => carteGroupe(g, html`
+              <div class="row">
+                ${miens[g.id]?.role === 'responsable' && html`<span class="tag or">Responsable</span>`}
+                <a class="btn sm" href=${'#/espace/groupe/'+g.id}>Ouvrir</a>
+              </div>`))}
+      </div>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Autres groupes</h3></div>
+        ${autres.length === 0
+          ? html`<div class="vide">Rien d\u2019autre à rejoindre.</div>`
+          : autres.map(g => carteGroupe(g,
+              g.ouvert
+                ? html`<button class="btn sm light" onClick=${()=>rejoindre(g.id)}>Rejoindre</button>`
+                : html`<span class="tag">Sur invitation</span>`))}
+      </div>
+    </div>`;
+}
+
+function Groupe({ p, id }){
+  const [g, setG] = useState(null);
+  const [onglet, setOnglet] = useState('taches');
+  const [membres, setMembres] = useState([]);
+  const [docs, setDocs] = useState([]);
+  const [taches, setTaches] = useState([]);
+  const [gens, setGens] = useState({});     // id → profil, pour les noms
+  const [msg, setMsg] = useState('');
+  const [refuse, setRefuse] = useState('');
+
+  const charger = useCallback(async () => {
+    const { data: gr } = await db.from('v_groupes').select('*').eq('id', id).maybeSingle();
+    setG(gr);
+    if (!gr) return;
+
+    const { data: ms } = await db.from('gt_membres').select('*').eq('groupe_id', id);
+    setMembres(ms || []);
+
+    const [{ data: ds }, { data: ts }] = await Promise.all([
+      db.from('gt_documents').select('*').eq('groupe_id', id).order('cree_le', {ascending:false}),
+      db.from('gt_taches').select('*').eq('groupe_id', id).order('echeance', {nullsFirst:false})
+    ]);
+    setDocs(ds || []); setTaches(ts || []);
+
+    // gt_taches pointe deux fois vers profils : on lit les noms à part.
+    const ids = [...new Set([
+      ...(ms||[]).map(m => m.profil_id),
+      ...(ts||[]).map(t => t.assigne_a).filter(Boolean),
+      ...(ds||[]).map(d => d.depose_par).filter(Boolean)
+    ])];
+    if (ids.length){
+      const { data: ps } = await db.from('v_annuaire')
+        .select('id,prenom,nom,matricule,fonction_nom,echelon').in('id', ids);
+      setGens(Object.fromEntries((ps||[]).map(x => [x.id, x])));
+    }
+  }, [id]);
+
+  useEffect(() => { charger(); }, [charger]);
+
+  useEffect(() => { (async () => {
+    const { data } = await db.rpc('obstacle_groupe', { p_groupe: id });
+    setRefuse(data || '');
+  })(); }, [id]);
+
+  if (!g) return html`<div class="vide">Groupe introuvable ou fermé.</div>`;
+
+  const moi = membres.find(m => m.profil_id === p.id && m.statut === 'actif');
+  const responsable = moi?.role === 'responsable' || p.niveau >= 90;
+
+  if (!moi) return html`
+    <div>
+      <a class="small" href="#/espace/groupes">← Tous les groupes</a>
+      <h1 style="margin:12px 0 8px">${g.nom}</h1>
+      <p class="muted" style="max-width:58ch">${g.objet||''}</p>
+      <div class="alerte" style="margin-top:24px">
+        ${refuse
+          ? refuse
+          : (g.ouvert
+              ? 'Vous ne participez pas encore à ce groupe.'
+              : 'Ce groupe se rejoint sur invitation de son responsable.')}
+      </div>
+      ${!refuse && g.ouvert && html`
+        <div style="margin-top:24px">
+          <button class="btn" onClick=${async ()=>{
+            const { data } = await db.rpc('rejoindre_groupe', { p_groupe: id });
+            if (data?.ok) charger(); else setMsg(data?.message||'');
+          }}>Rejoindre ce groupe</button>
+        </div>`}
+      ${msg && html`<div class="alerte err" style="margin-top:16px">${msg}</div>`}
+    </div>`;
+
+  return html`
+    <div>
+      <a class="small" href="#/espace/groupes">← Tous les groupes</a>
+      <div class="spread" style="margin-top:12px">
+        <div>
+          <h1>${g.nom}</h1>
+          <div class="row" style="margin-top:8px;gap:6px">
+            <span class="tag">${g.nb_membres} membre${g.nb_membres>1?'s':''}</span>
+            ${g.territoire_nom && html`<span class="tag">${g.territoire_nom}</span>`}
+            ${g.certification_nom && html`<span class="tag or">${g.certification_nom}</span>`}
+            ${responsable && html`<span class="tag or">Vous êtes responsable</span>`}
+          </div>
+        </div>
+      </div>
+      <p class="muted" style="max-width:60ch;margin-top:16px">${g.objet||''}</p>
+
+      <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['taches','Tâches'],['documents','Documents'],['membres','Membres']].map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--encre)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${msg && html`<div class="alerte err" style="margin-bottom:16px">${msg}</div>`}
+
+      ${onglet === 'taches' && html`<${GtTaches} p=${p} groupe=${g} taches=${taches}
+        membres=${membres} gens=${gens} responsable=${responsable} recharger=${charger} />`}
+      ${onglet === 'documents' && html`<${GtDocuments} p=${p} groupe=${g} docs=${docs}
+        gens=${gens} responsable=${responsable} recharger=${charger} />`}
+      ${onglet === 'membres' && html`<${GtMembres} p=${p} groupe=${g} membres=${membres}
+        gens=${gens} responsable=${responsable} recharger=${charger} />`}
+    </div>`;
+}
+
+function GtTaches({ p, groupe, taches, membres, gens, responsable, recharger }){
+  const [ouvrir, setOuvrir] = useState(false);
+  const [f, setF] = useState({titre:'',description:'',assigne:'',echeance:'',priorite:'normale'});
+  const [msg, setMsg] = useState('');
+
+  const actifs = membres.filter(m => m.statut === 'actif');
+
+  async function ajouter(e){
+    e.preventDefault(); setMsg('');
+    const { error } = await db.from('gt_taches').insert({
+      groupe_id: groupe.id, titre: f.titre, description: f.description || null,
+      assigne_a: f.assigne || null, echeance: f.echeance || null,
+      priorite: f.priorite, cree_par: p.id
+    });
+    if (error) return setMsg(error.message);
+    setF({titre:'',description:'',assigne:'',echeance:'',priorite:'normale'});
+    setOuvrir(false); recharger();
+  }
+
+  async function changer(t, statut){
+    const { error } = await db.from('gt_taches').update({
+      statut, faite_le: statut === 'faite' ? new Date().toISOString() : null
+    }).eq('id', t.id);
+    if (error) setMsg(error.message);
+    recharger();
+  }
+
+  const enCours = taches.filter(t => t.statut === 'a_faire' || t.statut === 'en_cours');
+  const closes  = taches.filter(t => t.statut === 'faite' || t.statut === 'abandonnee');
+  const retard  = t => t.echeance && new Date(t.echeance) < new Date() && t.statut !== 'faite';
+
+  const ligneTache = t => html`
+    <div class="ligne">
+      <div style="flex:1;min-width:220px">
+        <div style=${t.statut==='faite'||t.statut==='abandonnee' ? 'opacity:.55' : ''}>${t.titre}</div>
+        ${t.description && html`<div class="small muted">${t.description}</div>`}
+        <div class="row" style="margin-top:8px;gap:6px">
+          ${t.assigne_a
+            ? html`<span class="tag bleu">${nomComplet(gens[t.assigne_a]||{})}</span>`
+            : html`<span class="tag">Non assignée</span>`}
+          ${t.echeance && html`<span class=${'tag'+(retard(t)?' rouge':'')}>
+            ${retard(t)?'En retard · ':''}${jour(t.echeance)}</span>`}
+          ${t.priorite === 'haute' && html`<span class="tag rouge">Prioritaire</span>`}
+        </div>
+      </div>
+      <div class="row">
+        ${t.statut === 'a_faire' && html`
+          <button class="btn sm light" onClick=${()=>changer(t,'en_cours')}>Commencer</button>`}
+        ${(t.statut === 'a_faire' || t.statut === 'en_cours') && html`
+          <button class="btn sm" onClick=${()=>changer(t,'faite')}>Terminer</button>`}
+        ${(t.statut === 'faite' || t.statut === 'abandonnee') && html`
+          <button class="btn sm light" onClick=${()=>changer(t,'a_faire')}>Rouvrir</button>`}
+      </div>
+    </div>`;
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:16px">
+        <span class="small muted">${enCours.length} tâche${enCours.length>1?'s':''} en cours</span>
+        <button class="btn sm" onClick=${()=>setOuvrir(o=>!o)}>
+          ${ouvrir ? 'Annuler' : 'Ajouter une tâche'}</button>
+      </div>
+      ${msg && html`<div class="alerte err" style="margin-bottom:16px">${msg}</div>`}
+
+      ${ouvrir && html`
+        <form onSubmit=${ajouter} class="panneau" style="margin-bottom:24px">
+          <div class="corps stack">
+            <div class="field"><label>Intitulé</label>
+              <input required value=${f.titre} onInput=${e=>setF(o=>({...o,titre:e.target.value}))} /></div>
+            <div class="field"><label>Précisions</label>
+              <textarea value=${f.description} onInput=${e=>setF(o=>({...o,description:e.target.value}))} /></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:180px"><label>Assignée à</label>
+                <select value=${f.assigne} onChange=${e=>setF(o=>({...o,assigne:e.target.value}))}>
+                  <option value="">Personne</option>
+                  ${actifs.map(m => html`<option value=${m.profil_id}>
+                    ${nomComplet(gens[m.profil_id]||{})}</option>`)}
+                </select></div>
+              <div class="field" style="flex:1;min-width:140px;margin-top:0"><label>Échéance</label>
+                <input type="date" value=${f.echeance}
+                  onInput=${e=>setF(o=>({...o,echeance:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:140px;margin-top:0"><label>Priorité</label>
+                <select value=${f.priorite} onChange=${e=>setF(o=>({...o,priorite:e.target.value}))}>
+                  <option value="basse">Basse</option>
+                  <option value="normale">Normale</option>
+                  <option value="haute">Haute</option>
+                </select></div>
+            </div>
+            <div><button class="btn">Ajouter</button></div>
+          </div>
+        </form>`}
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">À faire</h3></div>
+        ${enCours.length === 0
+          ? html`<div class="vide">Rien en cours. C\u2019est peut-être le moment d\u2019ajouter une tâche.</div>`
+          : enCours.map(ligneTache)}
+      </div>
+
+      ${closes.length > 0 && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Terminées</h3>
+            <span class="tag">${closes.length}</span></div>
+          ${closes.map(ligneTache)}
+        </div>`}
+    </div>`;
+}
+
+function GtDocuments({ p, groupe, docs, gens, responsable, recharger }){
+  const [ouvrir, setOuvrir] = useState(false);
+  const [f, setF] = useState({titre:'',type:'drive',url:'',description:''});
+  const [msg, setMsg] = useState('');
+
+  const libelle = { lien:'Lien', drive:'Drive', docs:'Document', sheets:'Tableur',
+                    agenda:'Agenda', note:'Note' };
+
+  async function ajouter(e){
+    e.preventDefault(); setMsg('');
+    const { error } = await db.from('gt_documents').insert({
+      groupe_id: groupe.id, titre: f.titre, type: f.type,
+      url: f.url || null, description: f.description || null, depose_par: p.id
+    });
+    if (error) return setMsg(error.message);
+    setF({titre:'',type:'drive',url:'',description:''}); setOuvrir(false); recharger();
+  }
+
+  async function retirer(d){
+    if (!confirm('Retirer « ' + d.titre + ' » de ce groupe ?')) return;
+    await db.from('gt_documents').delete().eq('id', d.id);
+    recharger();
+  }
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:16px">
+        <span class="small muted">
+          Les fichiers restent sur le Drive de la fédération. On n\u2019en garde ici que le lien.
+        </span>
+        <button class="btn sm" onClick=${()=>setOuvrir(o=>!o)}>
+          ${ouvrir ? 'Annuler' : 'Ajouter un document'}</button>
+      </div>
+      ${msg && html`<div class="alerte err" style="margin-bottom:16px">${msg}</div>`}
+
+      ${ouvrir && html`
+        <form onSubmit=${ajouter} class="panneau" style="margin-bottom:24px">
+          <div class="corps stack">
+            <div class="field"><label>Titre</label>
+              <input required value=${f.titre} onInput=${e=>setF(o=>({...o,titre:e.target.value}))} /></div>
+            <div class="field"><label>Nature</label>
+              <select value=${f.type} onChange=${e=>setF(o=>({...o,type:e.target.value}))}>
+                ${Object.entries(libelle).map(([k,v]) => html`<option value=${k}>${v}</option>`)}
+              </select></div>
+            <div class="field"><label>Adresse</label>
+              <input type="url" value=${f.url} placeholder="https://docs.google.com/…"
+                onInput=${e=>setF(o=>({...o,url:e.target.value}))} /></div>
+            <div class="field"><label>À quoi sert ce document</label>
+              <textarea value=${f.description}
+                onInput=${e=>setF(o=>({...o,description:e.target.value}))} /></div>
+            <div><button class="btn">Ajouter</button></div>
+          </div>
+        </form>`}
+
+      <div class="panneau">
+        ${docs.length === 0
+          ? html`<div class="vide">Aucun document partagé pour l\u2019instant.</div>`
+          : docs.map(d => html`
+            <div class="ligne">
+              <div style="flex:1;min-width:220px">
+                <div>${d.url
+                  ? html`<a href=${d.url} target="_blank" rel="noopener">${d.titre} ↗</a>`
+                  : d.titre}</div>
+                ${d.description && html`<div class="small muted">${d.description}</div>`}
+                <div class="row" style="margin-top:8px;gap:6px">
+                  <span class="tag">${libelle[d.type]||d.type}</span>
+                  <span class="small muted">
+                    ${nomComplet(gens[d.depose_par]||{})} · ${jour(d.cree_le)}</span>
+                </div>
+              </div>
+              ${(d.depose_par === p.id || responsable) && html`
+                <button class="btn sm light" onClick=${()=>retirer(d)}>Retirer</button>`}
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+function GtMembres({ p, groupe, membres, gens, responsable, recharger }){
+  const [candidats, setCandidats] = useState([]);
+  const [choix, setChoix] = useState('');
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => { (async () => {
+    if (!responsable) return;
+    const { data } = await db.from('v_annuaire').select('id,prenom,nom,matricule,fonction_nom')
+      .eq('statut','actif').order('nom');
+    setCandidats(data || []);
+  })(); }, [responsable]);
+
+  async function inviter(e){
+    e.preventDefault(); setMsg('');
+    const { data, error } = await db.rpc('inviter_au_groupe',
+      { p_groupe: groupe.id, p_profil: choix });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setChoix(''); setMsg('Invitation envoyée.'); recharger();
+  }
+
+  async function changerRole(m, role){
+    await db.from('gt_membres').update({ role }).eq('id', m.id);
+    recharger();
+  }
+
+  async function retirer(m){
+    if (!confirm('Retirer ce membre du groupe ?')) return;
+    await db.from('gt_membres').update({ statut: 'parti' }).eq('id', m.id);
+    recharger();
+  }
+
+  async function partir(){
+    const { data } = await db.rpc('quitter_groupe', { p_groupe: groupe.id });
+    if (!data.ok) return setMsg(data.message);
+    aller('/espace/groupes');
+  }
+
+  const dejaLa = new Set(membres.map(m => m.profil_id));
+  const actifs = membres.filter(m => m.statut === 'actif');
+  const invites = membres.filter(m => m.statut === 'invite');
+
+  return html`
+    <div>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Invitation')?'ok':'err')}
+        style="margin-bottom:16px">${msg}</div>`}
+
+      ${responsable && html`
+        <form onSubmit=${inviter} class="panneau" style="margin-bottom:24px">
+          <div class="tete"><h3 style="font-size:17px">Inviter un membre</h3></div>
+          <div class="corps row" style="align-items:flex-end;gap:12px">
+            <div class="field" style="flex:1;min-width:220px;margin:0">
+              <label>Membre</label>
+              <select required value=${choix} onChange=${e=>setChoix(e.target.value)}>
+                <option value="">Choisir…</option>
+                ${candidats.filter(c => !dejaLa.has(c.id)).map(c => html`
+                  <option value=${c.id}>${nomComplet(c)} — ${c.fonction_nom}</option>`)}
+              </select>
+            </div>
+            <button class="btn">Inviter</button>
+          </div>
+        </form>`}
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">Membres</h3>
+          <span class="tag">${actifs.length}</span></div>
+        ${actifs.map(m => {
+          const g = gens[m.profil_id] || {};
+          return html`
+            <div class="ligne">
+              <div>
+                <div>${nomComplet(g)}
+                  ${m.role === 'responsable' && html`<span class="tag or"
+                    style="margin-left:8px">Responsable</span>`}</div>
+                <div class="small muted">${g.fonction_nom||''}
+                  <span class="mono">${g.matricule||''}</span></div>
+              </div>
+              ${responsable && m.profil_id !== p.id && html`
+                <div class="row">
+                  ${m.role === 'membre'
+                    ? html`<button class="btn sm light"
+                        onClick=${()=>changerRole(m,'responsable')}>Nommer responsable</button>`
+                    : html`<button class="btn sm light"
+                        onClick=${()=>changerRole(m,'membre')}>Retirer la responsabilité</button>`}
+                  <button class="btn sm light" onClick=${()=>retirer(m)}>Retirer</button>
+                </div>`}
+            </div>`;
+        })}
+      </div>
+
+      ${invites.length > 0 && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Invitations en attente</h3></div>
+          ${invites.map(m => html`
+            <div class="ligne">
+              <div>${nomComplet(gens[m.profil_id]||{})}</div>
+              <span class="tag bleu">Invité</span>
+            </div>`)}
+        </div>`}
+
+      <div style="margin-top:32px">
+        <button class="btn light" onClick=${partir}>Quitter ce groupe</button>
+      </div>
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
@@ -1595,6 +2156,16 @@ function Espace({ session, sous }){
       <div class="alerte">Ce module arrive dans une prochaine mise en ligne.</div></div>`;
 
   let vue;
+  if (sous.startsWith('groupe/')){
+    const idG = sous.slice('groupe/'.length);
+    return html`
+      <div class="app">
+        <${Flanc} p=${p} apps=${apps} page="groupes" />
+        <main class="contenu">
+          ${acces('groupes') ? html`<${Groupe} p=${p} id=${idG} />` : refus}
+        </main>
+      </div>`;
+  }
   if (sous.startsWith('formation/')){
     const idF = sous.slice('formation/'.length);
     return html`
@@ -1614,7 +2185,7 @@ function Espace({ session, sous }){
     case 'reseau':     vue = admin ? html`<${ReseauAdmin} />` : refus; break;
     case 'vitrine':    vue = admin ? html`<${VitrineAdmin} />` : refus; break;
     case 'formations': vue = acces('formations') ? html`<${Formations} p=${p} />` : refus; break;
-    case 'groupes':    vue = acces('groupes')    ? bientot('Groupes de travail') : refus; break;
+    case 'groupes':    vue = acces('groupes') ? html`<${Groupes} p=${p} />` : refus; break;
     case 'messagerie': vue = acces('messagerie') ? bientot('Messagerie interne') : refus; break;
     case 'notes_frais':vue = acces('notes_frais')? bientot('Notes de frais') : refus; break;
     case 'tresorerie': vue = acces('tresorerie') ? bientot('Direction financière') : refus; break;
