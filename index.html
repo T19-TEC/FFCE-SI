@@ -1,1 +1,1374 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FFCE — Fédération Française pour la Citoyenneté et l'Égalité des Chances</title>
+<meta name="description" content="La FFCE fédère des bénévoles dans toute la France pour l'éducation à la citoyenneté, la transmission des valeurs de la République et l'égalité des chances.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,300;0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
+<style>
+/* =====================================================================
+   CHARTE FFCE
+   Palette réduite, deux familles, filets d'un pixel, aucune ombre,
+   aucun dégradé, une seule échelle d'espacement (multiples de 4 px).
+   ===================================================================== */
+:root{
+  --encre:#0B1B33;      /* bleu nuit — titres, texte fort            */
+  --bleu:#1B4B8F;       /* bleu République — liens, actions           */
+  --bleu-clair:#EAF0F8;
+  --papier:#FBFAF8;     /* fond, très légèrement crème                */
+  --blanc:#FFFFFF;
+  --gris:#5C6579;       /* texte secondaire                           */
+  --filet:#E2DFD8;      /* toutes les bordures                        */
+  --laiton:#8A6A24;     /* échelons, certifications, distinctions     */
+  --laiton-clair:#F6F0E2;
+  --vert:#166E4B;
+  --vert-clair:#E6F1EC;
+  --rouge:#A32A2A;
+  --rouge-clair:#F7EAEA;
+
+  --serif:'Spectral', Georgia, 'Times New Roman', serif;
+  --sans:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --mono:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  --max:1120px;
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--papier);color:var(--encre);
+  font-family:var(--sans);font-size:15px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--bleu);text-decoration:none}
+a:hover{text-decoration:underline}
+button{font:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--bleu);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+h1,h2,h3{font-family:var(--serif);font-weight:400;color:var(--encre);margin:0;line-height:1.2}
+h1{font-size:44px;letter-spacing:-.01em}
+h2{font-size:30px}
+h3{font-size:20px}
+p{margin:0 0 16px}
+
+.wrap{max-width:var(--max);margin:0 auto;padding:0 24px}
+.mono{font-family:var(--mono);font-size:12px;letter-spacing:.04em}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--gris)}
+.muted{color:var(--gris)}
+.small{font-size:13px}
+.center{text-align:center}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.spread{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.stack>*+*{margin-top:16px}
+.grid{display:grid;gap:1px;background:var(--filet)}
+.hr{height:1px;background:var(--filet);border:0;margin:32px 0}
+
+/* --- Boutons -------------------------------------------------------- */
+.btn{
+  display:inline-block;padding:11px 20px;border:1px solid var(--encre);
+  background:var(--encre);color:#fff;font-size:14px;letter-spacing:.01em;
+  border-radius:2px;transition:opacity .15s;
+}
+.btn:hover{opacity:.85;text-decoration:none}
+.btn.ghost{background:transparent;color:var(--encre)}
+.btn.ghost:hover{background:var(--encre);color:#fff;opacity:1}
+.btn.light{background:#fff;color:var(--encre);border-color:var(--filet)}
+.btn.light:hover{border-color:var(--encre);background:#fff;opacity:1}
+.btn.sm{padding:6px 12px;font-size:13px}
+.btn.danger{background:var(--rouge);border-color:var(--rouge)}
+.btn[disabled]{opacity:.4;cursor:not-allowed}
+
+/* --- Champs --------------------------------------------------------- */
+label{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--gris);margin-bottom:6px}
+input,select,textarea{
+  width:100%;padding:10px 12px;border:1px solid var(--filet);background:#fff;
+  border-radius:2px;font-family:var(--sans);font-size:15px;color:var(--encre);
+}
+input:focus,select:focus,textarea:focus{border-color:var(--bleu);outline:none}
+textarea{min-height:110px;resize:vertical}
+.field+.field{margin-top:16px}
+
+/* --- Étiquettes ----------------------------------------------------- */
+.tag{display:inline-block;padding:2px 8px;border:1px solid var(--filet);
+  border-radius:2px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--gris);background:#fff;white-space:nowrap}
+.tag.or{color:var(--laiton);border-color:#E4D8BC;background:var(--laiton-clair)}
+.tag.vert{color:var(--vert);border-color:#C6E0D3;background:var(--vert-clair)}
+.tag.rouge{color:var(--rouge);border-color:#E8CACA;background:var(--rouge-clair)}
+.tag.bleu{color:var(--bleu);border-color:#C9D8EC;background:var(--bleu-clair)}
+
+/* =====================================================================
+   SIGNATURE — la carte fédérale
+   Une plaque institutionnelle : matricule, fonction, périmètre, échelon.
+   C'est l'objet qui identifie un membre partout dans le système.
+   ===================================================================== */
+.carte{
+  border:1px solid var(--encre);background:#fff;border-radius:2px;
+  padding:16px 18px;position:relative;
+}
+.carte::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--encre);
+}
+.carte .matricule{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--gris)}
+.carte .nom{font-family:var(--serif);font-size:21px;margin:2px 0 4px}
+.carte .poste{font-size:14px}
+.carte .lieu{font-size:13px;color:var(--gris);margin-top:2px}
+.carte .ech{margin-top:12px;padding-top:10px;border-top:1px solid var(--filet);
+  display:flex;justify-content:space-between;align-items:center;gap:8px}
+
+/* --- Entête publique ------------------------------------------------ */
+.entete{border-bottom:1px solid var(--filet);background:var(--papier);
+  position:sticky;top:0;z-index:50}
+.entete .wrap{display:flex;align-items:center;justify-content:space-between;
+  gap:24px;height:72px}
+.logo{display:flex;align-items:baseline;gap:10px;color:var(--encre)}
+.logo:hover{text-decoration:none}
+.logo b{font-family:var(--serif);font-size:26px;font-weight:600;letter-spacing:.02em}
+.logo span{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--gris)}
+.nav{display:flex;gap:24px;align-items:center}
+.nav a{color:var(--encre);font-size:14px}
+.nav a.on{border-bottom:1px solid var(--encre)}
+@media(max-width:860px){.nav{display:none}}
+
+/* --- Héros ---------------------------------------------------------- */
+.heros{border-bottom:1px solid var(--filet);background:var(--blanc);
+  position:relative;overflow:hidden}
+.heros .wrap{padding:88px 24px 80px;position:relative;z-index:2}
+.heros h1{font-size:clamp(34px,5.2vw,60px);max-width:16ch;font-weight:300}
+.heros h1 em{font-style:italic;color:var(--bleu)}
+.heros p{max-width:52ch;font-size:17px;color:var(--gris);margin-top:24px}
+.maillage{position:absolute;inset:0;z-index:1;opacity:.5;pointer-events:none}
+
+/* --- Blocs ---------------------------------------------------------- */
+.bloc{padding:72px 0;border-bottom:1px solid var(--filet)}
+.bloc.blanc{background:var(--blanc)}
+.bloc h2{margin-bottom:8px}
+.intro{max-width:60ch;color:var(--gris);font-size:16px}
+
+.cartes{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+  gap:1px;background:var(--filet);border:1px solid var(--filet);margin-top:40px}
+.cartes>div{background:var(--blanc);padding:28px}
+.cartes h3{margin-bottom:8px}
+.cartes p{color:var(--gris);font-size:14px;margin:0}
+
+.chiffres{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+  gap:1px;background:var(--filet);border:1px solid var(--filet);margin-top:40px}
+.chiffres>div{background:var(--blanc);padding:32px 24px}
+.chiffres .n{font-family:var(--serif);font-size:46px;line-height:1;color:var(--bleu)}
+.chiffres .l{font-size:13px;color:var(--gris);margin-top:8px}
+
+.pied{padding:56px 0 40px;color:var(--gris);font-size:13px}
+.pied .cols{display:grid;grid-template-columns:2fr 1fr 1fr;gap:40px}
+@media(max-width:700px){.pied .cols{grid-template-columns:1fr}}
+.pied a{color:var(--gris);display:block;padding:3px 0}
+
+/* =====================================================================
+   ESPACE MEMBRE
+   ===================================================================== */
+.app{display:grid;grid-template-columns:246px 1fr;min-height:100vh}
+@media(max-width:900px){.app{grid-template-columns:1fr}}
+.flanc{border-right:1px solid var(--filet);background:var(--blanc);
+  padding:24px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+@media(max-width:900px){.flanc{position:static;height:auto;border-right:0;
+  border-bottom:1px solid var(--filet)}}
+.flanc .titre{padding:0 20px 20px;border-bottom:1px solid var(--filet);margin-bottom:12px}
+.flanc nav{display:flex;flex-direction:column}
+.flanc nav a{padding:9px 20px;color:var(--encre);font-size:14px;
+  border-left:2px solid transparent}
+.flanc nav a:hover{background:var(--papier);text-decoration:none}
+.flanc nav a.on{border-left-color:var(--encre);background:var(--papier);font-weight:500}
+.flanc .groupe{padding:20px 20px 6px;font-family:var(--mono);font-size:10px;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--gris)}
+.contenu{padding:40px;max-width:900px}
+@media(max-width:600px){.contenu{padding:24px 16px}}
+
+.panneau{border:1px solid var(--filet);background:var(--blanc);border-radius:2px}
+.panneau>.tete{padding:16px 20px;border-bottom:1px solid var(--filet);
+  display:flex;justify-content:space-between;align-items:center;gap:12px}
+.panneau>.corps{padding:20px}
+.ligne{padding:16px 20px;border-bottom:1px solid var(--filet);
+  display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+.ligne:last-child{border-bottom:0}
+
+.tuiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));
+  gap:1px;background:var(--filet);border:1px solid var(--filet)}
+.tuile{background:var(--blanc);padding:22px;display:block;color:var(--encre);
+  min-height:132px;transition:background .12s}
+.tuile:hover{background:var(--papier);text-decoration:none}
+.tuile h3{font-size:17px;margin-bottom:6px}
+.tuile p{font-size:13px;color:var(--gris);margin:0}
+.tuile.bloquee{opacity:.55}
+
+.jauge{height:3px;background:var(--filet);margin-top:10px}
+.jauge>i{display:block;height:100%;background:var(--laiton)}
+
+.alerte{padding:14px 18px;border:1px solid var(--filet);border-left:3px solid var(--bleu);
+  background:var(--blanc);font-size:14px;border-radius:2px}
+.alerte.err{border-left-color:var(--rouge);background:var(--rouge-clair)}
+.alerte.ok{border-left-color:var(--vert);background:var(--vert-clair)}
+
+.vide{padding:48px 20px;text-align:center;color:var(--gris);font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--gris);font-weight:400;padding:10px 12px;border-bottom:1px solid var(--filet)}
+td{padding:12px;border-bottom:1px solid var(--filet);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+</style>
+</head>
+<body>
+<div id="racine"></div>
+
+<script type="module">
+import { h, render } from 'https://esm.sh/preact@10.19.3';
+import { useState, useEffect, useCallback } from 'https://esm.sh/preact@10.19.3/hooks';
+import htm from 'https://esm.sh/htm@3.1.1';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
+
+const html = htm.bind(h);
+
+/* =====================================================================
+   1. CONNEXION À LA BASE
+   Ces deux valeurs sont publiques par conception : elles sont faites
+   pour vivre dans le navigateur. La clé « secret » ne quitte jamais
+   le tableau de bord Supabase.
+   ===================================================================== */
+const SUPABASE_URL = 'https://ibxydmtqdyynteiopjiv.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_A-2UHxGyxQ1--eEnsULBlQ_eyebc9dh';
+
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* Liens externes de la fédération -------------------------------------- */
+const EXTERNE = {
+  webmail:   'https://mail.google.com/a/ffce-asso.fr',
+  drive:     'https://drive.google.com/drive/u/0/',
+  agenda:    'https://calendar.google.com/',
+  adhesion:  ''   // adresse de la campagne HelloAsso, à coller ici
+};
+
+/* =====================================================================
+   2. PETITS OUTILS
+   ===================================================================== */
+const jour = d => d ? new Date(d).toLocaleDateString('fr-FR',
+  {day:'numeric',month:'long',year:'numeric'}) : '—';
+const initiales = p => ((p?.prenom?.[0]||'') + (p?.nom?.[0]||'')).toUpperCase() || '?';
+const nomComplet = p => [p?.prenom, p?.nom].filter(Boolean).join(' ') || p?.email || 'Sans nom';
+
+function useRoute(){
+  const [route, setRoute] = useState(location.hash.slice(1) || '/');
+  useEffect(() => {
+    const f = () => { setRoute(location.hash.slice(1) || '/'); window.scrollTo(0,0); };
+    addEventListener('hashchange', f);
+    return () => removeEventListener('hashchange', f);
+  }, []);
+  return route;
+}
+const aller = r => { location.hash = r; };
+
+/* =====================================================================
+   3. VITRINE PUBLIQUE
+   ===================================================================== */
+
+/* Le maillage : la fédération est un réseau de territoires. Le motif du
+   héros le dit littéralement — des points reliés, densité variable. */
+function Maillage(){
+  const pts = [];
+  for(let i=0;i<44;i++){
+    pts.push({ x: (i*137.5)%100, y: ((i*61.8)%100), r: i%7===0 ? 3 : 1.6 });
+  }
+  return html`
+    <svg class="maillage" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      ${pts.map((p,i)=> i<pts.length-1 && html`
+        <line x1=${p.x} y1=${p.y} x2=${pts[i+1].x} y2=${pts[i+1].y}
+              stroke="#E2DFD8" stroke-width=".14" />`)}
+      ${pts.map(p=> html`<circle cx=${p.x} cy=${p.y} r=${p.r/8}
+              fill=${p.r>2 ? '#1B4B8F' : '#CFCBC2'} />`)}
+    </svg>`;
+}
+
+function EntetePublique({ route, session }){
+  const liens = [
+    ['/', 'Accueil'], ['/association','La fédération'], ['/actions','Nos actions'],
+    ['/reseau','Le réseau'], ['/rejoindre','Nous rejoindre'], ['/contact','Contact']
+  ];
+  return html`
+    <header class="entete">
+      <div class="wrap">
+        <a class="logo" href="#/">
+          <b>FFCE</b><span>Citoyenneté & Égalité des chances</span>
+        </a>
+        <nav class="nav">
+          ${liens.map(([r,t]) => html`
+            <a href=${'#'+r} class=${route===r?'on':''}>${t}</a>`)}
+        </nav>
+        <a class="btn ghost sm" href="#/espace">
+          ${session ? 'Mon espace' : 'Se connecter'}
+        </a>
+      </div>
+    </header>`;
+}
+
+function Pied({ txt }){
+  return html`
+    <footer class="pied">
+      <div class="wrap">
+        <div class="cols">
+          <div>
+            <div class="logo" style="margin-bottom:12px">
+              <b>FFCE</b>
+            </div>
+            <p style="max-width:34ch">${txt.nom_legal}</p>
+            <p class="mono">${txt.siege}</p>
+            <p class="mono">RNA ${txt.rna} · SIREN ${txt.siren}</p>
+          </div>
+          <div>
+            <div class="eyebrow" style="margin-bottom:8px">La fédération</div>
+            <a href="#/association">Qui nous sommes</a>
+            <a href="#/actions">Nos actions</a>
+            <a href="#/reseau">Le réseau</a>
+          </div>
+          <div>
+            <div class="eyebrow" style="margin-bottom:8px">Pratique</div>
+            <a href="#/rejoindre">Nous rejoindre</a>
+            <a href="#/contact">Contact</a>
+            <a href="#/espace">Espace membre</a>
+            <a href="#/mentions">Mentions légales</a>
+            <a href="#/confidentialite">Confidentialité</a>
+          </div>
+        </div>
+      </div>
+    </footer>`;
+}
+
+function Accueil({ txt }){
+  return html`
+    <section class="heros">
+      <${Maillage} />
+      <div class="wrap">
+        <div class="eyebrow" style="margin-bottom:24px">Association déclarée · depuis 2020</div>
+        <h1>${txt.accroche}</h1>
+        <p>${txt.sous_accroche}</p>
+        <div class="row" style="margin-top:36px">
+          <a class="btn" href="#/rejoindre">Rejoindre la fédération</a>
+          <a class="btn ghost" href="#/actions">Voir nos actions</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="bloc blanc">
+      <div class="wrap">
+        <div class="eyebrow">Ce que nous faisons</div>
+        <h2>Quatre terrains d'engagement</h2>
+        <p class="intro">Nous intervenons en milieu scolaire, périscolaire et
+        extra-scolaire, aux côtés des établissements, des collectivités et des
+        acteurs de terrain.</p>
+        <div class="cartes">
+          <div>
+            <h3>Éducation à la citoyenneté</h3>
+            <p>Ateliers d'éducation civique et de culture démocratique, du collège
+            au lycée.</p>
+          </div>
+          <div>
+            <h3>Mémoire et transmission</h3>
+            <p>Transmission de l'histoire de la Résistance et du devoir de mémoire
+            auprès des jeunes générations.</p>
+          </div>
+          <div>
+            <h3>Égalité des chances</h3>
+            <p>Lutte contre les discriminations et le harcèlement, égalité entre
+            les femmes et les hommes.</p>
+          </div>
+          <div>
+            <h3>Éducation aux médias</h3>
+            <p>Comprendre l'information, ses circuits et ses pièges, pour exercer
+            un esprit critique.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="bloc">
+      <div class="wrap">
+        <div class="eyebrow">Le réseau en chiffres</div>
+        <h2>Une fédération de terrain</h2>
+        <div class="chiffres">
+          <div><div class="n">${txt.nb_benevoles}</div><div class="l">Bénévoles engagés</div></div>
+          <div><div class="n">${txt.nb_departements}</div><div class="l">Départements couverts</div></div>
+          <div><div class="n">${txt.nb_actions}</div><div class="l">Actions menées</div></div>
+          <div><div class="n">${txt.nb_jeunes}</div><div class="l">Jeunes touchés</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="bloc blanc">
+      <div class="wrap spread">
+        <div>
+          <h2>Un engagement se construit, il ne s'impose pas.</h2>
+          <p class="intro" style="margin-top:12px">Il n'y a ni parcours attendu,
+          ni profil imposé. Les rôles se construisent avec chacun, selon les
+          disponibilités et les envies.</p>
+        </div>
+        <a class="btn" href="#/rejoindre">Commencer</a>
+      </div>
+    </section>`;
+}
+
+function Association({ txt }){
+  return html`
+    <section class="bloc blanc">
+      <div class="wrap">
+        <div class="eyebrow">La fédération</div>
+        <h1 style="margin:8px 0 32px">Notre raison d'être</h1>
+        <div style="max-width:62ch;font-size:17px">
+          <p>${txt.mission}</p>
+          <p>${txt.histoire}</p>
+        </div>
+        <hr class="hr" />
+        <div class="cartes" style="margin-top:0">
+          <div><h3>Fédérer</h3><p>Réunir des bénévoles autour d'un projet commun,
+            partout sur le territoire, sans condition de diplôme ou d'expérience.</p></div>
+          <div><h3>Former</h3><p>Donner à chacun les repères et les outils pour
+            intervenir sereinement auprès des jeunes.</p></div>
+          <div><h3>Agir</h3><p>Mener des actions concrètes, mesurables, avec les
+            établissements et les collectivités.</p></div>
+        </div>
+      </div>
+    </section>`;
+}
+
+function Actions(){
+  const items = [
+    ['Quartiers d\'été', 'Un relais local dans chaque département, pour faire vivre l\'été des quartiers populaires.'],
+    ['Interventions scolaires', 'Ateliers citoyenneté, valeurs de la République et lutte contre le harcèlement.'],
+    ['Mémoire vivante', 'Rencontres, visites et travaux d\'élèves autour de l\'histoire de la Résistance.'],
+    ['Jeunesse et forces de l\'ordre', 'Temps d\'échange encadrés pour rétablir un dialogue direct.'],
+    ['Éducation aux médias', 'Décryptage de l\'information et sensibilisation à la désinformation.'],
+    ['Orientation', 'Accompagnement des lycéens dans la construction de leur parcours.']
+  ];
+  return html`
+    <section class="bloc blanc">
+      <div class="wrap">
+        <div class="eyebrow">Nos actions</div>
+        <h1 style="margin:8px 0 16px">Ce que nous menons sur le terrain</h1>
+        <p class="intro">Chaque action est portée par une équipe locale et
+        soutenue par l'équipe nationale.</p>
+        <div class="cartes">
+          ${items.map(([t,d]) => html`<div><h3>${t}</h3><p>${d}</p></div>`)}
+        </div>
+      </div>
+    </section>`;
+}
+
+function Reseau(){
+  const [terr, setTerr] = useState([]);
+  useEffect(() => {
+    db.from('territoires').select('id,nom,echelle,code,parent_id')
+      .in('echelle',['region','departement']).order('nom')
+      .then(({data}) => setTerr(data || []));
+  }, []);
+  const regions = terr.filter(t => t.echelle === 'region');
+  return html`
+    <section class="bloc blanc">
+      <div class="wrap">
+        <div class="eyebrow">Le réseau</div>
+        <h1 style="margin:8px 0 16px">Une organisation à quatre échelles</h1>
+        <p class="intro">La fédération est structurée du national au local.
+        Chaque échelon dispose de ses responsables et de son autonomie d'action.</p>
+
+        <div class="cartes">
+          <div><h3>National</h3><p>La Direction générale et les pôles fixent le cap,
+            valident les accès et animent le réseau.</p></div>
+          <div><h3>Régional</h3><p>Le délégué régional coordonne les référents
+            départementaux de sa région.</p></div>
+          <div><h3>Départemental</h3><p>Le référent départemental anime les
+            responsables locaux et suit les adhérents de son territoire.</p></div>
+          <div><h3>Local</h3><p>Le responsable local conduit les actions au plus
+            près du terrain, avec ses animateurs.</p></div>
+        </div>
+
+        <hr class="hr" />
+        <div class="eyebrow" style="margin-bottom:16px">Régions couvertes</div>
+        <div class="row">
+          ${regions.map(r => html`<span class="tag">${r.nom}</span>`)}
+        </div>
+      </div>
+    </section>`;
+}
+
+function Rejoindre(){
+  return html`
+    <section class="bloc blanc">
+      <div class="wrap">
+        <div class="eyebrow">Nous rejoindre</div>
+        <h1 style="margin:8px 0 16px">Trois étapes, rien de plus</h1>
+        <p class="intro">L'adhésion se fait en ligne. Votre compte est ensuite
+        vérifié par la Direction générale avant l'ouverture de vos accès.</p>
+
+        <div class="cartes">
+          <div>
+            <div class="mono" style="color:var(--bleu)">Étape 1</div>
+            <h3 style="margin-top:6px">Créer votre compte</h3>
+            <p>Nom, adresse et territoire de rattachement. Trois minutes.</p>
+          </div>
+          <div>
+            <div class="mono" style="color:var(--bleu)">Étape 2</div>
+            <h3 style="margin-top:6px">Vérification</h3>
+            <p>La Direction générale contrôle l'adhésion et ouvre les accès
+            correspondant à votre fonction.</p>
+          </div>
+          <div>
+            <div class="mono" style="color:var(--bleu)">Étape 3</div>
+            <h3 style="margin-top:6px">Se former, agir</h3>
+            <p>Formations, groupes de travail, projets locaux : tout est dans
+            votre espace membre.</p>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:40px">
+          <a class="btn" href="#/inscription">Créer mon compte</a>
+          ${EXTERNE.adhesion && html`
+            <a class="btn ghost" href=${EXTERNE.adhesion} target="_blank" rel="noopener">
+              Régler mon adhésion</a>`}
+        </div>
+      </div>
+    </section>`;
+}
+
+function Contact({ txt }){
+  return html`
+    <section class="bloc blanc">
+      <div class="wrap">
+        <div class="eyebrow">Contact</div>
+        <h1 style="margin:8px 0 32px">Nous écrire</h1>
+        <div style="max-width:52ch">
+          <p>Pour toute question sur la fédération, une action locale ou un
+          partenariat :</p>
+          <p><a class="mono" style="font-size:16px" href=${'mailto:'+txt.email_contact}>
+            ${txt.email_contact}</a></p>
+          <hr class="hr" />
+          <div class="eyebrow" style="margin-bottom:8px">Siège social</div>
+          <p>${txt.siege}</p>
+        </div>
+      </div>
+    </section>`;
+}
+
+function PageTexte({ titre, corps }){
+  return html`
+    <section class="bloc blanc">
+      <div class="wrap">
+        <h1 style="margin-bottom:24px">${titre}</h1>
+        <div style="max-width:62ch;white-space:pre-wrap">
+          ${corps || html`<span class="muted">Ce document n'a pas encore été publié.</span>`}
+        </div>
+      </div>
+    </section>`;
+}
+
+/* =====================================================================
+   4. CONNEXION ET INSCRIPTION
+   ===================================================================== */
+function Connexion(){
+  const [email, setEmail] = useState('');
+  const [mdp, setMdp] = useState('');
+  const [err, setErr] = useState('');
+  const [envoi, setEnvoi] = useState(false);
+
+  async function entrer(e){
+    e.preventDefault(); setErr(''); setEnvoi(true);
+    const { error } = await db.auth.signInWithPassword({ email, password: mdp });
+    setEnvoi(false);
+    if (error) setErr("Adresse ou mot de passe incorrect.");
+    else aller('/espace');
+  }
+
+  return html`
+    <section class="bloc blanc">
+      <div class="wrap" style="max-width:440px">
+        <div class="eyebrow">Espace membre</div>
+        <h1 style="margin:8px 0 32px">Se connecter</h1>
+        <form onSubmit=${entrer} class="stack">
+          <div class="field">
+            <label for="e">Adresse électronique</label>
+            <input id="e" type="email" required value=${email}
+              onInput=${e=>setEmail(e.target.value)} autocomplete="email" />
+          </div>
+          <div class="field">
+            <label for="m">Mot de passe</label>
+            <input id="m" type="password" required value=${mdp}
+              onInput=${e=>setMdp(e.target.value)} autocomplete="current-password" />
+          </div>
+          ${err && html`<div class="alerte err">${err}</div>`}
+          <button class="btn" style="width:100%" disabled=${envoi}>
+            ${envoi ? 'Connexion…' : 'Entrer'}</button>
+        </form>
+        <p class="small muted" style="margin-top:24px">
+          Pas encore de compte ? <a href="#/inscription">Créer un compte</a>
+        </p>
+      </div>
+    </section>`;
+}
+
+function Inscription(){
+  const [f, setF] = useState({prenom:'',nom:'',email:'',mdp:'',territoire:''});
+  const [terr, setTerr] = useState([]);
+  const [err, setErr] = useState('');
+  const [fait, setFait] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+  const maj = (k,v) => setF(o => ({...o, [k]:v}));
+
+  useEffect(() => {
+    db.from('territoires').select('id,nom,echelle').eq('echelle','departement')
+      .order('code').then(({data}) => setTerr(data || []));
+  }, []);
+
+  async function creer(e){
+    e.preventDefault(); setErr(''); setEnvoi(true);
+    const { data, error } = await db.auth.signUp({
+      email: f.email, password: f.mdp,
+      options: { data: { prenom: f.prenom, nom: f.nom } }
+    });
+    if (error){ setErr(error.message); setEnvoi(false); return; }
+    if (f.territoire && data.user){
+      await db.from('profils').update({ territoire_id: f.territoire }).eq('id', data.user.id);
+    }
+    setEnvoi(false); setFait(true);
+  }
+
+  if (fait) return html`
+    <section class="bloc blanc">
+      <div class="wrap" style="max-width:520px">
+        <h1 style="margin-bottom:16px">Votre demande est enregistrée</h1>
+        <div class="alerte ok">
+          La Direction générale vérifie votre inscription. Vous recevrez un
+          message dès l'ouverture de vos accès. En attendant, vous pouvez déjà
+          vous connecter : votre espace affichera l'état de votre dossier.
+        </div>
+        <p style="margin-top:24px"><a class="btn" href="#/espace">Aller à mon espace</a></p>
+      </div>
+    </section>`;
+
+  return html`
+    <section class="bloc blanc">
+      <div class="wrap" style="max-width:520px">
+        <div class="eyebrow">Nous rejoindre</div>
+        <h1 style="margin:8px 0 32px">Créer mon compte</h1>
+        <form onSubmit=${creer} class="stack">
+          <div class="row" style="gap:16px">
+            <div class="field" style="flex:1;min-width:140px">
+              <label for="p">Prénom</label>
+              <input id="p" required value=${f.prenom} onInput=${e=>maj('prenom',e.target.value)} />
+            </div>
+            <div class="field" style="flex:1;min-width:140px;margin-top:0">
+              <label for="n">Nom</label>
+              <input id="n" required value=${f.nom} onInput=${e=>maj('nom',e.target.value)} />
+            </div>
+          </div>
+          <div class="field">
+            <label for="ie">Adresse électronique</label>
+            <input id="ie" type="email" required value=${f.email}
+              onInput=${e=>maj('email',e.target.value)} autocomplete="email" />
+          </div>
+          <div class="field">
+            <label for="im">Mot de passe</label>
+            <input id="im" type="password" required minlength="8" value=${f.mdp}
+              onInput=${e=>maj('mdp',e.target.value)} autocomplete="new-password" />
+            <p class="small muted" style="margin:6px 0 0">Huit caractères minimum.</p>
+          </div>
+          <div class="field">
+            <label for="it">Département de rattachement</label>
+            <select id="it" required value=${f.territoire} onChange=${e=>maj('territoire',e.target.value)}>
+              <option value="">Choisir…</option>
+              ${terr.map(t => html`<option value=${t.id}>${t.nom}</option>`)}
+            </select>
+          </div>
+          ${err && html`<div class="alerte err">${err}</div>`}
+          <button class="btn" style="width:100%" disabled=${envoi}>
+            ${envoi ? 'Envoi…' : 'Créer mon compte'}</button>
+          <p class="small muted">
+            En créant un compte, vous acceptez la
+            <a href="#/confidentialite">politique de confidentialité</a>.
+          </p>
+        </form>
+      </div>
+    </section>`;
+}
+
+/* =====================================================================
+   5. ESPACE MEMBRE
+   ===================================================================== */
+
+function CarteFederale({ p, chemin }){
+  const e = p.echelon || 1;
+  return html`
+    <div class="carte">
+      <div class="matricule">${p.matricule}</div>
+      <div class="nom">${nomComplet(p)}</div>
+      <div class="poste">${p.fonction_nom}</div>
+      <div class="lieu">${chemin || p.territoire_nom || 'Rattachement à définir'}</div>
+      <div class="ech">
+        <span class="tag or">Échelon ${e} · ${p.echelon_nom}</span>
+        <span class="mono muted">${p.statut === 'actif' ? 'Actif' : p.statut}</span>
+      </div>
+      <div class="jauge"><i style=${`width:${Math.round(e/7*100)}%`}></i></div>
+    </div>`;
+}
+
+function Flanc({ p, apps, page }){
+  const admin = p.niveau >= 90;
+  const dispo = c => apps.find(a => a.code === c && a.ouvert);
+  const item = (r, t) => html`<a href=${'#/espace/'+r} class=${page===r?'on':''}>${t}</a>`;
+  return html`
+    <aside class="flanc">
+      <div class="titre">
+        <a class="logo" href="#/"><b>FFCE</b></a>
+        <div class="small muted" style="margin-top:4px">${nomComplet(p)}</div>
+      </div>
+      <nav>
+        ${item('', 'Tableau de bord')}
+        ${item('compte', 'Mon compte')}
+        ${item('demandes', 'Mes demandes')}
+        ${dispo('annuaire') && html`
+          <div class="groupe">Encadrement</div>
+          ${item('annuaire','Annuaire fédéral')}`}
+        ${admin && html`
+          <div class="groupe">Direction générale</div>
+          ${item('validation','Vérifications')}
+          ${item('reseau','Réseau et fonctions')}
+          ${item('vitrine','Site public')}`}
+        <div class="groupe">Services externes</div>
+        <a href=${EXTERNE.drive} target="_blank" rel="noopener">Drive ↗</a>
+        <a href=${EXTERNE.agenda} target="_blank" rel="noopener">Agenda ↗</a>
+        ${p.webmail && html`<a href=${EXTERNE.webmail} target="_blank" rel="noopener">Webmail ↗</a>`}
+        <div class="groupe">&nbsp;</div>
+        <a href="#/" onClick=${()=>db.auth.signOut()}>Se déconnecter</a>
+      </nav>
+    </aside>`;
+}
+
+function TableauDeBord({ p, apps, chemin, demandes }){
+  const ouvertes = demandes.filter(d => d.statut === 'ouverte' || d.statut === 'en_cours');
+  return html`
+    <div class="stack" style="gap:32px;display:flex;flex-direction:column">
+      <div>
+        <div class="eyebrow">Tableau de bord</div>
+        <h1 style="margin-top:6px">Bonjour, ${p.prenom || 'bienvenue'}.</h1>
+      </div>
+
+      <${CarteFederale} p=${p} chemin=${chemin} />
+
+      ${ouvertes.length > 0 && html`
+        <div class="alerte">
+          ${ouvertes.length} demande${ouvertes.length>1?'s':''} en cours d'instruction.
+          <a href="#/espace/demandes">Voir le suivi</a>
+        </div>`}
+
+      <div>
+        <div class="spread" style="margin-bottom:16px">
+          <h2 style="font-size:22px">Mes applications</h2>
+          <a class="small" href="#/espace/demandes">Demander un accès</a>
+        </div>
+        <div class="tuiles">
+          ${apps.filter(a => a.actif).map(a => {
+            const lien = a.externe_url || ('#/espace/'+a.code);
+            const cible = a.externe_url ? '_blank' : null;
+            if (!a.ouvert) return html`
+              <div class="tuile bloquee">
+                <h3>${a.nom}</h3>
+                <p>${a.description}</p>
+                <div style="margin-top:10px"><span class="tag">Accès non ouvert</span></div>
+              </div>`;
+            return html`
+              <a class="tuile" href=${lien} target=${cible} rel="noopener">
+                <h3>${a.nom}${a.externe_url ? ' ↗' : ''}</h3>
+                <p>${a.description}</p>
+              </a>`;
+          })}
+        </div>
+      </div>
+    </div>`;
+}
+
+function MonCompte({ p, recharger }){
+  const [f, setF] = useState({
+    prenom:p.prenom, nom:p.nom, telephone:p.telephone||'',
+    bio:p.bio||'', visible_public:!!p.visible_public
+  });
+  const [msg, setMsg] = useState('');
+  const maj = (k,v) => setF(o => ({...o,[k]:v}));
+
+  async function enregistrer(e){
+    e.preventDefault(); setMsg('');
+    const { error } = await db.from('profils').update(f).eq('id', p.id);
+    setMsg(error ? 'Enregistrement impossible : ' + error.message : 'Modifications enregistrées.');
+    if (!error) recharger();
+  }
+
+  return html`
+    <div>
+      <div class="eyebrow">Mon compte</div>
+      <h1 style="margin:6px 0 32px">Mes informations</h1>
+
+      <form onSubmit=${enregistrer} class="panneau">
+        <div class="corps stack">
+          <div class="row" style="gap:16px">
+            <div class="field" style="flex:1;min-width:160px">
+              <label>Prénom</label>
+              <input value=${f.prenom} onInput=${e=>maj('prenom',e.target.value)} />
+            </div>
+            <div class="field" style="flex:1;min-width:160px;margin-top:0">
+              <label>Nom</label>
+              <input value=${f.nom} onInput=${e=>maj('nom',e.target.value)} />
+            </div>
+          </div>
+          <div class="field">
+            <label>Téléphone</label>
+            <input value=${f.telephone} onInput=${e=>maj('telephone',e.target.value)} />
+          </div>
+          <div class="field">
+            <label>Présentation</label>
+            <textarea value=${f.bio} onInput=${e=>maj('bio',e.target.value)}
+              placeholder="Quelques lignes sur votre engagement."></textarea>
+          </div>
+          <label class="row" style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--encre)">
+            <input type="checkbox" style="width:auto" checked=${f.visible_public}
+              onChange=${e=>maj('visible_public',e.target.checked)} />
+            <span>Afficher mon nom et ma présentation sur le site public</span>
+          </label>
+          ${msg && html`<div class=${'alerte '+(msg.startsWith('Modif')?'ok':'err')}>${msg}</div>`}
+          <div><button class="btn">Enregistrer</button></div>
+        </div>
+      </form>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Fonction et rattachement</h3></div>
+        <div class="ligne"><span class="muted">Matricule</span><span class="mono">${p.matricule}</span></div>
+        <div class="ligne"><span class="muted">Fonction</span><span>${p.fonction_nom}</span></div>
+        <div class="ligne"><span class="muted">Échelon</span>
+          <span class="tag or">${p.echelon} · ${p.echelon_nom}</span></div>
+        <div class="ligne"><span class="muted">Territoire</span><span>${p.territoire_nom||'—'}</span></div>
+        <div class="ligne"><span class="muted">Membre depuis</span><span>${jour(p.cree_le)}</span></div>
+        <div class="corps small muted" style="border-top:1px solid var(--filet)">
+          Ces éléments sont fixés par la Direction générale. Pour une évolution
+          de fonction ou d'échelon, déposez une demande.
+        </div>
+      </div>
+    </div>`;
+}
+
+function MesDemandes({ p, apps, demandes, recharger }){
+  const [type, setType] = useState('acces_application');
+  const [cible, setCible] = useState('');
+  const [objet, setObjet] = useState('');
+  const [message, setMessage] = useState('');
+  const [msg, setMsg] = useState('');
+
+  const fermees = apps.filter(a => !a.ouvert && a.actif);
+
+  async function envoyer(e){
+    e.preventDefault(); setMsg('');
+    const app = apps.find(a => a.code === cible);
+    const { error } = await db.from('demandes').insert({
+      profil_id: p.id, type,
+      objet: objet || (app ? 'Accès à « '+app.nom+' »' : 'Demande'),
+      cible: cible || null, message
+    });
+    if (error) return setMsg('Envoi impossible : ' + error.message);
+    setObjet(''); setMessage(''); setCible(''); setMsg('Demande transmise à la Direction générale.');
+    recharger();
+  }
+
+  const etiquette = s => ({
+    ouverte:  html`<span class="tag bleu">En attente</span>`,
+    en_cours: html`<span class="tag bleu">En cours</span>`,
+    acceptee: html`<span class="tag vert">Accordée</span>`,
+    refusee:  html`<span class="tag rouge">Refusée</span>`
+  })[s];
+
+  return html`
+    <div>
+      <div class="eyebrow">Mes demandes</div>
+      <h1 style="margin:6px 0 32px">Guichet</h1>
+
+      <form onSubmit=${envoyer} class="panneau">
+        <div class="tete"><h3 style="font-size:17px">Déposer une demande</h3></div>
+        <div class="corps stack">
+          <div class="field">
+            <label>Nature</label>
+            <select value=${type} onChange=${e=>{setType(e.target.value);setCible('')}}>
+              <option value="acces_application">Accès à une application</option>
+              <option value="extension_compte">Extension de compte (webmail, Workspace)</option>
+              <option value="promotion">Évolution de fonction ou d'échelon</option>
+              <option value="autre">Autre</option>
+            </select>
+          </div>
+          ${type === 'acces_application' && html`
+            <div class="field">
+              <label>Application</label>
+              <select required value=${cible} onChange=${e=>setCible(e.target.value)}>
+                <option value="">Choisir…</option>
+                ${fermees.map(a => html`<option value=${a.code}>${a.nom}</option>`)}
+              </select>
+            </div>`}
+          ${type !== 'acces_application' && html`
+            <div class="field">
+              <label>Objet</label>
+              <input required value=${objet} onInput=${e=>setObjet(e.target.value)}
+                placeholder="En une ligne" />
+            </div>`}
+          <div class="field">
+            <label>Motif</label>
+            <textarea required value=${message} onInput=${e=>setMessage(e.target.value)}
+              placeholder="À quoi cet accès va-t-il servir ?"></textarea>
+          </div>
+          ${msg && html`<div class=${'alerte '+(msg.startsWith('Demande')?'ok':'err')}>${msg}</div>`}
+          <div><button class="btn">Transmettre</button></div>
+        </div>
+      </form>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Suivi</h3></div>
+        ${demandes.length === 0
+          ? html`<div class="vide">Aucune demande déposée à ce jour.</div>`
+          : demandes.map(d => html`
+            <div class="ligne">
+              <div>
+                <div>${d.objet}</div>
+                <div class="small muted">Déposée le ${jour(d.cree_le)}
+                  ${d.motif_reponse ? ' · ' + d.motif_reponse : ''}</div>
+              </div>
+              ${etiquette(d.statut)}
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+function Annuaire({ p }){
+  const [membres, setMembres] = useState(null);
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    db.from('v_annuaire').select('*').neq('statut','archive')
+      .order('niveau', {ascending:false}).order('nom')
+      .then(({data}) => setMembres(data || []));
+  }, []);
+
+  if (!membres) return html`<div class="vide">Chargement…</div>`;
+  const filtre = membres.filter(m => {
+    const s = (nomComplet(m)+' '+(m.territoire_nom||'')+' '+m.fonction_nom).toLowerCase();
+    return s.includes(q.toLowerCase());
+  });
+
+  return html`
+    <div>
+      <div class="eyebrow">Annuaire fédéral</div>
+      <h1 style="margin:6px 0 8px">Mon périmètre</h1>
+      <p class="muted" style="max-width:56ch">
+        Vous voyez les membres rattachés à votre territoire et à tous ceux qui
+        en dépendent. Cette limite est appliquée par la base de données.
+      </p>
+
+      <div class="field" style="max-width:360px;margin:24px 0">
+        <input placeholder="Rechercher un nom, un territoire…"
+          value=${q} onInput=${e=>setQ(e.target.value)} />
+      </div>
+
+      <div class="panneau">
+        <div class="tete">
+          <span class="small muted">${filtre.length} membre${filtre.length>1?'s':''}</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>Membre</th><th>Fonction</th><th>Territoire</th><th>Échelon</th><th>Statut</th>
+            </tr></thead>
+            <tbody>
+              ${filtre.map(m => html`
+                <tr>
+                  <td>
+                    <div>${nomComplet(m)}</div>
+                    <div class="mono muted">${m.matricule}</div>
+                  </td>
+                  <td>${m.fonction_nom}</td>
+                  <td>${m.territoire_nom || '—'}</td>
+                  <td><span class="tag or">${m.echelon}</span></td>
+                  <td>${m.statut === 'actif'
+                    ? html`<span class="tag vert">Actif</span>`
+                    : html`<span class="tag">${m.statut.replace('_',' ')}</span>`}</td>
+                </tr>`)}
+            </tbody>
+          </table>
+        </div>
+        ${filtre.length === 0 && html`<div class="vide">Aucun résultat.</div>`}
+      </div>
+    </div>`;
+}
+
+/* --- Direction générale : vérifications ------------------------------ */
+function Validation(){
+  const [attente, setAttente] = useState([]);
+  const [demandes, setDemandes] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a, d] = await Promise.all([
+      db.from('v_annuaire').select('*').eq('statut','en_attente').order('cree_le'),
+      db.from('demandes').select('*, profils(prenom,nom,matricule)')
+        .in('statut',['ouverte','en_cours']).order('cree_le')
+    ]);
+    setAttente(a.data || []); setDemandes(d.data || []);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function validerMembre(id, ok){
+    const { error } = await db.from('profils')
+      .update({ statut: ok ? 'actif' : 'suspendu',
+                date_adhesion: ok ? new Date().toISOString().slice(0,10) : null })
+      .eq('id', id);
+    setMsg(error ? error.message : (ok ? 'Compte activé.' : 'Compte suspendu.'));
+    charger();
+  }
+
+  async function traiter(d, ok){
+    const motif = prompt(ok ? "Motif de l'accord (facultatif)" : 'Motif du refus') ;
+    if (!ok && motif === null) return;
+    const { data:{ user } } = await db.auth.getUser();
+    await db.from('demandes').update({
+      statut: ok ? 'acceptee' : 'refusee',
+      traite_par: user.id, traite_le: new Date().toISOString(),
+      motif_reponse: motif || null
+    }).eq('id', d.id);
+
+    if (ok && d.type === 'acces_application' && d.cible){
+      await db.from('acces_applications').upsert({
+        profil_id: d.profil_id, application: d.cible,
+        statut: 'accorde', accorde_par: user.id, motif: motif || null
+      }, { onConflict: 'profil_id,application' });
+    }
+    setMsg('Demande traitée.');
+    charger();
+  }
+
+  return html`
+    <div>
+      <div class="eyebrow">Direction générale</div>
+      <h1 style="margin:6px 0 32px">Vérifications</h1>
+      ${msg && html`<div class="alerte ok" style="margin-bottom:24px">${msg}</div>`}
+
+      <div class="panneau">
+        <div class="tete">
+          <h3 style="font-size:17px">Inscriptions à vérifier</h3>
+          <span class="tag">${attente.length}</span>
+        </div>
+        ${attente.length === 0
+          ? html`<div class="vide">Aucune inscription en attente.</div>`
+          : attente.map(m => html`
+            <div class="ligne">
+              <div>
+                <div>${nomComplet(m)} <span class="mono muted">${m.matricule}</span></div>
+                <div class="small muted">${m.email} · ${m.territoire_nom || 'sans territoire'}
+                  · inscrit le ${jour(m.cree_le)}</div>
+              </div>
+              <div class="row">
+                <button class="btn sm" onClick=${()=>validerMembre(m.id,true)}>Activer</button>
+                <button class="btn sm light" onClick=${()=>validerMembre(m.id,false)}>Écarter</button>
+              </div>
+            </div>`)}
+      </div>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete">
+          <h3 style="font-size:17px">Demandes d'accès</h3>
+          <span class="tag">${demandes.length}</span>
+        </div>
+        ${demandes.length === 0
+          ? html`<div class="vide">Aucune demande en instance.</div>`
+          : demandes.map(d => html`
+            <div class="ligne">
+              <div>
+                <div>${d.objet}</div>
+                <div class="small muted">
+                  ${d.profils ? nomComplet(d.profils) : '—'}
+                  <span class="mono">${d.profils?.matricule||''}</span> · ${jour(d.cree_le)}
+                </div>
+                ${d.message && html`<div class="small" style="margin-top:6px;max-width:56ch">
+                  « ${d.message} »</div>`}
+              </div>
+              <div class="row">
+                <button class="btn sm" onClick=${()=>traiter(d,true)}>Accorder</button>
+                <button class="btn sm light" onClick=${()=>traiter(d,false)}>Refuser</button>
+              </div>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- Direction générale : réseau et fonctions ------------------------ */
+function ReseauAdmin(){
+  const [membres, setMembres] = useState([]);
+  const [fonctions, setFonctions] = useState([]);
+  const [terr, setTerr] = useState([]);
+  const [q, setQ] = useState('');
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [m, f, t] = await Promise.all([
+      db.from('v_annuaire').select('*').order('niveau',{ascending:false}).order('nom'),
+      db.from('fonctions').select('*').order('niveau'),
+      db.from('territoires').select('id,nom,echelle,code').order('echelle').order('nom')
+    ]);
+    setMembres(m.data||[]); setFonctions(f.data||[]); setTerr(t.data||[]);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function modifier(id, champ, valeur){
+    const { error } = await db.from('profils').update({ [champ]: valeur }).eq('id', id);
+    setMsg(error ? error.message : 'Enregistré.');
+    charger();
+  }
+
+  const filtre = membres.filter(m =>
+    (nomComplet(m)+' '+(m.territoire_nom||'')).toLowerCase().includes(q.toLowerCase()));
+
+  return html`
+    <div>
+      <div class="eyebrow">Direction générale</div>
+      <h1 style="margin:6px 0 8px">Réseau et fonctions</h1>
+      <p class="muted">Nommer, muter, faire progresser. Chaque modification est immédiate.</p>
+      ${msg && html`<div class="alerte ok" style="margin:16px 0">${msg}</div>`}
+
+      <div class="field" style="max-width:360px;margin:24px 0">
+        <input placeholder="Rechercher…" value=${q} onInput=${e=>setQ(e.target.value)} />
+      </div>
+
+      <div class="panneau" style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Membre</th><th>Fonction</th><th>Territoire</th><th>Échelon</th><th>Statut</th></tr></thead>
+          <tbody>
+            ${filtre.map(m => html`
+              <tr>
+                <td><div>${nomComplet(m)}</div><div class="mono muted">${m.matricule}</div></td>
+                <td>
+                  <select value=${m.fonction} onChange=${e=>modifier(m.id,'fonction',e.target.value)}>
+                    ${fonctions.map(f => html`<option value=${f.code}>${f.nom}</option>`)}
+                  </select>
+                </td>
+                <td>
+                  <select value=${m.territoire_id||''} onChange=${e=>modifier(m.id,'territoire_id',e.target.value||null)}>
+                    <option value="">—</option>
+                    ${terr.map(t => html`<option value=${t.id}>${t.nom} (${t.echelle})</option>`)}
+                  </select>
+                </td>
+                <td>
+                  <select value=${m.echelon} onChange=${e=>modifier(m.id,'echelon',Number(e.target.value))}>
+                    ${[1,2,3,4,5,6,7].map(n => html`<option value=${n}>${n}</option>`)}
+                  </select>
+                </td>
+                <td>
+                  <select value=${m.statut} onChange=${e=>modifier(m.id,'statut',e.target.value)}>
+                    ${['en_attente','actif','suspendu','archive'].map(s =>
+                      html`<option value=${s}>${s.replace('_',' ')}</option>`)}
+                  </select>
+                </td>
+              </tr>`)}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+/* --- Direction générale : textes du site public ---------------------- */
+function VitrineAdmin(){
+  const [c, setC] = useState([]);
+  const [msg, setMsg] = useState('');
+  const charger = useCallback(() =>
+    db.from('contenus').select('*').order('section').order('ordre')
+      .then(({data}) => setC(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function enregistrer(cle, valeur){
+    const { error } = await db.from('contenus').update({ valeur }).eq('cle', cle);
+    setMsg(error ? error.message : 'Texte publié.');
+  }
+
+  const sections = [...new Set(c.map(x => x.section))];
+  return html`
+    <div>
+      <div class="eyebrow">Direction générale</div>
+      <h1 style="margin:6px 0 8px">Site public</h1>
+      <p class="muted">Aucun texte public n'est écrit dans le code. Tout se modifie ici.</p>
+      ${msg && html`<div class="alerte ok" style="margin:16px 0">${msg}</div>`}
+
+      ${sections.map(s => html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px;text-transform:capitalize">${s}</h3></div>
+          <div class="corps stack">
+            ${c.filter(x => x.section === s).map(x => html`
+              <div class="field">
+                <label>${x.libelle}</label>
+                ${x.format === 'long'
+                  ? html`<textarea value=${x.valeur} onBlur=${e=>enregistrer(x.cle,e.target.value)} />`
+                  : html`<input value=${x.valeur} onBlur=${e=>enregistrer(x.cle,e.target.value)} />`}
+              </div>`)}
+            <p class="small muted">Les modifications sont enregistrées lorsque vous
+            quittez le champ.</p>
+          </div>
+        </div>`)}
+    </div>`;
+}
+
+/* --- Coquille de l'espace membre ------------------------------------- */
+function EnAttente({ p }){
+  return html`
+    <section class="bloc blanc">
+      <div class="wrap" style="max-width:560px">
+        <div class="eyebrow">Espace membre</div>
+        <h1 style="margin:8px 0 24px">Votre dossier est en cours de vérification</h1>
+        <div class="alerte">
+          La Direction générale vérifie votre inscription avant d'ouvrir vos accès.
+          Vous recevrez un message dès qu'elle sera validée.
+        </div>
+        <div style="margin-top:32px">
+          <${CarteFederale} p=${p} />
+        </div>
+        <p style="margin-top:32px">
+          <a href="#/" onClick=${()=>db.auth.signOut()}>Se déconnecter</a>
+        </p>
+      </div>
+    </section>`;
+}
+
+function Espace({ session, sous }){
+  const [p, setP] = useState(null);
+  const [apps, setApps] = useState([]);
+  const [demandes, setDemandes] = useState([]);
+  const [chemin, setChemin] = useState('');
+  const [pret, setPret] = useState(false);
+
+  const charger = useCallback(async () => {
+    const { data: profil } = await db.from('v_annuaire').select('*')
+      .eq('id', session.user.id).maybeSingle();
+    if (!profil){ setPret(true); return; }
+    setP(profil);
+
+    const [{ data: liste }, { data: mesAcces }, { data: mesDem }] = await Promise.all([
+      db.from('applications').select('*').eq('actif',true).order('ordre'),
+      db.from('acces_applications').select('application,statut').eq('profil_id', session.user.id),
+      db.from('demandes').select('*').eq('profil_id', session.user.id).order('cree_le',{ascending:false})
+    ]);
+    const accordes = new Set((mesAcces||[]).filter(a=>a.statut==='accorde').map(a=>a.application));
+    setApps((liste||[]).map(a => ({
+      ...a,
+      ouvert: profil.statut === 'actif' &&
+              ((!a.sur_demande && profil.niveau >= a.niveau_min) || accordes.has(a.code))
+    })));
+    setDemandes(mesDem || []);
+
+    if (profil.territoire_id){
+      const { data } = await db.rpc('chemin_territoire', { cible: profil.territoire_id });
+      setChemin(data || '');
+    }
+    setPret(true);
+  }, [session.user.id]);
+
+  useEffect(() => { charger(); }, [charger]);
+
+  if (!pret) return html`<div class="vide" style="padding:120px">Chargement…</div>`;
+  if (!p) return html`<div class="vide" style="padding:120px">
+    Profil introuvable. <a href="#/" onClick=${()=>db.auth.signOut()}>Se déconnecter</a></div>`;
+  if (p.statut !== 'actif') return html`<${EnAttente} p=${p} />`;
+
+  const admin = p.niveau >= 90;
+  const acces = c => apps.find(a => a.code === c && a.ouvert);
+  const refus = html`<div class="alerte err">Cette application ne vous est pas ouverte.
+    <a href="#/espace/demandes">Déposer une demande</a></div>`;
+  const bientot = t => html`
+    <div><div class="eyebrow">Espace membre</div>
+      <h1 style="margin:6px 0 24px">${t}</h1>
+      <div class="alerte">Ce module arrive dans une prochaine mise en ligne.</div></div>`;
+
+  let vue;
+  switch (sous){
+    case '':           vue = html`<${TableauDeBord} p=${p} apps=${apps} chemin=${chemin} demandes=${demandes} />`; break;
+    case 'compte':     vue = html`<${MonCompte} p=${p} recharger=${charger} />`; break;
+    case 'demandes':   vue = html`<${MesDemandes} p=${p} apps=${apps} demandes=${demandes} recharger=${charger} />`; break;
+    case 'annuaire':   vue = acces('annuaire') ? html`<${Annuaire} p=${p} />` : refus; break;
+    case 'validation': vue = admin ? html`<${Validation} />` : refus; break;
+    case 'reseau':     vue = admin ? html`<${ReseauAdmin} />` : refus; break;
+    case 'vitrine':    vue = admin ? html`<${VitrineAdmin} />` : refus; break;
+    case 'formations': vue = acces('formations') ? bientot('Formations') : refus; break;
+    case 'groupes':    vue = acces('groupes')    ? bientot('Groupes de travail') : refus; break;
+    case 'messagerie': vue = acces('messagerie') ? bientot('Messagerie interne') : refus; break;
+    case 'notes_frais':vue = acces('notes_frais')? bientot('Notes de frais') : refus; break;
+    case 'tresorerie': vue = acces('tresorerie') ? bientot('Direction financière') : refus; break;
+    default:           vue = html`<div class="vide">Page inconnue.</div>`;
+  }
+
+  return html`
+    <div class="app">
+      <${Flanc} p=${p} apps=${apps} page=${sous} />
+      <main class="contenu">${vue}</main>
+    </div>`;
+}
+
+/* =====================================================================
+   6. RACINE
+   ===================================================================== */
+function Site(){
+  const route = useRoute();
+  const [session, setSession] = useState(undefined);
+  const [txt, setTxt] = useState(null);
+
+  useEffect(() => {
+    db.auth.getSession().then(({data}) => setSession(data.session));
+    const { data:{ subscription } } = db.auth.onAuthStateChange((_e,s) => setSession(s));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    db.from('contenus').select('cle,valeur').then(({data}) =>
+      setTxt(Object.fromEntries((data||[]).map(c => [c.cle, c.valeur]))));
+  }, []);
+
+  if (session === undefined || txt === null)
+    return html`<div class="vide" style="padding:140px">Chargement…</div>`;
+
+  // Espace membre : mise en page propre, sans l'entête publique.
+  if (route.startsWith('/espace')){
+    if (!session) return html`
+      <${EntetePublique} route=${route} session=${session} />
+      <${Connexion} />
+      <${Pied} txt=${txt} />`;
+    const sous = route.replace('/espace','').replace(/^\//,'');
+    return html`<${Espace} session=${session} sous=${sous} />`;
+  }
+
+  let page;
+  switch (route){
+    case '/':                 page = html`<${Accueil} txt=${txt} />`; break;
+    case '/association':      page = html`<${Association} txt=${txt} />`; break;
+    case '/actions':          page = html`<${Actions} />`; break;
+    case '/reseau':           page = html`<${Reseau} />`; break;
+    case '/rejoindre':        page = html`<${Rejoindre} />`; break;
+    case '/contact':          page = html`<${Contact} txt=${txt} />`; break;
+    case '/inscription':      page = session ? html`<${Accueil} txt=${txt} />` : html`<${Inscription} />`; break;
+    case '/mentions':         page = html`<${PageTexte} titre="Mentions légales" corps=${txt.mentions} />`; break;
+    case '/confidentialite':  page = html`<${PageTexte} titre="Politique de confidentialité" corps=${txt.confidentialite} />`; break;
+    default:                  page = html`<${PageTexte} titre="Page introuvable"
+                                  corps="Le lien que vous avez suivi ne mène nulle part." />`;
+  }
+
+  return html`
+    <${EntetePublique} route=${route} session=${session} />
+    ${page}
+    <${Pied} txt=${txt} />`;
+}
+
+render(html`<${Site} />`, document.getElementById('racine'));
+</script>
+</body>
+</html>
