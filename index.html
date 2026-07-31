@@ -711,6 +711,11 @@ function CarteFederale({ p, chemin }){
       <div class="nom">${nomComplet(p)}</div>
       <div class="poste">${p.fonction_nom}</div>
       <div class="lieu">${chemin || p.territoire_nom || 'Rattachement à définir'}</div>
+      ${p.postes && p.postes.length > 0 && html`
+        <div class="row" style="margin-top:10px;gap:6px">
+          ${p.postes.map(x => html`<span class=${'tag '+(x.couleur==='neutre'?'':x.couleur)}>
+            ${x.nom}${x.territoire_nom ? ' · '+x.territoire_nom : ''}</span>`)}
+        </div>`}
       <div class="ech">
         <span class="tag or">Échelon ${e} · ${p.echelon_nom}</span>
         <span class="mono muted">${p.statut === 'actif' ? 'Actif' : p.statut}</span>
@@ -745,7 +750,8 @@ function Flanc({ p, apps, page }){
           <div class="groupe">Direction générale</div>
           ${item('validation','Vérifications')}
           ${item('reseau','Réseau et fonctions')}
-          ${item('vitrine','Site public')}`}
+          ${item('vitrine','Site public')}
+          ${item('habilitations','Habilitations')}`}
         <div class="groupe">Services externes</div>
         <a href=${EXTERNE.drive} target="_blank" rel="noopener">Drive ↗</a>
         <a href=${EXTERNE.agenda} target="_blank" rel="noopener">Agenda ↗</a>
@@ -789,7 +795,8 @@ function TableauDeBord({ p, apps, chemin, demandes }){
                 <div style="margin-top:10px"><span class="tag">Accès non ouvert</span></div>
               </div>`;
             return html`
-              <a class="tuile" href=${lien} target=${cible} rel="noopener">
+              <a class="tuile" href=${lien} target=${cible} rel="noopener"
+                 onClick=${()=>db.rpc('tracer_acces', { p_app: a.code })}>
                 <h3>${a.nom}${a.externe_url ? ' ↗' : ''}</h3>
                 <p>${a.description}</p>
               </a>`;
@@ -858,6 +865,14 @@ function MonCompte({ p, recharger }){
           <span class="tag or">${p.echelon} · ${p.echelon_nom}</span></div>
         <div class="ligne"><span class="muted">Territoire</span><span>${p.territoire_nom||'—'}</span></div>
         <div class="ligne"><span class="muted">Membre depuis</span><span>${jour(p.cree_le)}</span></div>
+        ${p.postes && p.postes.length > 0 && html`
+          <div class="ligne">
+            <span class="muted">Postes occupés</span>
+            <div class="row" style="gap:6px;justify-content:flex-end">
+              ${p.postes.map(x => html`<span class=${'tag '+(x.couleur==='neutre'?'':x.couleur)}>
+                ${x.nom}${x.fin ? ' · jusqu\u2019au '+jour(x.fin) : ''}</span>`)}
+            </div>
+          </div>`}
         <div class="corps small muted" style="border-top:1px solid var(--filet)">
           Ces éléments sont fixés par la Direction générale. Pour une évolution
           de fonction ou d'échelon, déposez une demande.
@@ -2722,11 +2737,410 @@ function Tresorerie({ p }){
     </div>`;
 }
 
+
+/* =====================================================================
+   5 sexies. HABILITATIONS
+   Un droit ouvre une action. Un poste regroupe des droits. Une
+   nomination confie un poste, avec un périmètre et un terme.
+   ===================================================================== */
+
+function Habilitations({ p }){
+  const [onglet, setOnglet] = useState('nominations');
+  const [postes, setPostes] = useState([]);
+  const [droits, setDroits] = useState([]);
+  const [liens, setLiens] = useState([]);
+  const [noms, setNoms] = useState([]);
+  const [gens, setGens] = useState([]);
+  const [terr, setTerr] = useState([]);
+  const [acces, setAcces] = useState([]);
+  const [apps, setApps] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a,b,c,d,e,f,g] = await Promise.all([
+      db.from('postes').select('*').order('nom'),
+      db.from('droits').select('*').order('ordre'),
+      db.from('poste_droits').select('*'),
+      db.from('nominations').select('*').order('cree_le', {ascending:false}),
+      db.from('v_annuaire').select('id,prenom,nom,matricule,fonction_nom')
+        .eq('statut','actif').order('nom'),
+      db.from('territoires').select('id,nom,echelle').order('echelle').order('nom'),
+      db.rpc('pilotage_acces')
+    ]);
+    setPostes(a.data||[]); setDroits(b.data||[]); setLiens(c.data||[]);
+    setNoms(d.data||[]); setGens(e.data||[]); setTerr(f.data||[]);
+    setAcces(g.data||[]);
+    const { data: ap } = await db.from('applications').select('code,nom').eq('actif',true).order('ordre');
+    setApps(ap||[]);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const nomDe = i => { const x = gens.find(y => y.id === i); return x ? nomComplet(x) : '—'; };
+  const actif = n => !n.revoque_le &&
+    (!n.fin || new Date(n.fin) >= new Date(new Date().toDateString()));
+
+  return html`
+    <div>
+      <div class="eyebrow">Direction générale</div>
+      <h1 style="margin:6px 0 8px">Habilitations</h1>
+      <p class="muted" style="max-width:60ch">
+        Un droit ouvre une action. Un poste regroupe des droits sous un nom.
+        Une nomination confie un poste à quelqu\u2019un, pour un territoire et
+        une durée. Ces trois notions restent séparées.
+      </p>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['nominations','Nominations'],['postes','Postes'],['acces','Accès applicatifs']]
+          .map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--encre)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'nominations' && html`<${Nominations} postes=${postes} noms=${noms}
+        gens=${gens} terr=${terr} nomDe=${nomDe} actif=${actif}
+        recharger=${charger} setMsg=${setMsg} />`}
+
+      ${onglet === 'postes' && html`<${Postes} postes=${postes} droits=${droits}
+        liens=${liens} recharger=${charger} setMsg=${setMsg} />`}
+
+      ${onglet === 'acces' && html`<${PilotageAcces} acces=${acces} apps=${apps}
+        gens=${gens} recharger=${charger} setMsg=${setMsg} />`}
+    </div>`;
+}
+
+function Nominations({ postes, noms, gens, terr, nomDe, actif, recharger, setMsg }){
+  const [f, setF] = useState({profil:'', poste:'', territoire:'', fin:'', motif:''});
+  const [historique, setHistorique] = useState(false);
+
+  async function nommer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('nommer', {
+      p_profil: f.profil, p_poste: f.poste,
+      p_territoire: f.territoire || null, p_fin: f.fin || null, p_motif: f.motif || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({profil:'', poste:'', territoire:'', fin:'', motif:''});
+    setMsg('Nomination enregistrée.'); recharger();
+  }
+
+  async function revoquer(n){
+    const motif = prompt('Motif de la révocation (obligatoire)');
+    if (!motif) return;
+    const { data, error } = await db.rpc('revoquer', { p_nomination: n.id, p_motif: motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Nomination révoquée.'); recharger();
+  }
+
+  const enCours = noms.filter(actif);
+  const closes  = noms.filter(n => !actif(n));
+  const posteNom = c => (postes.find(x => x.code === c)||{}).nom || c;
+  const terrNom  = i => (terr.find(x => x.id === i)||{}).nom;
+
+  return html`
+    <div>
+      <form onSubmit=${nommer} class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">Nommer</h3></div>
+        <div class="corps stack">
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Membre</label>
+              <select required value=${f.profil} onChange=${e=>setF(o=>({...o,profil:e.target.value}))}>
+                <option value="">Choisir…</option>
+                ${gens.map(g => html`<option value=${g.id}>${nomComplet(g)} — ${g.fonction_nom}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Poste</label>
+              <select required value=${f.poste} onChange=${e=>setF(o=>({...o,poste:e.target.value}))}>
+                <option value="">Choisir…</option>
+                ${postes.filter(x=>x.actif).map(x => html`<option value=${x.code}>${x.nom}</option>`)}
+              </select></div>
+          </div>
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Périmètre</label>
+              <select value=${f.territoire} onChange=${e=>setF(o=>({...o,territoire:e.target.value}))}>
+                <option value="">National</option>
+                ${terr.map(t => html`<option value=${t.id}>${t.nom} (${t.echelle})</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:160px;margin:0"><label>Fin du mandat</label>
+              <input type="date" value=${f.fin} onInput=${e=>setF(o=>({...o,fin:e.target.value}))} />
+            </div>
+          </div>
+          <div class="field"><label>Motif</label>
+            <input value=${f.motif} onInput=${e=>setF(o=>({...o,motif:e.target.value}))}
+              placeholder="Élu au bureau du 12 mars" /></div>
+          <div><button class="btn">Nommer</button></div>
+          <p class="small muted">
+            Sans date de fin, le mandat court jusqu\u2019à révocation. Un mandat
+            à durée déterminée s\u2019éteint seul : c\u2019est plus sûr qu\u2019un rappel.
+          </p>
+        </div>
+      </form>
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">Postes occupés</h3>
+          <span class="tag">${enCours.length}</span></div>
+        ${enCours.length === 0
+          ? html`<div class="vide">Aucune nomination en cours.</div>`
+          : enCours.map(n => html`
+            <div class="ligne">
+              <div style="flex:1;min-width:220px">
+                <div>${nomDe(n.profil_id)} — <strong>${posteNom(n.poste)}</strong></div>
+                <div class="small muted">
+                  ${n.territoire_id ? terrNom(n.territoire_id) : 'National'}
+                  · depuis le ${jour(n.debut)}
+                  ${n.fin ? ' · jusqu\u2019au ' + jour(n.fin) : ' · sans terme'}
+                  ${n.motif ? ' · ' + n.motif : ''}
+                </div>
+              </div>
+              <button class="btn sm light" onClick=${()=>revoquer(n)}>Révoquer</button>
+            </div>`)}
+      </div>
+
+      ${closes.length > 0 && html`
+        <div style="margin-top:24px">
+          <button class="btn light" style="border:0;background:transparent;padding:0;
+            font-size:13px;color:var(--gris)" onClick=${()=>setHistorique(h=>!h)}>
+            ${historique ? 'Masquer' : 'Voir'} les mandats clos (${closes.length})</button>
+          ${historique && html`
+            <div class="panneau" style="margin-top:12px">
+              ${closes.map(n => html`
+                <div class="ligne">
+                  <div>
+                    <div class="muted">${nomDe(n.profil_id)} — ${posteNom(n.poste)}</div>
+                    <div class="small muted">
+                      ${n.revoque_le
+                        ? 'Révoqué le ' + jour(n.revoque_le) +
+                          (n.motif_revocation ? ' · ' + n.motif_revocation : '')
+                        : 'Mandat échu le ' + jour(n.fin)}
+                    </div>
+                  </div>
+                  <span class="tag">Clos</span>
+                </div>`)}
+            </div>`}
+        </div>`}
+    </div>`;
+}
+
+function Postes({ postes, droits, liens, recharger, setMsg }){
+  const [creation, setCreation] = useState(false);
+  const [f, setF] = useState({code:'', nom:'', description:'', couleur:'neutre'});
+  const [ouvert, setOuvert] = useState(null);
+
+  async function creer(e){
+    e.preventDefault();
+    const code = f.code.trim().toLowerCase().replace(/[^a-z0-9_]/g,'_');
+    const { error } = await db.from('postes').insert({
+      code, nom: f.nom, description: f.description || null, couleur: f.couleur
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setF({code:'', nom:'', description:'', couleur:'neutre'}); setCreation(false);
+    setMsg('Poste créé. Cochez maintenant ses droits.'); recharger();
+  }
+
+  async function basculer(poste, droit, coche){
+    if (coche)
+      await db.from('poste_droits').insert({ poste, droit });
+    else
+      await db.from('poste_droits').delete().eq('poste', poste).eq('droit', droit);
+    recharger();
+  }
+
+  async function desactiver(x){
+    if (!confirm('Désactiver « ' + x.nom + ' » ? Les nominations en cours cessent de produire effet.')) return;
+    await db.from('postes').update({ actif: !x.actif }).eq('code', x.code);
+    recharger();
+  }
+
+  const categories = [...new Set(droits.map(d => d.categorie))];
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:16px">
+        <span class="small muted">${postes.length} poste${postes.length>1?'s':''}</span>
+        <button class="btn sm" onClick=${()=>setCreation(c=>!c)}>
+          ${creation ? 'Annuler' : 'Créer un poste'}</button>
+      </div>
+
+      ${creation && html`
+        <form onSubmit=${creer} class="panneau" style="margin-bottom:24px">
+          <div class="corps stack">
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:200px;margin:0"><label>Nom</label>
+                <input required value=${f.nom} onInput=${e=>setF(o=>({...o,nom:e.target.value}))}
+                  placeholder="Référent laïcité" /></div>
+              <div class="field" style="flex:1;min-width:160px;margin:0"><label>Identifiant</label>
+                <input required value=${f.code} onInput=${e=>setF(o=>({...o,code:e.target.value}))}
+                  placeholder="ref_laicite" /></div>
+            </div>
+            <div class="field"><label>À quoi sert ce poste</label>
+              <textarea value=${f.description}
+                onInput=${e=>setF(o=>({...o,description:e.target.value}))} /></div>
+            <div class="field"><label>Couleur de l\u2019étiquette</label>
+              <select value=${f.couleur} onChange=${e=>setF(o=>({...o,couleur:e.target.value}))}>
+                <option value="neutre">Neutre</option><option value="or">Or</option>
+                <option value="bleu">Bleu</option><option value="vert">Vert</option>
+                <option value="rouge">Rouge</option>
+              </select></div>
+            <div><button class="btn">Créer</button></div>
+          </div>
+        </form>`}
+
+      ${postes.map(x => {
+        const siens = liens.filter(l => l.poste === x.code).map(l => l.droit);
+        return html`
+          <div class="panneau" style="margin-bottom:16px">
+            <div class="tete">
+              <div>
+                <div class="row" style="gap:8px">
+                  <h3 style="font-size:17px">${x.nom}</h3>
+                  <span class=${'tag '+(x.couleur==='neutre'?'':x.couleur)}>${siens.length} droit${siens.length>1?'s':''}</span>
+                  ${!x.actif && html`<span class="tag rouge">Désactivé</span>`}
+                  ${x.systeme && html`<span class="tag">Fourni d\u2019origine</span>`}
+                </div>
+                ${x.description && html`<div class="small muted" style="margin-top:4px;max-width:60ch">
+                  ${x.description}</div>`}
+              </div>
+              <div class="row">
+                <button class="btn sm light" onClick=${()=>setOuvert(o => o===x.code?null:x.code)}>
+                  ${ouvert===x.code ? 'Replier' : 'Droits'}</button>
+                <button class="btn sm light" onClick=${()=>desactiver(x)}>
+                  ${x.actif ? 'Désactiver' : 'Réactiver'}</button>
+              </div>
+            </div>
+            ${ouvert === x.code && html`
+              <div class="corps">
+                ${categories.map(cat => html`
+                  <div style="margin-bottom:20px">
+                    <div class="eyebrow" style="margin-bottom:8px">${cat}</div>
+                    ${droits.filter(d => d.categorie === cat).map(d => html`
+                      <label class="row" style="text-transform:none;letter-spacing:0;
+                          font-size:14px;color:var(--encre);padding:4px 0;margin:0;cursor:pointer">
+                        <input type="checkbox" style="width:auto"
+                          checked=${siens.includes(d.code)}
+                          onChange=${e=>basculer(x.code, d.code, e.target.checked)} />
+                        <span>${d.nom}</span>
+                        ${d.sensible && html`<span class="tag or">Sensible</span>`}
+                      </label>`)}
+                  </div>`)}
+              </div>`}
+          </div>`;
+      })}
+    </div>`;
+}
+
+function PilotageAcces({ acces, apps, gens, recharger, setMsg }){
+  const [f, setF] = useState({profil:'', app:'', motif:'', expire:''});
+  const [filtre, setFiltre] = useState('actifs');
+
+  async function accorder(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('accorder_acces', {
+      p_profil: f.profil, p_app: f.app,
+      p_motif: f.motif || null, p_expire: f.expire || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({profil:'', app:'', motif:'', expire:''});
+    setMsg('Accès ouvert.'); recharger();
+  }
+
+  async function revoquer(a){
+    const motif = prompt('Motif de la révocation (obligatoire)');
+    if (!motif) return;
+    const { data, error } = await db.rpc('revoquer_acces',
+      { p_profil: a.profil_id, p_app: a.application, p_motif: motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Accès révoqué.'); recharger();
+  }
+
+  const liste = acces.filter(a => filtre === 'tous' ? true : a.statut === 'Actif');
+  const dormants = acces.filter(a => a.statut === 'Actif' && !a.derniere_utilisation);
+
+  return html`
+    <div>
+      <form onSubmit=${accorder} class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">Ouvrir un accès</h3></div>
+        <div class="corps stack">
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Membre</label>
+              <select required value=${f.profil} onChange=${e=>setF(o=>({...o,profil:e.target.value}))}>
+                <option value="">Choisir…</option>
+                ${gens.map(g => html`<option value=${g.id}>${nomComplet(g)}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:180px;margin:0"><label>Application</label>
+              <select required value=${f.app} onChange=${e=>setF(o=>({...o,app:e.target.value}))}>
+                <option value="">Choisir…</option>
+                ${apps.map(a => html`<option value=${a.code}>${a.nom}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:150px;margin:0"><label>Expire le</label>
+              <input type="date" value=${f.expire}
+                onInput=${e=>setF(o=>({...o,expire:e.target.value}))} /></div>
+          </div>
+          <div class="field"><label>Motif</label>
+            <input value=${f.motif} onInput=${e=>setF(o=>({...o,motif:e.target.value}))}
+              placeholder="Trésorier adjoint depuis mars" /></div>
+          <div><button class="btn">Ouvrir</button></div>
+        </div>
+      </form>
+
+      ${dormants.length > 0 && html`
+        <div class="alerte" style="margin-bottom:24px;border-left-color:var(--laiton)">
+          ${dormants.length} accès ouvert${dormants.length>1?'s':''} n\u2019
+          ${dormants.length>1?'ont':'a'} jamais servi. Un accès inutilisé est un
+          accès à retirer.
+        </div>`}
+
+      <div class="spread" style="margin-bottom:16px">
+        <span class="small muted">${liste.length} ligne${liste.length>1?'s':''}</span>
+        <select style="width:auto" value=${filtre} onChange=${e=>setFiltre(e.target.value)}>
+          <option value="actifs">Accès actifs</option>
+          <option value="tous">Tout l\u2019historique</option>
+        </select>
+      </div>
+
+      <div class="panneau" style="overflow-x:auto">
+        ${liste.length === 0
+          ? html`<div class="vide">Aucun accès nominatif ouvert.</div>`
+          : html`
+            <table>
+              <thead><tr>
+                <th>Membre</th><th>Application</th><th>Ouvert le</th>
+                <th>Dernier usage</th><th>Ouvertures</th><th>État</th><th></th>
+              </tr></thead>
+              <tbody>
+                ${liste.map(a => html`
+                  <tr>
+                    <td><div>${a.membre}</div>
+                      <div class="mono muted">${a.matricule}</div></td>
+                    <td>${a.app_nom}</td>
+                    <td class="small">${jour(a.accorde_le)}
+                      ${a.expire_le ? html`<div class="small muted">expire le ${jour(a.expire_le)}</div>` : ''}</td>
+                    <td class="small">${a.derniere_utilisation
+                      ? jour(a.derniere_utilisation)
+                      : html`<span class="tag or">Jamais</span>`}</td>
+                    <td class="mono">${a.nb_ouvertures}</td>
+                    <td>${a.statut === 'Actif'
+                      ? html`<span class="tag vert">Actif</span>`
+                      : html`<span class="tag rouge">${a.statut}</span>`}</td>
+                    <td>${a.statut === 'Actif' && html`
+                      <button class="btn sm light" onClick=${()=>revoquer(a)}>Révoquer</button>`}</td>
+                  </tr>`)}
+              </tbody>
+            </table>`}
+      </div>
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
   const [demandes, setDemandes] = useState([]);
   const [signalements, setSignalements] = useState([]);
+  const [alertes, setAlertes] = useState([]);
   const [encadrants, setEncadrants] = useState([]);
   const [msg, setMsg] = useState('');
 
@@ -2734,12 +3148,14 @@ function Validation(){
     // La table demandes pointe deux fois vers profils (profil_id et
     // traite_par). On lit donc les deux séparément plutôt que de laisser
     // PostgREST deviner de quel lien il s'agit.
-    const [a, d, sg] = await Promise.all([
+    const [a, d, sg, al] = await Promise.all([
       db.from('v_annuaire').select('*').eq('statut','en_attente').order('cree_le'),
       db.from('demandes').select('*').in('statut',['ouverte','en_cours']).order('cree_le'),
-      db.rpc('signalements_a_traiter')
+      db.rpc('signalements_a_traiter'),
+      db.rpc('alertes_consultation')
     ]);
     setSignalements(sg.data || []);
+    setAlertes(al.data || []);
     const { data: enc } = await db.from('v_annuaire')
       .select('id,prenom,nom,fonction_nom,niveau').eq('statut','actif').gte('niveau', 50)
       .order('niveau', { ascending: false });
@@ -2821,6 +3237,31 @@ function Validation(){
       <div class="eyebrow">Direction générale</div>
       <h1 style="margin:6px 0 32px">Vérifications</h1>
       ${msg && html`<div class="alerte ok" style="margin-bottom:24px">${msg}</div>`}
+
+      ${alertes.length > 0 && html`
+        <div class="panneau" style="margin-bottom:24px;border-color:var(--laiton)">
+          <div class="tete" style="border-bottom-color:var(--laiton)">
+            <h3 style="font-size:17px">Consultations de dossiers protégés</h3>
+            <span class="tag or">${alertes.length}</span>
+          </div>
+          ${alertes.map(al => html`
+            <div class="ligne">
+              <div style="flex:1;min-width:240px">
+                <div>${al.observateur_nom} a consulté le dossier de ${al.observe_nom}</div>
+                <div class="small muted">
+                  ${al.observateur_fonction}
+                  · <span class="mono">${al.observe_matricule}</span>
+                  · ${new Date(al.cree_le).toLocaleString('fr-FR',
+                      {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
+                  ${al.contexte ? ' · ' + al.contexte : ''}
+                </div>
+              </div>
+              <button class="btn sm light" onClick=${async ()=>{
+                await db.rpc('marquer_alerte_vue', { p_id: al.id });
+                charger();
+              }}>Pris connaissance</button>
+            </div>`)}
+        </div>`}
 
       ${signalements.length > 0 && html`
         <div class="panneau" style="margin-bottom:24px;border-color:var(--laiton)">
@@ -2953,7 +3394,8 @@ function ReseauAdmin(){
 
       <div class="panneau" style="overflow-x:auto">
         <table>
-          <thead><tr><th>Membre</th><th>Fonction</th><th>Territoire</th><th>Échelon</th><th>Statut</th></tr></thead>
+          <thead><tr><th>Membre</th><th>Fonction</th><th>Territoire</th><th>Échelon</th>
+            <th>Statut</th><th title="Toute consultation déclenche une alerte">Protégé</th></tr></thead>
           <tbody>
             ${filtre.map(m => html`
               <tr>
@@ -2979,6 +3421,11 @@ function ReseauAdmin(){
                     ${['en_attente','actif','suspendu','archive'].map(s =>
                       html`<option value=${s}>${s.replace('_',' ')}</option>`)}
                   </select>
+                </td>
+                <td style="text-align:center">
+                  <input type="checkbox" style="width:auto" checked=${!!m.protege}
+                    title="Protection renforcée : toute consultation déclenche une alerte"
+                    onChange=${e=>modifier(m.id,'protege',e.target.checked)} />
                 </td>
               </tr>`)}
           </tbody>
@@ -3074,6 +3521,12 @@ function Espace({ session, sous }){
     })));
     setDemandes(mesDem || []);
 
+    // Les postes occupés : ils ouvrent des droits que la fonction ne
+    // donne pas — référent RGPD, ordonnateur, conseil de discipline…
+    const { data: mp } = await db.rpc('mes_postes');
+    profil.postes = mp || [];
+    setP({ ...profil });
+
     if (profil.territoire_id){
       const { data } = await db.rpc('chemin_territoire', { cible: profil.territoire_id });
       setChemin(data || '');
@@ -3122,6 +3575,8 @@ function Espace({ session, sous }){
     case 'validation': vue = admin ? html`<${Validation} />` : refus; break;
     case 'reseau':     vue = admin ? html`<${ReseauAdmin} />` : refus; break;
     case 'vitrine':    vue = admin ? html`<${VitrineAdmin} />` : refus; break;
+    case 'habilitations': vue = (admin || p.droits?.includes('habilitations.gerer'))
+                          ? html`<${Habilitations} p=${p} />` : refus; break;
     case 'formations': vue = acces('formations') ? html`<${Formations} p=${p} />` : refus; break;
     case 'groupes':    vue = acces('groupes') ? html`<${Groupes} p=${p} />` : refus; break;
     case 'messagerie': vue = acces('messagerie') ? html`<${Messagerie} p=${p} />` : refus; break;
