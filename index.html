@@ -736,6 +736,8 @@ function Flanc({ p, apps, page }){
         ${dispo('formations') && item('formations','Formations')}
         ${dispo('groupes') && item('groupes','Groupes de travail')}
         ${dispo('messagerie') && item('messagerie','Messagerie')}
+        ${dispo('notes_frais') && item('notes_frais','Notes de frais')}
+        ${dispo('tresorerie') && item('tresorerie','Direction financière')}
         ${dispo('annuaire') && html`
           <div class="groupe">Encadrement</div>
           ${item('annuaire','Annuaire fédéral')}`}
@@ -2169,6 +2171,557 @@ function Conversation({ p, id, fermer }){
     </div>`;
 }
 
+
+/* =====================================================================
+   5 quinquies. NOTES DE FRAIS ET DIRECTION FINANCIÈRE
+   Circuit à trois temps : le membre dépose, son encadrement instruit,
+   le trésorier valide puis paie.
+   ===================================================================== */
+
+const EURO = n => (Number(n)||0).toLocaleString('fr-FR',
+  {style:'currency', currency:'EUR'});
+
+const ETAT_NOTE = {
+  brouillon: ['Brouillon', ''],
+  deposee:   ['Déposée', 'bleu'],
+  instruite: ['Avis favorable', 'bleu'],
+  validee:   ['Validée', 'vert'],
+  payee:     ['Payée', 'vert'],
+  refusee:   ['Refusée', 'rouge']
+};
+const etatNote = st => {
+  const [t, c] = ETAT_NOTE[st] || [st, ''];
+  return html`<span class=${'tag '+c}>${t}</span>`;
+};
+
+const CATEGORIES = {
+  transport:'Transport', kilometres:'Indemnité kilométrique', repas:'Repas',
+  hebergement:'Hébergement', materiel:'Matériel', autre:'Autre'
+};
+
+function NotesFrais({ p }){
+  const [notes, setNotes] = useState(null);
+  const [param, setParam] = useState({});
+  const [ouverte, setOuverte] = useState(null);
+  const [creation, setCreation] = useState(false);
+  const [objet, setObjet] = useState('');
+  const [groupe, setGroupe] = useState('');
+  const [mesGroupes, setMesGroupes] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [{ data: ns }, { data: ps }, { data: gm }] = await Promise.all([
+      db.rpc('v_notes', { p_filtre: 'miennes' }),
+      db.from('parametres_frais').select('*'),
+      db.from('gt_membres').select('groupe_id').eq('profil_id', p.id).eq('statut','actif')
+    ]);
+    setNotes(ns || []);
+    setParam(Object.fromEntries((ps||[]).map(x => [x.cle, Number(x.valeur)])));
+    if (gm && gm.length){
+      const { data: gs } = await db.from('v_groupes').select('id,nom')
+        .in('id', gm.map(x => x.groupe_id));
+      setMesGroupes(gs || []);
+    }
+  }, [p.id]);
+
+  useEffect(() => { charger(); }, [charger]);
+
+  async function creer(e){
+    e.preventDefault(); setMsg('');
+    const { data, error } = await db.from('notes_frais')
+      .insert({ profil_id: p.id, objet, groupe_id: groupe || null })
+      .select().single();
+    if (error) return setMsg(error.message);
+    setObjet(''); setGroupe(''); setCreation(false); setOuverte(data.id); charger();
+  }
+
+  if (!notes) return html`<div class="vide">Chargement…</div>`;
+  if (ouverte) return html`<${NoteFrais} p=${p} id=${ouverte} param=${param}
+    fermer=${() => { setOuverte(null); charger(); }} />`;
+
+  const aRembourser = notes.filter(n => ['deposee','instruite','validee'].includes(n.statut))
+                           .reduce((t,n) => t + Number(n.total||0), 0);
+
+  return html`
+    <div>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Notes de frais</div>
+          <h1 style="margin:6px 0 0">Mes dépenses</h1>
+        </div>
+        <button class="btn" onClick=${()=>setCreation(c=>!c)}>
+          ${creation ? 'Annuler' : 'Nouvelle note'}</button>
+      </div>
+      <p class="muted" style="max-width:58ch;margin-top:12px">
+        Indemnité kilométrique à ${EURO(param.taux_km||0)} du kilomètre.
+        Plafond de ${EURO(param.plafond_note||0)} par note.
+        Un justificatif est exigé pour chaque dépense réelle.
+      </p>
+
+      ${msg && html`<div class="alerte err" style="margin-top:16px">${msg}</div>`}
+
+      ${aRembourser > 0 && html`
+        <div class="alerte" style="margin-top:24px">
+          ${EURO(aRembourser)} en cours de traitement.
+        </div>`}
+
+      ${creation && html`
+        <form onSubmit=${creer} class="panneau" style="margin-top:24px">
+          <div class="corps stack">
+            <div class="field"><label>Objet</label>
+              <input required value=${objet} onInput=${e=>setObjet(e.target.value)}
+                placeholder="Déplacement au collège Jean-Moulin, 12 mars" /></div>
+            ${mesGroupes.length > 0 && html`
+              <div class="field"><label>Rattacher à un projet</label>
+                <select value=${groupe} onChange=${e=>setGroupe(e.target.value)}>
+                  <option value="">Aucun</option>
+                  ${mesGroupes.map(g => html`<option value=${g.id}>${g.nom}</option>`)}
+                </select></div>`}
+            <div><button class="btn">Créer la note</button></div>
+          </div>
+        </form>`}
+
+      <div class="panneau" style="margin-top:24px">
+        ${notes.length === 0
+          ? html`<div class="vide">Aucune note de frais. Créez-en une quand vous avancez des frais.</div>`
+          : notes.map(n => html`
+            <div class="ligne" style="cursor:pointer" onClick=${()=>setOuverte(n.id)}>
+              <div style="flex:1;min-width:220px">
+                <div>${n.objet}</div>
+                <div class="small muted">
+                  <span class="mono">${n.reference}</span> · ${n.nb_lignes} ligne${n.nb_lignes>1?'s':''}
+                  ${n.groupe_nom ? ' · ' + n.groupe_nom : ''}
+                  ${n.deposee_le ? ' · déposée le ' + jour(n.deposee_le) : ''}
+                </div>
+                ${n.motif_refus && html`<div class="small" style="color:var(--rouge);margin-top:4px">
+                  ${n.motif_refus}</div>`}
+              </div>
+              <div class="row">
+                <span class="mono">${EURO(n.total)}</span>
+                ${etatNote(n.statut)}
+              </div>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+function NoteFrais({ p, id, param, fermer }){
+  const [note, setNote] = useState(null);
+  const [lignes, setLignes] = useState([]);
+  const [f, setF] = useState({date_depense:'', categorie:'transport',
+                              description:'', montant:'', kilometres:''});
+  const [fichier, setFichier] = useState(null);
+  const [msg, setMsg] = useState('');
+  const [envoi, setEnvoi] = useState(false);
+
+  const charger = useCallback(async () => {
+    const { data: ns } = await db.rpc('v_notes', { p_filtre: 'miennes' });
+    setNote((ns||[]).find(x => x.id === id) || null);
+    const { data: ls } = await db.from('nf_lignes').select('*')
+      .eq('note_id', id).order('date_depense');
+    setLignes(ls || []);
+  }, [id]);
+
+  useEffect(() => { charger(); }, [charger]);
+
+  if (!note) return html`<div class="vide">Note introuvable.</div>`;
+  const modifiable = note.statut === 'brouillon';
+
+  const montantDe = l => l.categorie === 'kilometres'
+    ? (Number(l.kilometres||0) * (param.taux_km||0))
+    : Number(l.montant||0);
+  const total = lignes.reduce((t,l) => t + montantDe(l), 0);
+
+  async function ajouter(e){
+    e.preventDefault(); setMsg(''); setEnvoi(true);
+    let chemin = null;
+    try {
+      if (fichier){
+        if (fichier.size > 5 * 1024 * 1024)
+          throw new Error('Le justificatif ne doit pas dépasser 5 Mo.');
+        const ext = fichier.name.split('.').pop();
+        chemin = p.id + '/' + id + '-' + Date.now() + '.' + ext;
+        const { error: eUp } = await db.storage.from('justificatifs')
+          .upload(chemin, fichier);
+        if (eUp) throw eUp;
+      }
+      const { error } = await db.from('nf_lignes').insert({
+        note_id: id, date_depense: f.date_depense, categorie: f.categorie,
+        description: f.description,
+        montant: f.categorie === 'kilometres' ? null : Number(f.montant||0),
+        kilometres: f.categorie === 'kilometres' ? Number(f.kilometres||0) : null,
+        justificatif: chemin
+      });
+      if (error) throw error;
+      setF({date_depense:'', categorie:'transport', description:'', montant:'', kilometres:''});
+      setFichier(null);
+      const champ = document.getElementById('justif'); if (champ) champ.value = '';
+      charger();
+    } catch (err){
+      setMsg(err.message || 'Ajout impossible.');
+    }
+    setEnvoi(false);
+  }
+
+  async function retirer(l){
+    if (!confirm('Retirer cette dépense ?')) return;
+    if (l.justificatif) await db.storage.from('justificatifs').remove([l.justificatif]);
+    await db.from('nf_lignes').delete().eq('id', l.id);
+    charger();
+  }
+
+  async function voirJustificatif(chemin){
+    const { data, error } = await db.storage.from('justificatifs')
+      .createSignedUrl(chemin, 120);
+    if (error) return setMsg('Justificatif introuvable.');
+    window.open(data.signedUrl, '_blank', 'noopener');
+  }
+
+  async function deposer(){
+    setMsg(''); setEnvoi(true);
+    const { data, error } = await db.rpc('deposer_note', { p_note: id });
+    setEnvoi(false);
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    charger();
+  }
+
+  async function supprimer(){
+    if (!confirm('Supprimer définitivement cette note ?')) return;
+    await db.from('notes_frais').delete().eq('id', id);
+    fermer();
+  }
+
+  return html`
+    <div>
+      <a class="small" href="#" onClick=${e=>{e.preventDefault();fermer()}}>← Toutes mes notes</a>
+      <div class="spread" style="margin-top:12px">
+        <div>
+          <h1 style="font-size:30px">${note.objet}</h1>
+          <div class="small muted" style="margin-top:4px">
+            <span class="mono">${note.reference}</span>
+            ${note.groupe_nom ? ' · ' + note.groupe_nom : ''}
+          </div>
+        </div>
+        ${etatNote(note.statut)}
+      </div>
+
+      ${note.avis && html`<div class="alerte" style="margin-top:16px">
+        Avis de l\u2019encadrement : ${note.avis}</div>`}
+      ${note.motif_refus && html`<div class="alerte err" style="margin-top:16px">
+        ${note.motif_refus}</div>`}
+      ${note.statut === 'payee' && html`<div class="alerte ok" style="margin-top:16px">
+        Payée${note.reference_paiement ? ' — référence ' + note.reference_paiement : ''}.</div>`}
+      ${msg && html`<div class="alerte err" style="margin-top:16px">${msg}</div>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete">
+          <h3 style="font-size:17px">Dépenses</h3>
+          <span class="mono" style="font-size:16px">${EURO(total)}</span>
+        </div>
+        ${lignes.length === 0
+          ? html`<div class="vide">Aucune dépense saisie.</div>`
+          : lignes.map(l => html`
+            <div class="ligne">
+              <div style="flex:1;min-width:220px">
+                <div>${l.description}</div>
+                <div class="small muted">
+                  ${CATEGORIES[l.categorie]} · ${jour(l.date_depense)}
+                  ${l.categorie === 'kilometres' ? ' · ' + l.kilometres + ' km' : ''}
+                </div>
+              </div>
+              <div class="row">
+                ${l.justificatif
+                  ? html`<button class="btn sm light"
+                      onClick=${()=>voirJustificatif(l.justificatif)}>Justificatif</button>`
+                  : (l.categorie !== 'kilometres'
+                      ? html`<span class="tag rouge">Sans justificatif</span>` : null)}
+                <span class="mono">${EURO(montantDe(l))}</span>
+                ${modifiable && html`<button class="btn sm light"
+                  onClick=${()=>retirer(l)}>Retirer</button>`}
+              </div>
+            </div>`)}
+      </div>
+
+      ${modifiable && html`
+        <form onSubmit=${ajouter} class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Ajouter une dépense</h3></div>
+          <div class="corps stack">
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:150px;margin:0"><label>Date</label>
+                <input type="date" required value=${f.date_depense}
+                  onInput=${e=>setF(o=>({...o,date_depense:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:180px;margin:0"><label>Nature</label>
+                <select value=${f.categorie} onChange=${e=>setF(o=>({...o,categorie:e.target.value}))}>
+                  ${Object.entries(CATEGORIES).map(([k,v]) => html`<option value=${k}>${v}</option>`)}
+                </select></div>
+            </div>
+            <div class="field"><label>Description</label>
+              <input required value=${f.description}
+                onInput=${e=>setF(o=>({...o,description:e.target.value}))}
+                placeholder="Aller-retour Foix – Pamiers" /></div>
+
+            ${f.categorie === 'kilometres'
+              ? html`
+                <div class="field"><label>Distance parcourue (km)</label>
+                  <input type="number" step="0.1" min="0" required value=${f.kilometres}
+                    onInput=${e=>setF(o=>({...o,kilometres:e.target.value}))} />
+                  <p class="small muted" style="margin:6px 0 0">
+                    Soit ${EURO((Number(f.kilometres)||0) * (param.taux_km||0))}
+                    au barème en vigueur. Aucun justificatif n\u2019est demandé.</p>
+                </div>`
+              : html`
+                <div class="field"><label>Montant (€)</label>
+                  <input type="number" step="0.01" min="0" required value=${f.montant}
+                    onInput=${e=>setF(o=>({...o,montant:e.target.value}))} /></div>
+                <div class="field"><label>Justificatif</label>
+                  <input id="justif" type="file" accept="image/*,.pdf"
+                    onChange=${e=>setFichier(e.target.files[0]||null)} />
+                  <p class="small muted" style="margin:6px 0 0">
+                    Photo ou PDF, 5 Mo maximum. Exigé pour déposer la note.</p>
+                </div>`}
+
+            <div><button class="btn" disabled=${envoi}>
+              ${envoi ? 'Ajout…' : 'Ajouter la dépense'}</button></div>
+          </div>
+        </form>`}
+
+      ${modifiable && html`
+        <div class="row" style="margin-top:32px">
+          <button class="btn" onClick=${deposer} disabled=${envoi || lignes.length===0}>
+            Déposer la note</button>
+          <button class="btn light" onClick=${supprimer}>Supprimer</button>
+        </div>
+        <p class="small muted" style="margin-top:12px">
+          Une fois déposée, la note n\u2019est plus modifiable. Elle part à votre
+          encadrement, qui donne un avis, puis à la direction financière.
+        </p>`}
+    </div>`;
+}
+
+/* --- Direction financière -------------------------------------------- */
+function Tresorerie({ p }){
+  const [onglet, setOnglet] = useState('instruire');
+  const [aInstruire, setAInstruire] = useState([]);
+  const [aTraiter, setATraiter] = useState([]);
+  const [toutes, setToutes] = useState([]);
+  const [param, setParam] = useState([]);
+  const [detail, setDetail] = useState(null);
+  const [lignes, setLignes] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const tresorier = p.niveau >= 90 || true; // l'accès à l'onglet vaut habilitation
+
+  const charger = useCallback(async () => {
+    const [a, b, c, d] = await Promise.all([
+      db.rpc('v_notes', { p_filtre: 'instruire' }),
+      db.rpc('v_notes', { p_filtre: 'tresorerie' }),
+      db.rpc('v_notes', { p_filtre: 'toutes' }),
+      db.from('parametres_frais').select('*').order('cle')
+    ]);
+    setAInstruire(a.data || []); setATraiter(b.data || []);
+    setToutes(c.data || []); setParam(d.data || []);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function ouvrir(n){
+    setDetail(n); setMsg('');
+    const { data } = await db.from('nf_lignes').select('*')
+      .eq('note_id', n.id).order('date_depense');
+    setLignes(data || []);
+  }
+
+  async function voirJustificatif(chemin){
+    const { data, error } = await db.storage.from('justificatifs')
+      .createSignedUrl(chemin, 120);
+    if (error) return setMsg('Justificatif introuvable.');
+    window.open(data.signedUrl, '_blank', 'noopener');
+  }
+
+  async function instruire(n, favorable){
+    const avis = prompt(favorable
+      ? 'Avis (facultatif)' : 'Motif de l\u2019avis défavorable (obligatoire)');
+    if (!favorable && !avis) return;
+    const { data, error } = await db.rpc('instruire_note',
+      { p_note: n.id, p_favorable: favorable, p_avis: avis || '' });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setDetail(null); charger();
+  }
+
+  async function valider(n, ok){
+    const motif = ok ? null : prompt('Motif du refus (obligatoire)');
+    if (!ok && !motif) return;
+    const { data, error } = await db.rpc('valider_note',
+      { p_note: n.id, p_ok: ok, p_motif: motif });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setDetail(null); charger();
+  }
+
+  async function payer(n){
+    const ref = prompt('Référence du virement (facultatif)') || '';
+    const { data, error } = await db.rpc('payer_note',
+      { p_note: n.id, p_reference: ref });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setDetail(null); charger();
+  }
+
+  async function majParam(cle, valeur){
+    const { error } = await db.from('parametres_frais')
+      .update({ valeur: Number(valeur) }).eq('cle', cle);
+    setMsg(error ? error.message : 'Barème enregistré.');
+    charger();
+  }
+
+  const ligneNote = (n, actions) => html`
+    <div class="ligne">
+      <div style="flex:1;min-width:240px;cursor:pointer" onClick=${()=>ouvrir(n)}>
+        <div>${n.objet}</div>
+        <div class="small muted">
+          ${n.deposant} <span class="mono">${n.matricule}</span>
+          ${n.territoire_nom ? ' · ' + n.territoire_nom : ''}
+          · <span class="mono">${n.reference}</span>
+          ${n.deposee_le ? ' · ' + jour(n.deposee_le) : ''}
+        </div>
+        ${n.avis && html`<div class="small muted">Avis : ${n.avis}</div>`}
+      </div>
+      <div class="row">
+        <span class="mono" style="font-size:15px">${EURO(n.total)}</span>
+        ${etatNote(n.statut)}
+        ${actions}
+      </div>
+    </div>`;
+
+  if (detail) return html`
+    <div>
+      <a class="small" href="#" onClick=${e=>{e.preventDefault();setDetail(null)}}>← Retour</a>
+      <div class="spread" style="margin-top:12px">
+        <div>
+          <h1 style="font-size:28px">${detail.objet}</h1>
+          <div class="small muted" style="margin-top:4px">
+            ${detail.deposant} <span class="mono">${detail.matricule}</span>
+            ${detail.territoire_nom ? ' · ' + detail.territoire_nom : ''}
+          </div>
+        </div>
+        ${etatNote(detail.statut)}
+      </div>
+      ${msg && html`<div class="alerte err" style="margin-top:16px">${msg}</div>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Dépenses</h3>
+          <span class="mono" style="font-size:16px">${EURO(detail.total)}</span></div>
+        ${lignes.map(l => html`
+          <div class="ligne">
+            <div style="flex:1;min-width:200px">
+              <div>${l.description}</div>
+              <div class="small muted">${CATEGORIES[l.categorie]} · ${jour(l.date_depense)}
+                ${l.categorie === 'kilometres' ? ' · ' + l.kilometres + ' km' : ''}</div>
+            </div>
+            <div class="row">
+              ${l.justificatif && html`<button class="btn sm light"
+                onClick=${()=>voirJustificatif(l.justificatif)}>Justificatif</button>`}
+              <span class="mono">${EURO(l.categorie==='kilometres'
+                ? Number(l.kilometres||0) * Number((param.find(x=>x.cle==='taux_km')||{}).valeur||0)
+                : l.montant)}</span>
+            </div>
+          </div>`)}
+      </div>
+
+      <div class="row" style="margin-top:32px">
+        ${detail.statut === 'deposee' && html`
+          <button class="btn" onClick=${()=>instruire(detail,true)}>Avis favorable</button>
+          <button class="btn light" onClick=${()=>instruire(detail,false)}>Avis défavorable</button>`}
+        ${detail.statut === 'instruite' && html`
+          <button class="btn" onClick=${()=>valider(detail,true)}>Valider</button>
+          <button class="btn light" onClick=${()=>valider(detail,false)}>Refuser</button>`}
+        ${detail.statut === 'validee' && html`
+          <button class="btn" onClick=${()=>payer(detail)}>Marquer comme payée</button>`}
+      </div>
+    </div>`;
+
+  const enAttente = aTraiter.filter(n => n.statut === 'instruite');
+  const aPayer    = aTraiter.filter(n => n.statut === 'validee');
+  const duMois    = toutes.filter(n => n.statut === 'payee')
+                          .reduce((t,n) => t + Number(n.total||0), 0);
+
+  return html`
+    <div>
+      <div class="eyebrow">Direction financière</div>
+      <h1 style="margin:6px 0 24px">Notes de frais</h1>
+      ${msg && html`<div class="alerte ok" style="margin-bottom:16px">${msg}</div>`}
+
+      <div class="chiffres" style="margin:0 0 24px">
+        <div><div class="n" style="font-size:32px">${aInstruire.length}</div>
+          <div class="l">À instruire</div></div>
+        <div><div class="n" style="font-size:32px">${enAttente.length}</div>
+          <div class="l">À valider</div></div>
+        <div><div class="n" style="font-size:32px">${aPayer.length}</div>
+          <div class="l">À payer</div></div>
+        <div><div class="n" style="font-size:32px">${EURO(duMois)}</div>
+          <div class="l">Déjà remboursé</div></div>
+      </div>
+
+      <div class="row" style="margin:0 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['instruire','À instruire'],['valider','À valider'],['payer','À payer'],
+           ['toutes','Toutes'],['bareme','Barème']].map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--encre)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'instruire' && html`
+        <div class="panneau">
+          ${aInstruire.length === 0
+            ? html`<div class="vide">Rien à instruire dans votre périmètre.</div>`
+            : aInstruire.map(n => ligneNote(n, html`
+                <button class="btn sm" onClick=${()=>ouvrir(n)}>Examiner</button>`))}
+        </div>`}
+
+      ${onglet === 'valider' && html`
+        <div class="panneau">
+          ${enAttente.length === 0
+            ? html`<div class="vide">Aucune note en attente de validation.</div>`
+            : enAttente.map(n => ligneNote(n, html`
+                <button class="btn sm" onClick=${()=>ouvrir(n)}>Examiner</button>`))}
+        </div>`}
+
+      ${onglet === 'payer' && html`
+        <div class="panneau">
+          ${aPayer.length === 0
+            ? html`<div class="vide">Aucun paiement en attente.</div>`
+            : aPayer.map(n => ligneNote(n, html`
+                <button class="btn sm" onClick=${()=>payer(n)}>Marquer payée</button>`))}
+        </div>`}
+
+      ${onglet === 'toutes' && html`
+        <div class="panneau">
+          ${toutes.length === 0
+            ? html`<div class="vide">Aucune note de frais.</div>`
+            : toutes.map(n => ligneNote(n, html`
+                <button class="btn sm light" onClick=${()=>ouvrir(n)}>Ouvrir</button>`))}
+        </div>`}
+
+      ${onglet === 'bareme' && html`
+        <div class="panneau">
+          <div class="tete"><h3 style="font-size:17px">Barème et plafonds</h3></div>
+          <div class="corps stack">
+            ${param.map(x => html`
+              <div class="field">
+                <label>${x.libelle} (${x.unite})</label>
+                <input type="number" step="0.001" defaultValue=${x.valeur}
+                  onBlur=${e=>majParam(x.cle, e.target.value)} />
+              </div>`)}
+            <p class="small muted">
+              Enregistré à la sortie du champ. Le changement s\u2019applique
+              immédiatement aux notes encore en brouillon.
+            </p>
+          </div>
+        </div>`}
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
@@ -2539,10 +3092,6 @@ function Espace({ session, sous }){
   const acces = c => apps.find(a => a.code === c && a.ouvert);
   const refus = html`<div class="alerte err">Cette application ne vous est pas ouverte.
     <a href="#/espace/demandes">Déposer une demande</a></div>`;
-  const bientot = t => html`
-    <div><div class="eyebrow">Espace membre</div>
-      <h1 style="margin:6px 0 24px">${t}</h1>
-      <div class="alerte">Ce module arrive dans une prochaine mise en ligne.</div></div>`;
 
   let vue;
   if (sous.startsWith('groupe/')){
@@ -2576,8 +3125,8 @@ function Espace({ session, sous }){
     case 'formations': vue = acces('formations') ? html`<${Formations} p=${p} />` : refus; break;
     case 'groupes':    vue = acces('groupes') ? html`<${Groupes} p=${p} />` : refus; break;
     case 'messagerie': vue = acces('messagerie') ? html`<${Messagerie} p=${p} />` : refus; break;
-    case 'notes_frais':vue = acces('notes_frais')? bientot('Notes de frais') : refus; break;
-    case 'tresorerie': vue = acces('tresorerie') ? bientot('Direction financière') : refus; break;
+    case 'notes_frais':vue = acces('notes_frais') ? html`<${NotesFrais} p=${p} />` : refus; break;
+    case 'tresorerie': vue = acces('tresorerie') ? html`<${Tresorerie} p=${p} />` : refus; break;
     default:           vue = html`<div class="vide">Page inconnue.</div>`;
   }
 
