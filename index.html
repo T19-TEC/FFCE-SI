@@ -1766,8 +1766,7 @@ function GtMembres({ p, groupe, membres, gens, responsable, recharger }){
 
   useEffect(() => { (async () => {
     if (!responsable) return;
-    const { data } = await db.from('v_annuaire').select('id,prenom,nom,matricule,fonction_nom')
-      .eq('statut','actif').order('nom');
+    const { data } = await db.rpc('destinataires_possibles');
     setCandidats(data || []);
   })(); }, [responsable]);
 
@@ -1889,12 +1888,14 @@ function Messagerie({ p, ouvrir }){
   useEffect(() => { charger(); }, [charger]);
 
   useEffect(() => { (async () => {
+    // Voir l'annuaire et pouvoir écrire sont deux droits distincts :
+    // un adhérent ne consulte pas la liste de son département, mais il
+    // peut y adresser un message. D'où cette fonction dédiée.
     const [{ data: ps }, { data: ms }] = await Promise.all([
-      db.from('v_annuaire').select('id,prenom,nom,matricule,fonction_nom,territoire_nom')
-        .eq('statut','actif').order('nom'),
+      db.rpc('destinataires_possibles'),
       db.from('gt_membres').select('groupe_id').eq('profil_id', p.id).eq('statut','actif')
     ]);
-    setCandidats((ps||[]).filter(x => x.id !== p.id));
+    setCandidats(ps || []);
     if (ms && ms.length){
       const { data: gs } = await db.from('v_groupes').select('id,nom')
         .in('id', ms.map(m => m.groupe_id));
@@ -1936,12 +1937,10 @@ function Messagerie({ p, ouvrir }){
           ${nouvelle ? 'Annuler' : 'Nouvelle conversation'}</button>
       </div>
 
-      <div class="alerte" style="margin-top:24px">
-        Les échanges de la plateforme sont supervisés. La Direction générale y
-        accède, ainsi que votre encadrement à partir du niveau référent
-        départemental. Un superviseur peut lire ; il ne peut pas écrire à votre
-        place. Pour un échange strictement personnel, utilisez un autre moyen.
-      </div>
+      <p class="small muted" style="margin-top:12px;max-width:62ch">
+        Les échanges internes peuvent être consultés par l’encadrement dans le
+        cadre de ses fonctions. <a href="#/confidentialite">En savoir plus</a>.
+      </p>
 
       ${msg && html`<div class="alerte err" style="margin-top:16px">${msg}</div>`}
 
@@ -2005,6 +2004,9 @@ function Conversation({ p, id, fermer }){
   const [texte, setTexte] = useState('');
   const [msg, setMsg] = useState('');
   const [envoi, setEnvoi] = useState(false);
+  const [signaler, setSignaler] = useState(false);
+  const [motif, setMotif] = useState('propos_deplaces');
+  const [details, setDetails] = useState('');
 
   const charger = useCallback(async () => {
     const [{ data: cs }, { data: ps }, { data: ms }] = await Promise.all([
@@ -2045,6 +2047,17 @@ function Conversation({ p, id, fermer }){
     charger();
   }
 
+  async function envoyerSignalement(e){
+    e.preventDefault(); setMsg('');
+    const { data, error } = await db.rpc('signaler_conversation',
+      { p_conv: id, p_motif: motif, p_details: details, p_message: null });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setSignaler(false); setDetails('');
+    setMsg('Signalement transmis. La direction l\u2019examinera.');
+    charger();
+  }
+
   const nom = i => {
     const g = gens.find(x => x.profil_id === i);
     return g ? [g.prenom, g.nom].filter(Boolean).join(' ') || g.matricule : 'Membre';
@@ -2063,10 +2076,15 @@ function Conversation({ p, id, fermer }){
       </div>
 
       ${superviseur && html`
-        <div class="alerte" style="margin-top:24px;border-left-color:var(--laiton)">
-          Vous consultez cette conversation au titre de la supervision. Vous n\u2019en
-          êtes pas participant et ne pouvez pas y écrire.
-        </div>`}
+        <p class="small muted" style="margin-top:16px">
+          Consultation au titre de l’encadrement. Vous ne participez pas à cet
+          échange et ne pouvez pas y écrire.
+        </p>`}
+
+      ${entete?.signale && html`
+        <p class="small" style="margin-top:8px;color:var(--laiton)">
+          Cette conversation fait l’objet d’un examen.
+        </p>`}
 
       <div class="panneau" style="margin-top:24px">
         <div class="corps" style="max-height:52vh;overflow-y:auto">
@@ -2111,7 +2129,43 @@ function Conversation({ p, id, fermer }){
             </div>
           </form>`}
       </div>
-      ${msg && html`<div class="alerte err" style="margin-top:16px">${msg}</div>`}
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Signalement')?'ok':'err')}
+        style="margin-top:16px">${msg}</div>`}
+
+      ${!superviseur && html`
+        <div style="margin-top:24px">
+          ${signaler
+            ? html`
+              <form class="panneau" onSubmit=${envoyerSignalement}>
+                <div class="tete"><h3 style="font-size:17px">Signaler cette conversation</h3></div>
+                <div class="corps stack">
+                  <div class="field"><label>Motif</label>
+                    <select value=${motif} onChange=${e=>setMotif(e.target.value)}>
+                      <option value="propos_deplaces">Propos déplacés</option>
+                      <option value="harcelement">Harcèlement</option>
+                      <option value="securite">Situation préoccupante</option>
+                      <option value="hors_sujet">Usage hors mission</option>
+                      <option value="autre">Autre</option>
+                    </select></div>
+                  <div class="field"><label>Ce que vous voulez dire</label>
+                    <textarea required value=${details} onInput=${e=>setDetails(e.target.value)}
+                      placeholder="Ce qui vous a alerté, en quelques lignes." /></div>
+                  <div class="row">
+                    <button class="btn">Transmettre à la direction</button>
+                    <button type="button" class="btn light"
+                      onClick=${()=>setSignaler(false)}>Annuler</button>
+                  </div>
+                  <p class="small muted">
+                    Le signalement est examiné par la Direction générale, qui peut le
+                    confier à un encadrant. Les personnes concernées n’en sont pas
+                    averties automatiquement.
+                  </p>
+                </div>
+              </form>`
+            : html`<button class="btn light" style="border:0;background:transparent;
+                padding:0;font-size:13px;color:var(--gris)"
+                onClick=${()=>setSignaler(true)}>Signaler cette conversation</button>`}
+        </div>`}
     </div>`;
 }
 
@@ -2119,16 +2173,24 @@ function Conversation({ p, id, fermer }){
 function Validation(){
   const [attente, setAttente] = useState([]);
   const [demandes, setDemandes] = useState([]);
+  const [signalements, setSignalements] = useState([]);
+  const [encadrants, setEncadrants] = useState([]);
   const [msg, setMsg] = useState('');
 
   const charger = useCallback(async () => {
     // La table demandes pointe deux fois vers profils (profil_id et
     // traite_par). On lit donc les deux séparément plutôt que de laisser
     // PostgREST deviner de quel lien il s'agit.
-    const [a, d] = await Promise.all([
+    const [a, d, sg] = await Promise.all([
       db.from('v_annuaire').select('*').eq('statut','en_attente').order('cree_le'),
-      db.from('demandes').select('*').in('statut',['ouverte','en_cours']).order('cree_le')
+      db.from('demandes').select('*').in('statut',['ouverte','en_cours']).order('cree_le'),
+      db.rpc('signalements_a_traiter')
     ]);
+    setSignalements(sg.data || []);
+    const { data: enc } = await db.from('v_annuaire')
+      .select('id,prenom,nom,fonction_nom,niveau').eq('statut','actif').gte('niveau', 50)
+      .order('niveau', { ascending: false });
+    setEncadrants(enc || []);
     if (d.error) setMsg('Lecture des demandes impossible : ' + d.error.message);
     const dem = d.data || [];
 
@@ -2150,6 +2212,34 @@ function Validation(){
                 date_adhesion: ok ? new Date().toISOString().slice(0,10) : null })
       .eq('id', id);
     setMsg(error ? error.message : (ok ? 'Compte activé.' : 'Compte suspendu.'));
+    charger();
+  }
+
+  const motifLisible = {
+    propos_deplaces:'Propos déplacés', harcelement:'Harcèlement',
+    securite:'Situation préoccupante', hors_sujet:'Usage hors mission', autre:'Autre'
+  };
+
+  async function confier(sg, a){
+    const { data, error } = await db.rpc('confier_signalement',
+      { p_sig: sg.id, p_a: a });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setMsg(a ? 'Signalement confié. L\u2019encadrant a désormais accès à cette conversation.'
+             : 'Signalement repris par la Direction générale.');
+    charger();
+  }
+
+  async function clore(sg, fonde){
+    const decision = prompt(fonde
+      ? 'Décision et suite donnée (obligatoire)'
+      : 'Motif du classement sans suite (obligatoire)');
+    if (!decision) return;
+    const { data, error } = await db.rpc('clore_signalement',
+      { p_sig: sg.id, p_fonde: fonde, p_decision: decision });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setMsg('Signalement clos.');
     charger();
   }
 
@@ -2178,6 +2268,47 @@ function Validation(){
       <div class="eyebrow">Direction générale</div>
       <h1 style="margin:6px 0 32px">Vérifications</h1>
       ${msg && html`<div class="alerte ok" style="margin-bottom:24px">${msg}</div>`}
+
+      ${signalements.length > 0 && html`
+        <div class="panneau" style="margin-bottom:24px;border-color:var(--laiton)">
+          <div class="tete" style="border-bottom-color:var(--laiton)">
+            <h3 style="font-size:17px">Signalements</h3>
+            <span class="tag or">${signalements.length}</span>
+          </div>
+          ${signalements.map(sg => html`
+            <div class="ligne" style="align-items:flex-start">
+              <div style="flex:1;min-width:240px">
+                <div>${motifLisible[sg.motif] || sg.motif}</div>
+                <div class="small muted" style="margin-top:4px">
+                  Signalé par ${sg.auteur_nom} <span class="mono">${sg.auteur_matricule}</span>
+                  · ${jour(sg.cree_le)}
+                </div>
+                <div class="small muted">
+                  Conversation entre ${sg.participants} · ${sg.nb_messages} message${sg.nb_messages>1?'s':''}
+                </div>
+                ${sg.details && html`<div class="small" style="margin-top:8px;max-width:56ch">
+                  « ${sg.details} »</div>`}
+                ${sg.assigne_nom && html`<div style="margin-top:8px">
+                  <span class="tag bleu">Confié à ${sg.assigne_nom}</span></div>`}
+              </div>
+              <div class="stack" style="min-width:220px">
+                <div class="field" style="margin:0">
+                  <label>Confier à</label>
+                  <select value=${sg.assigne_a || ''}
+                    onChange=${e => confier(sg, e.target.value || null)}>
+                    <option value="">Direction générale</option>
+                    ${encadrants.map(x => html`<option value=${x.id}>
+                      ${nomComplet(x)} — ${x.fonction_nom}</option>`)}
+                  </select>
+                </div>
+                <div class="row">
+                  <a class="btn sm light" href="#/espace/messagerie">Lire l'échange</a>
+                  <button class="btn sm" onClick=${()=>clore(sg, true)}>Fondé</button>
+                  <button class="btn sm light" onClick=${()=>clore(sg, false)}>Non fondé</button>
+                </div>
+              </div>
+            </div>`)}
+        </div>`}
 
       <div class="panneau">
         <div class="tete">
