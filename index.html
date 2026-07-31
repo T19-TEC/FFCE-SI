@@ -985,6 +985,7 @@ function Flanc({ p, apps, page }){
         <div class="groupe">Mon activité</div>
         ${dispo('engagement') && item('engagement','Mon engagement')}
         ${dispo('groupes') && item('groupes','Groupes et missions')}
+        ${dispo('assemblees') && item('assemblees','Assemblées')}
         ${dispo('formations') && item('formations','Formations')}
         ${dispo('messagerie') && item('messagerie','Messagerie')}
         ${dispo('notes_frais') && item('notes_frais','Mes notes de frais')}
@@ -6816,6 +6817,602 @@ function Chancellerie({ p }){
     </div>`;
 }
 
+
+/* =====================================================================
+   VIE STATUTAIRE
+   Un mandat électif n'est pas une fonction opérationnelle. Le mandat
+   vient du vote et a un terme ; la fonction vient de la nomination et
+   se retire par décision.
+   ===================================================================== */
+
+const PHASES = ['annoncee','candidatures','scrutin','depouillement','proclamee'];
+const PHASE_NOM = { annoncee:'Convoquée', candidatures:'Appel à candidatures',
+  scrutin:'Scrutin ouvert', depouillement:'Dépouillement', proclamee:'Proclamée',
+  annulee:'Annulée' };
+const TYPE_AG = { constitutive:'Constitutive', ordinaire:'Ordinaire',
+                  extraordinaire:'Extraordinaire' };
+
+function Assemblees({ p }){
+  const [liste, setListe] = useState(null);
+  const [ouverte, setOuverte] = useState(null);
+  const [creation, setCreation] = useState(false);
+  const [terr, setTerr] = useState([]);
+  const [renouveler, setRenouveler] = useState([]);
+  const [f, setF] = useState({territoire:'', titre:'', type:'ordinaire', date:'',
+    lieu:'', ordre:'', cloture_cand:'', ouverture_scrutin:'', cloture_scrutin:'',
+    quorum:'25', duree:'3'});
+  const [msg, setMsg] = useState('');
+
+  const organise = p.niveau >= 60 || (p.postes||[]).length > 0;
+
+  const charger = useCallback(async () => {
+    const [a, b, c] = await Promise.all([
+      db.rpc('mes_assemblees'),
+      db.from('territoires').select('id,nom,echelle').eq('actif',true).order('echelle').order('nom'),
+      db.rpc('mandats_a_renouveler')
+    ]);
+    setListe(a.data||[]); setTerr(b.data||[]); setRenouveler(c.data||[]);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function creer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('creer_assemblee', {
+      p_territoire: f.territoire, p_titre: f.titre, p_type: f.type,
+      p_date: f.date, p_lieu: f.lieu || null, p_ordre_du_jour: f.ordre || null,
+      p_cloture_cand: f.cloture_cand || null,
+      p_ouverture_scrutin: f.ouverture_scrutin || null,
+      p_cloture_scrutin: f.cloture_scrutin || null,
+      p_quorum: Number(f.quorum||0), p_duree: Number(f.duree||3)
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setCreation(false); setMsg('Assemblée convoquée. L\u2019appel à candidatures est ouvert.');
+    charger(); setOuverte(data.id);
+  }
+
+  if (!liste) return html`<div class="vide">Chargement…</div>`;
+  if (ouverte) return html`<${Assemblee} p=${p} id=${ouverte}
+    fermer=${()=>{ setOuverte(null); charger(); }} />`;
+
+  const enCours = liste.filter(x => x.statut !== 'proclamee' && x.statut !== 'annulee');
+  const passees = liste.filter(x => x.statut === 'proclamee' || x.statut === 'annulee');
+  const aFaire = liste.filter(x =>
+    (x.statut === 'candidatures' && x.electeur && !x.ma_candidature) ||
+    (x.statut === 'scrutin' && x.electeur && !x.a_vote));
+
+  const ligne = x => html`
+    <div class="ligne" style="cursor:pointer" onClick=${()=>setOuverte(x.id)}>
+      <div style="flex:1;min-width:230px">
+        <div class="row" style="gap:8px">
+          <span>${x.titre}</span>
+          ${x.type === 'constitutive' && html`<span class="tag or">Constitutive</span>`}
+        </div>
+        <div class="small muted">
+          <span class="mono">${x.reference}</span> · ${x.territoire}
+          · ${new Date(x.date_tenue).toLocaleDateString('fr-FR',
+              {day:'numeric',month:'long',year:'numeric'})}
+          ${x.lieu ? ' · ' + x.lieu : ''}
+        </div>
+        <div class="small muted">
+          ${x.candidats} candidature${x.candidats>1?'s':''}
+          ${x.inscrits ? ' · ' + x.votants + '/' + x.inscrits + ' votants' : ''}
+        </div>
+      </div>
+      <div class="row">
+        ${x.statut === 'scrutin' && x.electeur && !x.a_vote && html`
+          <span class="tag rouge">À voter</span>`}
+        ${x.a_vote && html`<span class="tag vert">Vous avez voté</span>`}
+        ${x.ma_candidature && html`<span class="tag bleu">Candidat</span>`}
+        <span class="tag">${PHASE_NOM[x.statut]}</span>
+      </div>
+    </div>`;
+
+  return html`
+    <div>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Vie statutaire</div>
+          <h1 style="margin:6px 0 0">Assemblées et mandats</h1>
+        </div>
+        ${organise && html`<button class="btn" onClick=${()=>setCreation(c=>!c)}>
+          ${creation ? 'Annuler' : 'Convoquer une assemblée'}</button>`}
+      </div>
+      <p class="muted" style="max-width:60ch;margin-top:12px">
+        Un mandat électif vient du vote des adhérents et a un terme fixé par les
+        statuts. Il ne se retire pas par décision : il s\u2019éteint, ou une
+        nouvelle assemblée le renouvelle.
+      </p>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      ${aFaire.length > 0 && html`
+        <div class="alerte" style="margin-top:24px;border-left-color:var(--bordeaux)">
+          ${aFaire.length} assemblée${aFaire.length>1?'s':''} attend
+          ${aFaire.length>1?'ent':''} votre participation.
+        </div>`}
+
+      ${renouveler.length > 0 && organise && html`
+        <div class="panneau" style="margin-top:24px;border-color:var(--brun)">
+          <div class="tete" style="border-bottom-color:var(--brun)">
+            <h3 style="font-size:17px">Mandats arrivant à terme</h3>
+            <span class="tag or">${renouveler.length}</span>
+          </div>
+          ${renouveler.map(m => html`
+            <div class="ligne">
+              <div>
+                <div>${m.membre} — ${m.poste_nom}</div>
+                <div class="small muted">${m.territoire || 'National'}
+                  · mandat du ${jour(m.debut)} au ${jour(m.fin)}</div>
+              </div>
+              <span class=${'tag '+(m.jours_restants < 0 ? 'rouge' : 'or')}>
+                ${m.jours_restants < 0
+                  ? 'Échu depuis ' + Math.abs(m.jours_restants) + ' j'
+                  : m.jours_restants + ' jours'}</span>
+            </div>`)}
+        </div>`}
+
+      ${creation && html`
+        <form onSubmit=${creer} class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Convocation</h3></div>
+          <div class="corps stack">
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:2;min-width:200px;margin:0"><label>Structure</label>
+                <select required value=${f.territoire}
+                  onChange=${e=>setF(o=>({...o,territoire:e.target.value}))}>
+                  <option value="">Choisir…</option>
+                  ${terr.map(t => html`<option value=${t.id}>${t.nom} (${t.echelle})</option>`)}
+                </select></div>
+              <div class="field" style="flex:1;min-width:170px;margin:0"><label>Nature</label>
+                <select value=${f.type} onChange=${e=>setF(o=>({...o,type:e.target.value}))}>
+                  ${Object.entries(TYPE_AG).map(([k,v]) => html`<option value=${k}>${v}</option>`)}
+                </select></div>
+            </div>
+            <div class="field"><label>Intitulé</label>
+              <input required value=${f.titre}
+                onInput=${e=>setF(o=>({...o,titre:e.target.value}))}
+                placeholder="Assemblée générale constitutive de l\u2019unité locale de Foix" /></div>
+            <div class="field"><label>Ordre du jour</label>
+              <textarea value=${f.ordre}
+                onInput=${e=>setF(o=>({...o,ordre:e.target.value}))} /></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:190px;margin:0"><label>Date de tenue</label>
+                <input type="datetime-local" required value=${f.date}
+                  onInput=${e=>setF(o=>({...o,date:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:190px;margin:0"><label>Lieu</label>
+                <input value=${f.lieu} onInput=${e=>setF(o=>({...o,lieu:e.target.value}))} /></div>
+            </div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:170px;margin:0">
+                <label>Clôture des candidatures</label>
+                <input type="date" value=${f.cloture_cand}
+                  onInput=${e=>setF(o=>({...o,cloture_cand:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:190px;margin:0">
+                <label>Clôture du scrutin</label>
+                <input type="datetime-local" value=${f.cloture_scrutin}
+                  onInput=${e=>setF(o=>({...o,cloture_scrutin:e.target.value}))} /></div>
+            </div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:150px;margin:0">
+                <label>Quorum requis (%)</label>
+                <input type="number" min="0" max="100" value=${f.quorum}
+                  onInput=${e=>setF(o=>({...o,quorum:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:150px;margin:0">
+                <label>Durée du mandat (ans)</label>
+                <input type="number" min="1" max="6" value=${f.duree}
+                  onInput=${e=>setF(o=>({...o,duree:e.target.value}))} /></div>
+            </div>
+            <div><button class="btn">Convoquer</button></div>
+            <p class="small muted">
+              Un quorum non atteint interdit la proclamation. Fixez-le selon vos
+              statuts — 25 % est un usage courant pour une unité locale.
+            </p>
+          </div>
+        </form>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">En cours</h3>
+          <span class="tag">${enCours.length}</span></div>
+        ${enCours.length === 0
+          ? html`<div class="vide">Aucune assemblée en cours.</div>`
+          : enCours.map(ligne)}
+      </div>
+
+      ${passees.length > 0 && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Archives</h3></div>
+          ${passees.map(ligne)}
+        </div>`}
+    </div>`;
+}
+
+function Assemblee({ p, id, fermer }){
+  const [a, setA] = useState(null);
+  const [cands, setCands] = useState([]);
+  const [corps, setCorps] = useState([]);
+  const [dep, setDep] = useState(null);
+  const [choix, setChoix] = useState({});
+  const [foi, setFoi] = useState('');
+  const [postePostule, setPostePostule] = useState('');
+  const [postes, setPostes] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const organise = p.niveau >= 60 || (p.postes||[]).length > 0;
+
+  const charger = useCallback(async () => {
+    const [l, c, e, d, po] = await Promise.all([
+      db.rpc('mes_assemblees'),
+      db.from('candidatures').select('*').eq('assemblee_id', id),
+      db.rpc('corps_electoral', { p_assemblee: id }),
+      db.rpc('depouillement', { p_assemblee: id }),
+      db.from('postes').select('code,nom,description').eq('actif',true)
+    ]);
+    setA((l.data||[]).find(x => x.id === id) || null);
+    setCorps(e.data||[]); setDep(d.data); setPostes(po.data||[]);
+
+    const cs = c.data || [];
+    if (cs.length){
+      const { data: gens } = await db.from('v_annuaire')
+        .select('id,prenom,nom,matricule,fonction_nom').in('id', cs.map(x=>x.profil_id));
+      const m = Object.fromEntries((gens||[]).map(g => [g.id, g]));
+      setCands(cs.map(x => ({...x, personne: m[x.profil_id]})));
+    } else setCands([]);
+  }, [id]);
+  useEffect(() => { charger(); }, [charger]);
+
+  if (!a) return html`<div class="vide">Assemblée introuvable.</div>`;
+  const i = PHASES.indexOf(a.statut);
+  const nomPoste = c => (postes.find(x=>x.code===c)||{}).nom || c;
+
+  async function postuler(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('deposer_candidature', {
+      p_assemblee: id, p_poste: postePostule, p_profession_foi: foi, p_fichier: null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setFoi(''); setPostePostule(''); setMsg('Candidature déposée.'); charger();
+  }
+
+  async function examiner(c, ok){
+    const motif = ok ? null : prompt('Motif de l\u2019irrecevabilité (obligatoire)');
+    if (!ok && !motif) return;
+    const { data, error } = await db.rpc('examiner_candidature',
+      { p_id: c.id, p_recevable: ok, p_motif: motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    charger();
+  }
+
+  async function phase(st){
+    const { data, error } = await db.rpc('changer_phase_assemblee',
+      { p_assemblee: id, p_statut: st });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Phase modifiée.'); charger();
+  }
+
+  async function envoyerVote(){
+    const postesOuverts = [...new Set(cands.filter(c=>c.statut==='recevable').map(c=>c.poste))];
+    if (postesOuverts.some(x => !choix[x]))
+      return setMsg('Erreur : exprimez-vous sur chaque poste, ou votez blanc.');
+    if (!confirm('Votre vote est définitif. Confirmez-vous ?')) return;
+    const { data, error } = await db.rpc('voter', { p_assemblee: id, p_choix: choix });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Vote enregistré. Merci.'); charger();
+  }
+
+  async function proclamerResultats(){
+    const pv = prompt('Procès-verbal (obligatoire)\n\nRésumé des opérations, incidents éventuels, résultats.');
+    if (!pv) return;
+    const { data, error } = await db.rpc('proclamer',
+      { p_assemblee: id, p_pv: pv, p_pv_fichier: null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg(data.elus + ' mandat(s) proclamé(s), jusqu\u2019au ' + jour(data.fin_mandat) + '.');
+    charger();
+  }
+
+  const lienPublic = location.origin + location.pathname + '#/appel/' + a.public_token;
+  const recevables = cands.filter(c => c.statut === 'recevable');
+  const postesOuverts = [...new Set(recevables.map(c => c.poste))];
+
+  return html`
+    <div>
+      <button class="lien-discret" onClick=${fermer}>← Toutes les assemblées</button>
+      <div class="spread" style="margin-top:12px">
+        <div>
+          <h1 style="font-size:28px">${a.titre}</h1>
+          <div class="small muted" style="margin-top:4px">
+            <span class="mono">${a.reference}</span> · ${a.territoire}
+            · ${new Date(a.date_tenue).toLocaleString('fr-FR',
+                {day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+            ${a.lieu ? ' · ' + a.lieu : ''}
+          </div>
+        </div>
+        <span class="tag">${PHASE_NOM[a.statut]}</span>
+      </div>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div class="panneau" style="margin-top:24px"><div class="corps">
+        <div class="row" style="gap:0;flex-wrap:nowrap;overflow-x:auto">
+          ${PHASES.map((ph, n) => html`
+            <div style=${'flex:1;min-width:96px;padding-right:8px;'+(n<=i?'':'opacity:.35')}>
+              <div style=${'height:3px;background:'+(n<=i?'var(--bleu)':'var(--filet)')}></div>
+              <div class="small" style="margin-top:6px;line-height:1.3">${PHASE_NOM[ph]}</div>
+            </div>`)}
+        </div>
+      </div></div>
+
+      ${organise && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Appel public</h3></div>
+          <div class="corps">
+            <p class="small muted" style="margin:0 0 10px">
+              Ce lien s\u2019ouvre sans compte : diffusez-le pour toucher des
+              personnes qui ne sont pas encore sur la plateforme.
+            </p>
+            <div class="row" style="gap:8px">
+              <input readonly value=${lienPublic} style="flex:1;min-width:220px"
+                onClick=${e=>e.target.select()} />
+              <button class="btn sm light" onClick=${()=>{
+                navigator.clipboard.writeText(lienPublic); setMsg('Lien copié.');
+              }}>Copier</button>
+            </div>
+          </div>
+          <div class="corps row" style="border-top:1px solid var(--filet);gap:10px">
+            ${a.statut === 'candidatures' && html`
+              <button class="btn sm" onClick=${()=>phase('scrutin')}>Ouvrir le scrutin</button>`}
+            ${a.statut === 'scrutin' && html`
+              <button class="btn sm" onClick=${()=>phase('depouillement')}>Clore le scrutin</button>`}
+            ${(a.statut === 'depouillement' || a.statut === 'scrutin') && html`
+              <button class="btn sm" onClick=${proclamerResultats}>Proclamer</button>`}
+          </div>
+        </div>`}
+
+      ${a.statut === 'candidatures' && a.electeur && !a.ma_candidature && html`
+        <form onSubmit=${postuler} class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Me porter candidat</h3></div>
+          <div class="corps stack">
+            <div class="field"><label>Poste</label>
+              <select required value=${postePostule}
+                onChange=${e=>setPostePostule(e.target.value)}>
+                <option value="">Choisir…</option>
+                ${postes.filter(x => x.code.endsWith('_structure')).map(x =>
+                  html`<option value=${x.code}>${x.nom}</option>`)}
+              </select></div>
+            <div class="field"><label>Profession de foi</label>
+              <textarea required value=${foi} style="min-height:140px"
+                onInput=${e=>setFoi(e.target.value)}
+                placeholder="Ce que vous voulez faire, pourquoi, et ce que vous savez faire." /></div>
+            <div><button class="btn">Déposer ma candidature</button></div>
+            <p class="small muted">
+              Elle sera visible des électeurs et sur l\u2019appel public, sous la
+              forme « Prénom N. ».
+            </p>
+          </div>
+        </form>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Candidatures</h3>
+          <span class="tag">${cands.length}</span></div>
+        ${cands.length === 0
+          ? html`<div class="vide">Aucune candidature déposée.</div>`
+          : cands.map(c => html`
+            <div class="ligne" style="align-items:flex-start">
+              <div style="flex:1;min-width:230px">
+                <div class="row" style="gap:8px">
+                  <strong>${c.personne ? nomComplet(c.personne) : 'Membre'}</strong>
+                  <span class="tag">${nomPoste(c.poste)}</span>
+                </div>
+                <p class="small" style="margin:8px 0 0;white-space:pre-wrap;max-width:60ch">
+                  ${c.profession_foi}</p>
+                ${c.motif && html`<p class="small" style="margin:6px 0 0;color:var(--bordeaux)">
+                  ${c.motif}</p>`}
+              </div>
+              <div class="row">
+                <span class=${'tag '+(c.statut==='elue'?'vert':
+                  c.statut==='recevable'?'bleu':c.statut==='irrecevable'?'rouge':'')}>
+                  ${c.statut}</span>
+                ${organise && c.statut === 'deposee' && html`
+                  <button class="btn sm" onClick=${()=>examiner(c,true)}>Recevable</button>
+                  <button class="btn sm light" onClick=${()=>examiner(c,false)}>Écarter</button>`}
+              </div>
+            </div>`)}
+      </div>
+
+      ${a.statut === 'scrutin' && a.electeur && !a.a_vote && postesOuverts.length > 0 && html`
+        <div class="panneau" style="margin-top:24px;border-color:var(--bordeaux)">
+          <div class="tete" style="border-bottom-color:var(--bordeaux)">
+            <h3 style="font-size:17px">Votre bulletin</h3>
+          </div>
+          <div class="corps">
+            <p class="small muted" style="margin:0 0 16px">
+              Votre vote est secret : la plateforme enregistre que vous avez voté,
+              et ce qui a été voté, mais jamais le lien entre les deux.
+            </p>
+            ${postesOuverts.map(po => html`
+              <div style="margin-bottom:20px;padding-bottom:16px;
+                   border-bottom:1px solid var(--filet)">
+                <div class="eyebrow" style="margin-bottom:10px">${nomPoste(po)}</div>
+                ${recevables.filter(c => c.poste === po).map(c => html`
+                  <label class="row" style="text-transform:none;letter-spacing:0;
+                      font-size:15px;color:var(--nuit);padding:7px 0;margin:0;cursor:pointer">
+                    <input type="radio" style="width:auto" name=${'p_'+po}
+                      checked=${choix[po] === c.id}
+                      onChange=${()=>setChoix(o=>({...o,[po]:c.id}))} />
+                    <span>${c.personne ? nomComplet(c.personne) : 'Candidat'}</span>
+                  </label>`)}
+                <label class="row" style="text-transform:none;letter-spacing:0;
+                    font-size:15px;color:var(--gris);padding:7px 0;margin:0;cursor:pointer">
+                  <input type="radio" style="width:auto" name=${'p_'+po}
+                    checked=${choix[po] === 'blanc'}
+                    onChange=${()=>setChoix(o=>({...o,[po]:'blanc'}))} />
+                  <span>Voter blanc</span>
+                </label>
+              </div>`)}
+            <button class="btn" onClick=${envoyerVote}>Déposer mon bulletin</button>
+            <p class="small muted" style="margin:10px 0 0">Le vote est définitif.</p>
+          </div>
+        </div>`}
+
+      ${dep && (a.statut === 'depouillement' || a.statut === 'proclamee' || organise) && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Participation</h3>
+            <span class=${'tag '+(dep.quorum_atteint?'vert':'rouge')}>
+              ${dep.quorum_atteint ? 'Quorum atteint' : 'Quorum non atteint'}</span></div>
+          <div class="ligne"><span class="muted">Inscrits</span>
+            <span class="mono">${dep.inscrits}</span></div>
+          <div class="ligne"><span class="muted">Votants</span>
+            <span class="mono">${dep.votants}</span></div>
+          <div class="ligne"><span class="muted">Participation</span>
+            <span class="mono">${dep.participation} %
+              ${dep.quorum_requis > 0 ? ' (quorum ' + dep.quorum_requis + ' %)' : ''}</span></div>
+        </div>`}
+
+      ${dep && Object.keys(dep.resultats||{}).length > 0 &&
+        (a.statut === 'depouillement' || a.statut === 'proclamee') && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Résultats</h3></div>
+          <div class="corps">
+            ${Object.entries(dep.resultats).map(([po, lignes]) => {
+              const total = lignes.reduce((n,x)=>n+x.voix,0) || 1;
+              return html`
+                <div style="margin-bottom:22px">
+                  <div class="eyebrow" style="margin-bottom:10px">${po}</div>
+                  ${lignes.map((x, n) => html`
+                    <div style="padding:6px 0">
+                      <div class="spread small">
+                        <span>${n===0 && a.statut==='proclamee'
+                          ? html`<strong>${x.nom}</strong>` : x.nom}</span>
+                        <span class="mono">${x.voix} voix · ${Math.round(x.voix/total*100)} %</span>
+                      </div>
+                      <div class="jauge" style="margin-top:5px">
+                        <i style=${'width:'+Math.round(x.voix/total*100)+'%;background:'+
+                          (x.candidature_id ? 'var(--bleu)' : 'var(--gris-bleu)')}></i></div>
+                    </div>`)}
+                </div>`;
+            })}
+          </div>
+        </div>`}
+
+      ${a.statut === 'scrutin' && a.electeur && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Émargement</h3>
+            <span class="tag">${corps.filter(c=>c.a_vote).length}/${corps.length}</span></div>
+          <div class="corps">
+            <div class="row" style="gap:6px">
+              ${corps.map(c => html`
+                <span class=${'tag '+(c.a_vote?'vert':'')}>${c.membre}</span>`)}
+            </div>
+            <p class="small muted" style="margin:12px 0 0">
+              L\u2019émargement est ouvert au corps électoral : chacun doit pouvoir
+              vérifier le quorum. Le contenu des bulletins, lui, n\u2019est
+              accessible à personne.
+            </p>
+          </div>
+        </div>`}
+    </div>`;
+}
+
+/* --- L'appel public, hors connexion ----------------------------------- */
+function AppelPublic({ token }){
+  const [a, setA] = useState(undefined);
+  useEffect(() => {
+    db.rpc('appel_public', { p_token: token }).then(({data}) => setA(data || null));
+  }, [token]);
+
+  if (a === undefined) return html`<div class="vide" style="padding:120px">Chargement…</div>`;
+  if (!a) return html`
+    <section class="bloc blanc"><div class="wrap">
+      <h1>Appel introuvable</h1>
+      <p style="margin-top:16px">Ce lien n\u2019est plus valide.
+        <a href="#/">Retour à l\u2019accueil</a></p>
+    </div></section>`;
+
+  return html`
+    <section class="bloc blanc">
+      <div class="wrap" style="max-width:780px">
+        <div class="eyebrow">Appel à candidatures</div>
+        <h1 style="margin:8px 0 12px">${a.titre}</h1>
+        <p class="muted">${a.chemin || a.territoire}
+          · <span class="mono">${a.reference}</span></p>
+
+        <div class="panneau" style="margin-top:32px">
+          <div class="tete"><h3 style="font-size:17px">L\u2019assemblée</h3>
+            <span class="tag">${PHASE_NOM[a.statut] || a.statut}</span></div>
+          <div class="ligne"><span class="muted">Date</span>
+            <span>${new Date(a.date_tenue).toLocaleString('fr-FR',
+              {day:'numeric',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'})}</span></div>
+          ${a.lieu && html`<div class="ligne"><span class="muted">Lieu</span>
+            <span>${a.lieu}</span></div>`}
+          ${a.cloture && html`<div class="ligne"><span class="muted">Dépôt des candidatures</span>
+            <span>jusqu\u2019au ${jour(a.cloture)}</span></div>`}
+          <div class="ligne"><span class="muted">Durée des mandats</span>
+            <span>${a.duree_mandat} an${a.duree_mandat>1?'s':''}</span></div>
+        </div>
+
+        ${a.ordre_du_jour && html`
+          <div class="panneau" style="margin-top:24px">
+            <div class="tete"><h3 style="font-size:17px">Ordre du jour</h3></div>
+            <div class="corps" style="white-space:pre-wrap">${a.ordre_du_jour}</div>
+          </div>`}
+
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Postes à pourvoir</h3></div>
+          ${(a.postes||[]).map(x => html`
+            <div class="ligne">
+              <div><div>${x.nom}</div>
+                <div class="small muted" style="max-width:52ch">${x.description||''}</div></div>
+            </div>`)}
+        </div>
+
+        ${(a.candidats||[]).length > 0 && html`
+          <div class="panneau" style="margin-top:24px">
+            <div class="tete"><h3 style="font-size:17px">Candidatures déclarées</h3></div>
+            ${a.candidats.map(c => html`
+              <div class="ligne" style="align-items:flex-start">
+                <div>
+                  <div class="row" style="gap:8px">
+                    <strong>${c.nom}</strong><span class="tag">${c.poste}</span>
+                  </div>
+                  <p class="small muted" style="margin:8px 0 0;white-space:pre-wrap;max-width:56ch">
+                    ${c.profession_foi}</p>
+                </div>
+              </div>`)}
+          </div>`}
+
+        ${a.resultats && html`
+          <div class="panneau" style="margin-top:24px;border-color:var(--bleu)">
+            <div class="tete" style="border-bottom-color:var(--bleu)">
+              <h3 style="font-size:17px">Résultats proclamés</h3></div>
+            ${a.resultats.map(r => html`
+              <div class="ligne">
+                <div><div>${r.poste}</div>
+                  <div class="small muted">Mandat jusqu\u2019au ${jour(r.fin)}</div></div>
+                <strong>${r.elu}</strong>
+              </div>`)}
+          </div>`}
+
+        <div class="panneau" style="margin-top:32px">
+          <div class="corps">
+            <h3 style="font-size:17px;margin-bottom:8px">Vous voulez vous présenter ?</h3>
+            <p class="small muted">
+              Seuls les membres actifs rattachés à ce territoire peuvent déposer
+              une candidature. Si vous n\u2019êtes pas encore adhérent, c\u2019est le
+              moment.
+            </p>
+            <div class="row" style="margin-top:16px">
+              <a class="btn" href="#/inscription">Adhérer à la fédération</a>
+              <a class="btn ghost" href="#/espace">J\u2019ai déjà un compte</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
@@ -7645,6 +8242,8 @@ function Espace({ session, sous }){
     case 'mon-dossier':vue = html`<${MonDossier} p=${p} entier=${true} />`; break;
     case 'referentiel':vue = html`<${Referentiel} />`; break;
     case 'engagement': vue = acces('engagement') ? html`<${Engagement} p=${p} />` : refus; break;
+    case 'assemblees': vue = acces('assemblees')
+                          ? html`<${Assemblees} p=${p} />` : refus; break;
     case 'chancellerie': vue = acces('chancellerie')
                           ? html`<${Chancellerie} p=${p} />` : refus; break;
     case 'communication': vue = acces('communication')
@@ -7705,6 +8304,13 @@ function Site(){
       <${Pied} txt=${txt} />`;
     const sous = route.replace('/espace','').replace(/^\//,'');
     return html`<${Espace} session=${session} sous=${sous} />`;
+  }
+
+  if (route.startsWith('/appel/')){
+    return html`
+      <${EntetePublique} route=${route} session=${session} />
+      <${AppelPublic} token=${route.slice('/appel/'.length)} />
+      <${Pied} txt=${txt} />`;
   }
 
   if (route.startsWith('/actualite/')){
