@@ -990,11 +990,13 @@ function Flanc({ p, apps, page }){
         ${dispo('notes_frais') && item('notes_frais','Mes notes de frais')}
 
         ${(dispo('annuaire') || dispo('tresorerie') || dispo('ordonnancement')
-           || dispo('discipline') || dispo('communication')) && html`
+           || dispo('discipline') || dispo('communication')
+           || dispo('chancellerie')) && html`
           <div class="groupe">Mes responsabilités</div>
           ${dispo('annuaire') && item('annuaire','Annuaire fédéral')}
           ${dispo('ordonnancement') && item('ordonnancement','Ordonnancement')}
           ${dispo('tresorerie') && item('tresorerie','Direction financière')}
+          ${dispo('chancellerie') && item('chancellerie','Chancellerie')}
           ${dispo('communication') && item('communication','Communication')}
           ${dispo('discipline') && item('discipline','Discipline et recours')}`}
 
@@ -3497,11 +3499,15 @@ function FicheAdmin({ p, id, fermer, setMsg }){
   const [ref, setRef] = useState({fonctions:[], terr:[], postes:[], apps:[]});
   const [nouveauPoste, setNouveauPoste] = useState({poste:'', territoire:'', fin:'', motif:''});
   const [nouvelAcces, setNouvelAcces] = useState({app:'', motif:'', expire:''});
+  const [tous, setTous] = useState([]);
   const [local, setLocal] = useState('');
 
   const charger = useCallback(async () => {
-    const { data } = await db.rpc('fiche_admin', { p_profil: id });
-    setF(data);
+    const [a, b] = await Promise.all([
+      db.rpc('fiche_admin', { p_profil: id }),
+      db.rpc('acces_complets', { p_profil: id })
+    ]);
+    setF(a.data); setTous(b.data || []);
   }, [id]);
   useEffect(() => { charger(); }, [charger]);
 
@@ -3519,10 +3525,15 @@ function FicheAdmin({ p, id, fermer, setMsg }){
   if (f.erreur) return html`<div class="alerte err">${f.erreur}</div>`;
   const i = f.identite;
 
+  // Toute modification passe par modifier_membre() : la garde
+  // hiérarchique et l'inscription au registre des actes y sont tenues.
   async function modifier(champ, valeur){
-    const { error } = await db.from('profils').update({ [champ]: valeur }).eq('id', id);
-    setLocal(error ? 'Erreur : ' + error.message : 'Enregistré.');
-    setTimeout(()=>setLocal(''), 2000);
+    const { data, error } = await db.rpc('modifier_membre',
+      { p_profil: id, p_champ: champ, p_valeur: String(valeur) });
+    if (error) return setLocal('Erreur : ' + error.message);
+    if (!data.ok) return setLocal('Erreur : ' + data.message);
+    setLocal('Enregistré. L\u2019acte est soumis au contrôle de l\u2019administrateur.');
+    setTimeout(()=>setLocal(''), 4000);
     charger();
   }
 
@@ -3558,6 +3569,15 @@ function FicheAdmin({ p, id, fermer, setMsg }){
     if (error) return setMsg('Erreur : ' + error.message);
     if (!data.ok) return setMsg('Erreur : ' + data.message);
     setNouvelAcces({app:'', motif:'', expire:''});
+    setMsg('Accès ouvert.'); charger();
+  }
+
+  async function ouvrirDirect(app){
+    const motif = prompt('Motif de l\u2019ouverture (facultatif)') || '';
+    const { data, error } = await db.rpc('accorder_acces',
+      { p_profil: id, p_app: app, p_motif: motif, p_expire: null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
     setMsg('Accès ouvert.'); charger();
   }
 
@@ -3685,29 +3705,43 @@ function FicheAdmin({ p, id, fermer, setMsg }){
       </div>
 
       <div class="panneau" style="margin-top:24px">
-        <div class="tete"><h3 style="font-size:17px">Accès applicatifs nominatifs</h3></div>
-        ${f.acces.length === 0
-          ? html`<div class="corps small muted">
-              Aucun accès nominatif. Le membre dispose de ce que sa fonction ouvre.</div>`
-          : f.acces.map(a => html`
-            <div class="ligne">
-              <div>
-                <div>${a.nom}</div>
-                <div class="small muted">
-                  ${a.motif || 'sans motif'}
-                  ${a.expire_le ? ' · expire le ' + jour(a.expire_le) : ''}
-                  ${a.derniere_utilisation
+        <div class="tete">
+          <div class="row" style="gap:8px">
+            <h3 style="font-size:17px">Tous les accès numériques</h3>
+            <${Info} texte="Un accès vient de trois sources : la fonction (par la matrice), un poste occupé, ou un octroi nominatif. Seuls les octrois nominatifs se retirent ici — les deux autres se règlent en changeant la fonction ou le poste." />
+          </div>
+          <span class="tag">${tous.filter(a=>a.ouvert).length} ouverts</span>
+        </div>
+        ${tous.map(a => html`
+          <div class="ligne">
+            <div style="flex:1;min-width:230px">
+              <div class="row" style="gap:8px">
+                <span style=${a.ouvert?'':'color:var(--gris-bleu)'}>${a.nom}</span>
+                <span class=${'tag '+(a.origine==='Octroi nominatif'?'bleu':
+                  a.origine==='Poste occupé'?'or':a.origine==='Fonction'?'vert':'')}>
+                  ${a.origine}</span>
+              </div>
+              <div class="small muted" style="margin-top:4px">
+                ${a.detail}
+                ${a.expire_le ? ' · expire le ' + jour(a.expire_le) : ''}
+                ${a.ouvert ? (a.derniere_utilisation
                     ? ' · dernier usage ' + jour(a.derniere_utilisation)
-                    : ' · jamais utilisé'}
-                </div>
+                      + ' · ' + a.nb_ouvertures + ' ouverture(s)'
+                    : ' · jamais utilisé') : ''}
               </div>
-              <div class="row">
-                <span class=${'tag '+(a.statut==='accorde'?'vert':'rouge')}>
-                  ${a.statut === 'accorde' ? 'Ouvert' : 'Révoqué'}</span>
-                ${a.statut === 'accorde' && html`
-                  <button class="btn sm light" onClick=${()=>fermerAcces(a)}>Révoquer</button>`}
-              </div>
-            </div>`)}
+            </div>
+            <div class="row">
+              ${a.ouvert
+                ? html`<span class="tag vert">Ouvert</span>`
+                : html`<span class="tag">Fermé</span>`}
+              ${a.retirable
+                ? html`<button class="btn sm light"
+                    onClick=${()=>fermerAcces({application:a.application, nom:a.nom})}>
+                    Retirer</button>`
+                : (!a.ouvert && html`<button class="btn sm light"
+                    onClick=${()=>ouvrirDirect(a.application)}>Ouvrir</button>`)}
+            </div>
+          </div>`)}
         <form onSubmit=${ouvrirAcces} class="corps" style="border-top:1px solid var(--filet)">
           <div class="row" style="gap:12px;align-items:flex-end">
             <div class="field" style="flex:1;min-width:170px;margin:0"><label>Ouvrir</label>
@@ -6533,12 +6567,262 @@ function EditionPublication({ p, pub, campagnes, modeles, fermer }){
     </div>`;
 }
 
+
+/* --- Dossier incomplet : on ne va pas plus loin ------------------------
+   Ni un mur ni une fenêtre qu'on referme : la page qui suit la
+   connexion, tant qu'il manque l'essentiel.
+   --------------------------------------------------------------------- */
+function DossierIncomplet({ p, manques }){
+  return html`
+    <div>
+      <div class="eyebrow">Avant de continuer</div>
+      <h1 style="margin:6px 0 12px">Votre dossier est incomplet</h1>
+      <p class="muted" style="max-width:58ch">
+        Il manque ${manques.length} information${manques.length>1?'s':''} pour que
+        la fédération puisse vous rattacher à une structure, vous proposer des
+        missions et tenir ses registres. Complétez-les ci-dessous : l\u2019accès à
+        la plateforme s\u2019ouvrira aussitôt.
+      </p>
+
+      <div class="panneau" style="margin-top:24px;border-left:3px solid var(--bordeaux)">
+        <div class="corps">
+          <div class="eyebrow" style="margin-bottom:10px">Ce qui manque</div>
+          <div class="row" style="gap:6px">
+            ${manques.map(m => html`<span class="tag rouge">${m}</span>`)}
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:24px">
+        <${MonCompte} p=${p} recharger=${()=>location.reload()} />
+      </div>
+    </div>`;
+}
+
+/* --- Chancellerie ------------------------------------------------------
+   Reconnaître ce qui est donné. Le barème, les classements, les
+   promotions.
+   --------------------------------------------------------------------- */
+function Chancellerie({ p }){
+  const [onglet, setOnglet] = useState('synthese');
+  const [s, setS] = useState(null);
+  const [bareme, setBareme] = useState([]);
+  const [classement, setClassement] = useState([]);
+  const [promos, setPromos] = useState([]);
+  const [terr, setTerr] = useState([]);
+  const [filtreT, setFiltreT] = useState('');
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a,b,c,d,e] = await Promise.all([
+      db.rpc('chancellerie_synthese'),
+      db.from('bareme_points').select('*').order('ordre'),
+      db.rpc('classement_merites', { p_territoire: filtreT || null, p_limite: 60 }),
+      db.from('promotions').select('*').order('cree_le',{ascending:false}).limit(40),
+      db.from('territoires').select('id,nom,echelle').in('echelle',['region','departement']).order('nom')
+    ]);
+    setS(a.data); setBareme(b.data||[]); setClassement(c.data||[]);
+    setPromos(d.data||[]); setTerr(e.data||[]);
+  }, [filtreT]);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function reglerPoints(cle, points){
+    const { data, error } = await db.rpc('regler_bareme',
+      { p_cle: cle, p_points: Number(points) });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Barème enregistré. Tous les totaux sont recalculés.');
+    charger();
+  }
+
+  async function promouvoirMembre(x){
+    const motif = prompt('Motif de la promotion (obligatoire)\n\n' +
+      x.membre + ' — échelon ' + x.echelon + ' → ' + (x.echelon+1) +
+      '\n' + x.points + ' points');
+    if (!motif) return;
+    const { data, error } = await db.rpc('promouvoir',
+      { p_profil: x.profil_id, p_echelon: x.echelon + 1, p_motif: motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Promotion arrêtée.'); charger();
+  }
+
+  if (!s) return html`<div class="vide">Chargement…</div>`;
+  if (s.erreur) return html`<div class="alerte err">${s.erreur}</div>`;
+
+  const aPromouvoir = classement.filter(x => x.atteint);
+
+  return html`
+    <div>
+      <div class="eyebrow">Chancellerie</div>
+      <h1 style="margin:6px 0 8px">Valorisation des compétences</h1>
+      <p class="muted" style="max-width:60ch">
+        Reconnaître ce qui est donné. Le barème fixe la valeur de chaque
+        contribution ; les points se recalculent à chaque lecture, jamais
+        stockés. Atteindre un palier ne promeut pas : vous décidez, et vous
+        motivez.
+      </p>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div class="chiffres" style="margin:24px 0">
+        <div><div class="n" style="font-size:30px">${aPromouvoir.length}</div>
+          <div class="l">Paliers atteints</div></div>
+        <div><div class="n" style="font-size:30px">${Number(s.heures_mois||0)}</div>
+          <div class="l">Heures ce mois</div></div>
+        <div><div class="n" style="font-size:30px">${s.certifications_mois}</div>
+          <div class="l">Certifications ce mois</div></div>
+        <div><div class="n" style="font-size:30px">${s.dormants}</div>
+          <div class="l">Membres sans activité</div></div>
+      </div>
+
+      <div class="row" style="margin:0 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['synthese','Synthèse'],['classement','Classement'],
+           ['promouvoir','À promouvoir'],['bareme','Barème'],['historique','Décisions']]
+          .map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}${k==='promouvoir'&&aPromouvoir.length
+              ? ' ('+aPromouvoir.length+')' : ''}</button>`)}
+      </div>
+
+      ${onglet === 'synthese' && html`
+        <div>
+          <div class="panneau">
+            <div class="tete"><h3 style="font-size:17px">Répartition par échelon</h3></div>
+            <div class="corps">
+              ${Object.entries(s.par_echelon || {}).map(([nom, n]) => {
+                const max = Math.max(...Object.values(s.par_echelon||{1:1}));
+                return html`
+                  <div style="padding:7px 0">
+                    <div class="spread small">
+                      <span>${nom}</span><span class="mono">${n}</span>
+                    </div>
+                    <div class="jauge" style="margin-top:5px">
+                      <i style=${'width:'+Math.round(n/Math.max(max,1)*100)+'%'}></i></div>
+                  </div>`;
+              })}
+            </div>
+          </div>
+          <div class="panneau" style="margin-top:24px">
+            <div class="tete"><h3 style="font-size:17px">L\u2019année en cours</h3></div>
+            <div class="ligne"><span class="muted">Heures de bénévolat déclarées</span>
+              <span class="mono">${Number(s.heures_annee||0)} h</span></div>
+            <div class="ligne"><span class="muted">Promotions arrêtées</span>
+              <span class="mono">${s.promotions_annee}</span></div>
+            <div class="ligne"><span class="muted">Membres actifs</span>
+              <span class="mono">${s.membres_actifs}</span></div>
+            <div class="corps small muted" style="border-top:1px solid var(--filet)">
+              Un membre est dit sans activité s\u2019il n\u2019a ouvert aucune application
+              depuis 90 jours et n\u2019a déclaré aucune heure depuis trois mois.
+              Ce n\u2019est pas un reproche : c\u2019est un signal pour reprendre contact.
+            </div>
+          </div>
+        </div>`}
+
+      ${(onglet === 'classement' || onglet === 'promouvoir') && html`
+        <div>
+          <div class="field" style="max-width:280px;margin-bottom:20px">
+            <label>Périmètre</label>
+            <select value=${filtreT} onChange=${e=>setFiltreT(e.target.value)}>
+              <option value="">Toute la fédération</option>
+              ${terr.map(t => html`<option value=${t.id}>${t.nom}</option>`)}
+            </select>
+          </div>
+          <div class="panneau" style="overflow-x:auto">
+            <table>
+              <thead><tr><th></th><th>Membre</th><th>Échelon</th><th>Points</th>
+                <th>Heures cette année</th><th>Missions</th><th>Certifications</th>
+                <th></th></tr></thead>
+              <tbody>
+                ${(onglet === 'promouvoir' ? aPromouvoir : classement).map((x, i) => html`
+                  <tr>
+                    <td class="mono muted">${onglet === 'classement' ? i+1 : ''}</td>
+                    <td><div>${x.membre}</div>
+                      <div class="small muted">${x.fonction}
+                        ${x.territoire ? ' · ' + x.territoire : ''}</div></td>
+                    <td><span class="tag or">${x.echelon}</span></td>
+                    <td><span class="mono" style="font-size:15px">${x.points}</span>
+                      ${x.palier_suivant && html`<span class="small muted">
+                        /${x.palier_suivant}</span>`}</td>
+                    <td class="mono">${Number(x.heures_annee||0)}</td>
+                    <td class="mono">${x.missions}</td>
+                    <td class="mono">${x.certifications}</td>
+                    <td>${x.atteint && x.palier_suivant
+                      ? html`<button class="btn sm"
+                          onClick=${()=>promouvoirMembre(x)}>Promouvoir</button>`
+                      : ''}</td>
+                  </tr>`)}
+              </tbody>
+            </table>
+            ${(onglet === 'promouvoir' ? aPromouvoir : classement).length === 0 && html`
+              <div class="vide">${onglet === 'promouvoir'
+                ? 'Personne n\u2019a atteint son palier.' : 'Aucun membre.'}</div>`}
+          </div>
+        </div>`}
+
+      ${onglet === 'bareme' && html`
+        <div>
+          <p class="small muted" style="margin-bottom:20px;max-width:62ch">
+            Modifier une valeur recalcule aussitôt les totaux de tous les
+            membres. Rien n\u2019est stocké : personne ne perd de points, les
+            équilibres changent simplement.
+          </p>
+          <div class="panneau">
+            ${bareme.map(b => html`
+              <div class="ligne">
+                <div style="flex:1;min-width:220px">
+                  <div>${b.libelle}</div>
+                  <div class="small muted">${b.unite}
+                    ${b.maj_le ? ' · révisé le ' + jour(b.maj_le) : ''}</div>
+                </div>
+                <div class="row" style="gap:8px">
+                  <input type="number" min="0" max="500" defaultValue=${b.points}
+                    style="width:90px;text-align:right"
+                    onBlur=${e=>reglerPoints(b.cle, e.target.value)} />
+                  <span class="small muted">points</span>
+                </div>
+              </div>`)}
+          </div>
+          <div class="panneau" style="margin-top:24px">
+            <div class="tete"><h3 style="font-size:17px">Paliers d\u2019échelon</h3></div>
+            <div class="corps small muted">
+              Les seuils se règlent dans la table <span class="mono">echelons</span>.
+              Modifier un seuil ne rétrograde jamais personne : un échelon acquis
+              reste acquis jusqu\u2019à décision motivée.
+            </div>
+          </div>
+        </div>`}
+
+      ${onglet === 'historique' && html`
+        <div class="panneau">
+          ${promos.length === 0
+            ? html`<div class="vide">Aucune promotion arrêtée.</div>`
+            : promos.map(x => {
+              const m = classement.find(c => c.profil_id === x.profil_id);
+              return html`
+                <div class="ligne">
+                  <div style="flex:1;min-width:220px">
+                    <div>${m ? m.membre : 'Membre'} — échelon ${x.ancien} → ${x.nouveau}</div>
+                    <div class="small muted">${x.motif}</div>
+                  </div>
+                  <div class="row">
+                    <span class="tag or">${x.points} pts</span>
+                    <span class="small muted">${jour(x.cree_le)}</span>
+                  </div>
+                </div>`;
+            })}
+        </div>`}
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
   const [demandes, setDemandes] = useState([]);
   const [signalements, setSignalements] = useState([]);
   const [alertes, setAlertes] = useState([]);
+  const [actes, setActes] = useState([]);
   const [encadrants, setEncadrants] = useState([]);
   const [msg, setMsg] = useState('');
 
@@ -6546,12 +6830,14 @@ function Validation(){
     // La table demandes pointe deux fois vers profils (profil_id et
     // traite_par). On lit donc les deux séparément plutôt que de laisser
     // PostgREST deviner de quel lien il s'agit.
-    const [a, d, sg, al] = await Promise.all([
+    const [a, d, sg, al, ac] = await Promise.all([
       db.from('v_annuaire').select('*').eq('statut','en_attente').order('cree_le'),
       db.from('demandes').select('*').in('statut',['ouverte','en_cours']).order('cree_le'),
       db.rpc('signalements_a_traiter'),
-      db.rpc('alertes_consultation')
+      db.rpc('alertes_consultation'),
+      db.rpc('actes_a_controler')
     ]);
+    setActes(ac.data || []);
     setSignalements(sg.data || []);
     setAlertes(al.data || []);
     const { data: enc } = await db.from('v_annuaire')
@@ -6586,6 +6872,17 @@ function Validation(){
       return setMsg('Erreur : ' + data.message);
     }
     setMsg(ok ? 'Compte activé.' : 'Compte écarté.');
+    charger();
+  }
+
+  async function controler(x, confirmer){
+    const obs = confirmer ? null : prompt('Motif de l\u2019annulation (facultatif)');
+    if (!confirmer && obs === null) return;
+    const { data, error } = await db.rpc('controler_acte',
+      { p_acte: x.id, p_confirmer: confirmer, p_observation: obs });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg(confirmer ? 'Acte validé.' : 'Acte annulé, état antérieur rétabli.');
     charger();
   }
 
@@ -6689,6 +6986,44 @@ function Validation(){
       </div>
       <div style="height:32px"></div>
       ${msg && html`<div class="alerte ok" style="margin-bottom:24px">${msg}</div>`}
+
+      ${actes.length > 0 && html`
+        <div class="panneau" style="margin-bottom:24px;border-color:var(--brun)">
+          <div class="tete" style="border-bottom-color:var(--brun)">
+            <div class="row" style="gap:8px">
+              <h3 style="font-size:17px">Actes à contrôler</h3>
+              <${Info} texte="Ces actes ont déjà pris effet : on ne bloque pas le réseau en attendant une signature. Vous les confirmez, ou vous les annulez — et l'état antérieur est rétabli." />
+            </div>
+            <span class="tag or">${actes.length}</span>
+          </div>
+          <div style="overflow-x:auto">
+            <table>
+              <thead><tr><th>Quand</th><th>Qui</th><th>Sur qui</th>
+                <th>Acte</th><th></th></tr></thead>
+              <tbody>
+                ${actes.map(x => html`
+                  <tr>
+                    <td class="small muted">${new Date(x.cree_le).toLocaleString('fr-FR',
+                      {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+                    <td><div>${x.auteur}</div>
+                      <div class="small muted">${x.auteur_fonction}</div></td>
+                    <td><div>${x.cible || '—'}</div>
+                      <div class="mono muted">${x.cible_matricule || ''}</div></td>
+                    <td class="small">${x.libelle}</td>
+                    <td>
+                      <div class="row" style="justify-content:flex-end">
+                        <button class="btn sm" onClick=${()=>controler(x, true)}>Valider</button>
+                        ${x.reversible
+                          ? html`<button class="btn sm light"
+                              onClick=${()=>controler(x, false)}>Annuler l\u2019acte</button>`
+                          : html`<span class="tag">Non réversible</span>`}
+                      </div>
+                    </td>
+                  </tr>`)}
+              </tbody>
+            </table>
+          </div>
+        </div>`}
 
       ${alertes.length > 0 && html`
         <div class="panneau" style="margin-bottom:24px;border-color:var(--laiton)">
@@ -7228,6 +7563,7 @@ function Espace({ session, sous }){
   const [apps, setApps] = useState([]);
   const [demandes, setDemandes] = useState([]);
   const [chemin, setChemin] = useState('');
+  const [blocage, setBlocage] = useState(null);
   const [pret, setPret] = useState(false);
 
   const charger = useCallback(async () => {
@@ -7252,6 +7588,11 @@ function Espace({ session, sous }){
     profil.postes = mp || [];
     setP({ ...profil });
 
+    // Un dossier incomplet retient le membre sur son compte : la
+    // fédération ne peut pas travailler avec des fiches à trous.
+    const { data: comp } = await db.rpc('completude_bloquante');
+    setBlocage(comp && comp.bloquant ? comp.manques : null);
+
     if (profil.territoire_id){
       const { data } = await db.rpc('chemin_territoire', { cible: profil.territoire_id });
       setChemin(data || '');
@@ -7265,6 +7606,11 @@ function Espace({ session, sous }){
   if (!p) return html`<div class="vide" style="padding:120px">
     Profil introuvable. <a href="#/" onClick=${()=>db.auth.signOut()}>Se déconnecter</a></div>`;
   if (p.statut === 'suspendu') return html`<${EspaceSuspendu} p=${p} />`;
+  if (blocage && sous !== 'compte') return html`
+    <div class="app">
+      <${Flanc} p=${p} apps=${apps} page="compte" />
+      <main class="contenu"><${DossierIncomplet} p=${p} manques=${blocage} /></main>
+    </div>`;
   if (p.statut !== 'actif') return html`<${EnAttente} p=${p} />`;
 
   const admin = p.niveau >= 90;
@@ -7299,6 +7645,8 @@ function Espace({ session, sous }){
     case 'mon-dossier':vue = html`<${MonDossier} p=${p} entier=${true} />`; break;
     case 'referentiel':vue = html`<${Referentiel} />`; break;
     case 'engagement': vue = acces('engagement') ? html`<${Engagement} p=${p} />` : refus; break;
+    case 'chancellerie': vue = acces('chancellerie')
+                          ? html`<${Chancellerie} p=${p} />` : refus; break;
     case 'communication': vue = acces('communication')
                           ? html`<${Communication} p=${p} />` : refus; break;
     case 'discipline': vue = acces('discipline') ? html`<${Discipline} p=${p} />` : refus; break;
