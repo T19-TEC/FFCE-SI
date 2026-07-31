@@ -2878,6 +2878,1086 @@ function MonRib(){
     </div>`;
 }
 
+
+/* =====================================================================
+   5 sexies. HABILITATIONS
+   Un droit ouvre une action. Un poste regroupe des droits. Une
+   nomination confie un poste, avec un périmètre et un terme.
+   ===================================================================== */
+
+function Habilitations({ p }){
+  const [onglet, setOnglet] = useState('nominations');
+  const [postes, setPostes] = useState([]);
+  const [droits, setDroits] = useState([]);
+  const [liens, setLiens] = useState([]);
+  const [noms, setNoms] = useState([]);
+  const [gens, setGens] = useState([]);
+  const [terr, setTerr] = useState([]);
+  const [acces, setAcces] = useState([]);
+  const [apps, setApps] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a,b,c,d,e,f,g] = await Promise.all([
+      db.from('postes').select('*').order('nom'),
+      db.from('droits').select('*').order('ordre'),
+      db.from('poste_droits').select('*'),
+      db.from('nominations').select('*').order('cree_le', {ascending:false}),
+      db.from('v_annuaire').select('id,prenom,nom,matricule,fonction_nom')
+        .eq('statut','actif').order('nom'),
+      db.from('territoires').select('id,nom,echelle').order('echelle').order('nom'),
+      db.rpc('pilotage_acces')
+    ]);
+    setPostes(a.data||[]); setDroits(b.data||[]); setLiens(c.data||[]);
+    setNoms(d.data||[]); setGens(e.data||[]); setTerr(f.data||[]);
+    setAcces(g.data||[]);
+    const { data: ap } = await db.from('applications').select('code,nom').eq('actif',true).order('ordre');
+    setApps(ap||[]);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const nomDe = i => { const x = gens.find(y => y.id === i); return x ? nomComplet(x) : '—'; };
+  const actif = n => !n.revoque_le &&
+    (!n.fin || new Date(n.fin) >= new Date(new Date().toDateString()));
+
+  return html`
+    <div>
+      <div class="eyebrow">Direction générale</div>
+      <h1 style="margin:6px 0 8px">Habilitations</h1>
+      <p class="muted" style="max-width:60ch">
+        Un droit ouvre une action. Un poste regroupe des droits sous un nom.
+        Une nomination confie un poste à quelqu\u2019un, pour un territoire et
+        une durée. Ces trois notions restent séparées.
+      </p>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['nominations','Nominations'],['postes','Postes'],['acces','Accès applicatifs']]
+          .map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--encre)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'nominations' && html`<${Nominations} postes=${postes} noms=${noms}
+        gens=${gens} terr=${terr} nomDe=${nomDe} actif=${actif}
+        recharger=${charger} setMsg=${setMsg} />`}
+
+      ${onglet === 'postes' && html`<${Postes} postes=${postes} droits=${droits}
+        liens=${liens} recharger=${charger} setMsg=${setMsg} />`}
+
+      ${onglet === 'acces' && html`<${PilotageAcces} acces=${acces} apps=${apps}
+        gens=${gens} recharger=${charger} setMsg=${setMsg} />`}
+    </div>`;
+}
+
+function Nominations({ postes, noms, gens, terr, nomDe, actif, recharger, setMsg }){
+  const [f, setF] = useState({profil:'', poste:'', territoire:'', fin:'', motif:''});
+  const [historique, setHistorique] = useState(false);
+
+  async function nommer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('nommer', {
+      p_profil: f.profil, p_poste: f.poste,
+      p_territoire: f.territoire || null, p_fin: f.fin || null, p_motif: f.motif || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({profil:'', poste:'', territoire:'', fin:'', motif:''});
+    setMsg('Nomination enregistrée.'); recharger();
+  }
+
+  async function revoquer(n){
+    const motif = prompt('Motif de la révocation (obligatoire)');
+    if (!motif) return;
+    const { data, error } = await db.rpc('revoquer', { p_nomination: n.id, p_motif: motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Nomination révoquée.'); recharger();
+  }
+
+  const enCours = noms.filter(actif);
+  const closes  = noms.filter(n => !actif(n));
+  const posteNom = c => (postes.find(x => x.code === c)||{}).nom || c;
+  const terrNom  = i => (terr.find(x => x.id === i)||{}).nom;
+
+  return html`
+    <div>
+      <form onSubmit=${nommer} class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">Nommer</h3></div>
+        <div class="corps stack">
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Membre</label>
+              <select required value=${f.profil} onChange=${e=>setF(o=>({...o,profil:e.target.value}))}>
+                <option value="">Choisir…</option>
+                ${gens.map(g => html`<option value=${g.id}>${nomComplet(g)} — ${g.fonction_nom}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Poste</label>
+              <select required value=${f.poste} onChange=${e=>setF(o=>({...o,poste:e.target.value}))}>
+                <option value="">Choisir…</option>
+                ${postes.filter(x=>x.actif).map(x => html`<option value=${x.code}>${x.nom}</option>`)}
+              </select></div>
+          </div>
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Périmètre</label>
+              <select value=${f.territoire} onChange=${e=>setF(o=>({...o,territoire:e.target.value}))}>
+                <option value="">National</option>
+                ${terr.map(t => html`<option value=${t.id}>${t.nom} (${t.echelle})</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:160px;margin:0"><label>Fin du mandat</label>
+              <input type="date" value=${f.fin} onInput=${e=>setF(o=>({...o,fin:e.target.value}))} />
+            </div>
+          </div>
+          <div class="field"><label>Motif</label>
+            <input value=${f.motif} onInput=${e=>setF(o=>({...o,motif:e.target.value}))}
+              placeholder="Élu au bureau du 12 mars" /></div>
+          <div><button class="btn">Nommer</button></div>
+          <p class="small muted">
+            Sans date de fin, le mandat court jusqu\u2019à révocation. Un mandat
+            à durée déterminée s\u2019éteint seul : c\u2019est plus sûr qu\u2019un rappel.
+          </p>
+        </div>
+      </form>
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">Postes occupés</h3>
+          <span class="tag">${enCours.length}</span></div>
+        ${enCours.length === 0
+          ? html`<div class="vide">Aucune nomination en cours.</div>`
+          : enCours.map(n => html`
+            <div class="ligne">
+              <div style="flex:1;min-width:220px">
+                <div>${nomDe(n.profil_id)} — <strong>${posteNom(n.poste)}</strong></div>
+                <div class="small muted">
+                  ${n.territoire_id ? terrNom(n.territoire_id) : 'National'}
+                  · depuis le ${jour(n.debut)}
+                  ${n.fin ? ' · jusqu\u2019au ' + jour(n.fin) : ' · sans terme'}
+                  ${n.motif ? ' · ' + n.motif : ''}
+                </div>
+              </div>
+              <button class="btn sm light" onClick=${()=>revoquer(n)}>Révoquer</button>
+            </div>`)}
+      </div>
+
+      ${closes.length > 0 && html`
+        <div style="margin-top:24px">
+          <button class="btn light" style="border:0;background:transparent;padding:0;
+            font-size:13px;color:var(--gris)" onClick=${()=>setHistorique(h=>!h)}>
+            ${historique ? 'Masquer' : 'Voir'} les mandats clos (${closes.length})</button>
+          ${historique && html`
+            <div class="panneau" style="margin-top:12px">
+              ${closes.map(n => html`
+                <div class="ligne">
+                  <div>
+                    <div class="muted">${nomDe(n.profil_id)} — ${posteNom(n.poste)}</div>
+                    <div class="small muted">
+                      ${n.revoque_le
+                        ? 'Révoqué le ' + jour(n.revoque_le) +
+                          (n.motif_revocation ? ' · ' + n.motif_revocation : '')
+                        : 'Mandat échu le ' + jour(n.fin)}
+                    </div>
+                  </div>
+                  <span class="tag">Clos</span>
+                </div>`)}
+            </div>`}
+        </div>`}
+    </div>`;
+}
+
+function Postes({ postes, droits, liens, recharger, setMsg }){
+  const [creation, setCreation] = useState(false);
+  const [f, setF] = useState({code:'', nom:'', description:'', couleur:'neutre'});
+  const [ouvert, setOuvert] = useState(null);
+
+  async function creer(e){
+    e.preventDefault();
+    const code = f.code.trim().toLowerCase().replace(/[^a-z0-9_]/g,'_');
+    const { error } = await db.from('postes').insert({
+      code, nom: f.nom, description: f.description || null, couleur: f.couleur
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setF({code:'', nom:'', description:'', couleur:'neutre'}); setCreation(false);
+    setMsg('Poste créé. Cochez maintenant ses droits.'); recharger();
+  }
+
+  async function basculer(poste, droit, coche){
+    if (coche)
+      await db.from('poste_droits').insert({ poste, droit });
+    else
+      await db.from('poste_droits').delete().eq('poste', poste).eq('droit', droit);
+    recharger();
+  }
+
+  async function desactiver(x){
+    if (!confirm('Désactiver « ' + x.nom + ' » ? Les nominations en cours cessent de produire effet.')) return;
+    await db.from('postes').update({ actif: !x.actif }).eq('code', x.code);
+    recharger();
+  }
+
+  const categories = [...new Set(droits.map(d => d.categorie))];
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:16px">
+        <span class="small muted">${postes.length} poste${postes.length>1?'s':''}</span>
+        <button class="btn sm" onClick=${()=>setCreation(c=>!c)}>
+          ${creation ? 'Annuler' : 'Créer un poste'}</button>
+      </div>
+
+      ${creation && html`
+        <form onSubmit=${creer} class="panneau" style="margin-bottom:24px">
+          <div class="corps stack">
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:200px;margin:0"><label>Nom</label>
+                <input required value=${f.nom} onInput=${e=>setF(o=>({...o,nom:e.target.value}))}
+                  placeholder="Référent laïcité" /></div>
+              <div class="field" style="flex:1;min-width:160px;margin:0"><label>Identifiant</label>
+                <input required value=${f.code} onInput=${e=>setF(o=>({...o,code:e.target.value}))}
+                  placeholder="ref_laicite" /></div>
+            </div>
+            <div class="field"><label>À quoi sert ce poste</label>
+              <textarea value=${f.description}
+                onInput=${e=>setF(o=>({...o,description:e.target.value}))} /></div>
+            <div class="field"><label>Couleur de l\u2019étiquette</label>
+              <select value=${f.couleur} onChange=${e=>setF(o=>({...o,couleur:e.target.value}))}>
+                <option value="neutre">Neutre</option><option value="or">Or</option>
+                <option value="bleu">Bleu</option><option value="vert">Vert</option>
+                <option value="rouge">Rouge</option>
+              </select></div>
+            <div><button class="btn">Créer</button></div>
+          </div>
+        </form>`}
+
+      ${postes.map(x => {
+        const siens = liens.filter(l => l.poste === x.code).map(l => l.droit);
+        return html`
+          <div class="panneau" style="margin-bottom:16px">
+            <div class="tete">
+              <div>
+                <div class="row" style="gap:8px">
+                  <h3 style="font-size:17px">${x.nom}</h3>
+                  <span class=${'tag '+(x.couleur==='neutre'?'':x.couleur)}>${siens.length} droit${siens.length>1?'s':''}</span>
+                  ${!x.actif && html`<span class="tag rouge">Désactivé</span>`}
+                  ${x.systeme && html`<span class="tag">Fourni d\u2019origine</span>`}
+                </div>
+                ${x.description && html`<div class="small muted" style="margin-top:4px;max-width:60ch">
+                  ${x.description}</div>`}
+              </div>
+              <div class="row">
+                <button class="btn sm light" onClick=${()=>setOuvert(o => o===x.code?null:x.code)}>
+                  ${ouvert===x.code ? 'Replier' : 'Droits'}</button>
+                <button class="btn sm light" onClick=${()=>desactiver(x)}>
+                  ${x.actif ? 'Désactiver' : 'Réactiver'}</button>
+              </div>
+            </div>
+            ${ouvert === x.code && html`
+              <div class="corps">
+                ${categories.map(cat => html`
+                  <div style="margin-bottom:20px">
+                    <div class="eyebrow" style="margin-bottom:8px">${cat}</div>
+                    ${droits.filter(d => d.categorie === cat).map(d => html`
+                      <label class="row" style="text-transform:none;letter-spacing:0;
+                          font-size:14px;color:var(--encre);padding:4px 0;margin:0;cursor:pointer">
+                        <input type="checkbox" style="width:auto"
+                          checked=${siens.includes(d.code)}
+                          onChange=${e=>basculer(x.code, d.code, e.target.checked)} />
+                        <span>${d.nom}</span>
+                        ${d.sensible && html`<span class="tag or">Sensible</span>`}
+                      </label>`)}
+                  </div>`)}
+              </div>`}
+          </div>`;
+      })}
+    </div>`;
+}
+
+function PilotageAcces({ acces, apps, gens, recharger, setMsg }){
+  const [f, setF] = useState({profil:'', app:'', motif:'', expire:''});
+  const [filtre, setFiltre] = useState('actifs');
+
+  async function accorder(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('accorder_acces', {
+      p_profil: f.profil, p_app: f.app,
+      p_motif: f.motif || null, p_expire: f.expire || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({profil:'', app:'', motif:'', expire:''});
+    setMsg('Accès ouvert.'); recharger();
+  }
+
+  async function revoquer(a){
+    const motif = prompt('Motif de la révocation (obligatoire)');
+    if (!motif) return;
+    const { data, error } = await db.rpc('revoquer_acces',
+      { p_profil: a.profil_id, p_app: a.application, p_motif: motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Accès révoqué.'); recharger();
+  }
+
+  const liste = acces.filter(a => filtre === 'tous' ? true : a.statut === 'Actif');
+  const dormants = acces.filter(a => a.statut === 'Actif' && !a.derniere_utilisation);
+
+  return html`
+    <div>
+      <form onSubmit=${accorder} class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">Ouvrir un accès</h3></div>
+        <div class="corps stack">
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Membre</label>
+              <select required value=${f.profil} onChange=${e=>setF(o=>({...o,profil:e.target.value}))}>
+                <option value="">Choisir…</option>
+                ${gens.map(g => html`<option value=${g.id}>${nomComplet(g)}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:180px;margin:0"><label>Application</label>
+              <select required value=${f.app} onChange=${e=>setF(o=>({...o,app:e.target.value}))}>
+                <option value="">Choisir…</option>
+                ${apps.map(a => html`<option value=${a.code}>${a.nom}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:150px;margin:0"><label>Expire le</label>
+              <input type="date" value=${f.expire}
+                onInput=${e=>setF(o=>({...o,expire:e.target.value}))} /></div>
+          </div>
+          <div class="field"><label>Motif</label>
+            <input value=${f.motif} onInput=${e=>setF(o=>({...o,motif:e.target.value}))}
+              placeholder="Trésorier adjoint depuis mars" /></div>
+          <div><button class="btn">Ouvrir</button></div>
+        </div>
+      </form>
+
+      ${dormants.length > 0 && html`
+        <div class="alerte" style="margin-bottom:24px;border-left-color:var(--laiton)">
+          ${dormants.length} accès ouvert${dormants.length>1?'s':''} n\u2019
+          ${dormants.length>1?'ont':'a'} jamais servi. Un accès inutilisé est un
+          accès à retirer.
+        </div>`}
+
+      <div class="spread" style="margin-bottom:16px">
+        <span class="small muted">${liste.length} ligne${liste.length>1?'s':''}</span>
+        <select style="width:auto" value=${filtre} onChange=${e=>setFiltre(e.target.value)}>
+          <option value="actifs">Accès actifs</option>
+          <option value="tous">Tout l\u2019historique</option>
+        </select>
+      </div>
+
+      <div class="panneau" style="overflow-x:auto">
+        ${liste.length === 0
+          ? html`<div class="vide">Aucun accès nominatif ouvert.</div>`
+          : html`
+            <table>
+              <thead><tr>
+                <th>Membre</th><th>Application</th><th>Ouvert le</th>
+                <th>Dernier usage</th><th>Ouvertures</th><th>État</th><th></th>
+              </tr></thead>
+              <tbody>
+                ${liste.map(a => html`
+                  <tr>
+                    <td><div>${a.membre}</div>
+                      <div class="mono muted">${a.matricule}</div></td>
+                    <td>${a.app_nom}</td>
+                    <td class="small">${jour(a.accorde_le)}
+                      ${a.expire_le ? html`<div class="small muted">expire le ${jour(a.expire_le)}</div>` : ''}</td>
+                    <td class="small">${a.derniere_utilisation
+                      ? jour(a.derniere_utilisation)
+                      : html`<span class="tag or">Jamais</span>`}</td>
+                    <td class="mono">${a.nb_ouvertures}</td>
+                    <td>${a.statut === 'Actif'
+                      ? html`<span class="tag vert">Actif</span>`
+                      : html`<span class="tag rouge">${a.statut}</span>`}</td>
+                    <td>${a.statut === 'Actif' && html`
+                      <button class="btn sm light" onClick=${()=>revoquer(a)}>Révoquer</button>`}</td>
+                  </tr>`)}
+              </tbody>
+            </table>`}
+      </div>
+    </div>`;
+}
+
+
+/* =====================================================================
+   5 septies. DISCIPLINE, RECOURS ET ARCHIVES
+   Aucune mesure ne produit d'effet sans avoir été notifiée, et aucune
+   notification n'est valable sans voie de recours ouverte.
+   ===================================================================== */
+
+const MESURES = {
+  classement:          'Classement sans suite',
+  rappel_regles:       'Rappel des règles',
+  avertissement:       'Avertissement',
+  suivi_usages:        'Suivi des usages',
+  retrait_habilitation:'Retrait des habilitations',
+  suspension:          'Suspension du compte',
+  radiation:           'Radiation'
+};
+const GRAVITE = { faible:['Faible',''], moyenne:['Moyenne','bleu'], elevee:['Élevée','rouge'] };
+const ETAPES = ['ouvert','instruction','decision','notifie','recours','clos'];
+const ETAPE_NOM = {
+  ouvert:'Dossier ouvert', instruction:'Instruction en cours',
+  decision:'Décision prise', notifie:'Décision notifiée',
+  recours:'Recours en examen', clos:'Dossier clos'
+};
+
+/* --- Le fil du dossier, vu par l'intéressé ---------------------------- */
+function FilDossier({ d, compact }){
+  const i = ETAPES.indexOf(d.statut);
+  return html`
+    <div>
+      <div class="row" style="gap:0;margin-bottom:16px;flex-wrap:nowrap;overflow-x:auto">
+        ${ETAPES.map((e, n) => html`
+          <div style=${'flex:1;min-width:82px;padding-right:8px;'+
+            (n <= i ? '' : 'opacity:.35')}>
+            <div style=${'height:3px;background:'+(n <= i ? 'var(--encre)' : 'var(--filet)')}></div>
+            <div class="small" style="margin-top:6px;line-height:1.3">${ETAPE_NOM[e]}</div>
+          </div>`)}
+      </div>
+      ${!compact && d.qualification && html`
+        <p class="small muted">Qualification retenue : ${d.qualification}</p>`}
+    </div>`;
+}
+
+/* --- Ce que voit un membre : bandeau, ou page entière si suspendu ----- */
+function MonDossier({ p, entier }){
+  const [d, setD] = useState(null);
+  const [msg, setMsg] = useState('');
+  const [obs, setObs] = useState({});
+  const [rec, setRec] = useState({});
+
+  const charger = useCallback(async () => {
+    const { data } = await db.rpc('mon_dossier');
+    setD(data || null);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  if (!d) return null;
+  const dossiers = d.dossiers || [];
+  const ouverts = dossiers.filter(x => x.statut !== 'clos');
+  if (!entier && ouverts.length === 0 && !d.sous_suivi) return null;
+
+  async function accuser(m){
+    const { data } = await db.rpc('accuser_reception', { p_mesure: m.id });
+    if (!data.ok) return setMsg(data.message);
+    setMsg('Réception accusée. Le délai de recours court à compter de ce jour.');
+    charger();
+  }
+
+  async function deposerObs(dos, e){
+    e.preventDefault();
+    const texte = obs[dos.id] || '';
+    if (!texte.trim()) return;
+    const { data, error } = await db.rpc('verser_piece', {
+      p_dossier: dos.id, p_type: 'observation',
+      p_titre: 'Observations', p_contenu: texte,
+      p_fichier: null, p_communicable: true
+    });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setObs(o => ({...o, [dos.id]: ''}));
+    setMsg('Vos observations sont versées au dossier.');
+    charger();
+  }
+
+  async function deposerRecours(m, e){
+    e.preventDefault();
+    const texte = rec[m.id] || '';
+    if (!texte.trim()) return;
+    const { data, error } = await db.rpc('deposer_recours',
+      { p_mesure: m.id, p_contenu: texte, p_fichier: null });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setRec(o => ({...o, [m.id]: ''}));
+    setMsg('Recours déposé. Il sera examiné et la décision vous sera notifiée.');
+    charger();
+  }
+
+  const bloc = (dos) => html`
+    <div class="panneau" style="margin-bottom:24px">
+      <div class="tete">
+        <div>
+          <h3 style="font-size:17px">${dos.objet}</h3>
+          <div class="small muted"><span class="mono">${dos.reference}</span>
+            · ouvert le ${jour(dos.ouvert_le)}</div>
+        </div>
+        <span class=${'tag '+(GRAVITE[dos.gravite]||['',''])[1]}>
+          ${(GRAVITE[dos.gravite]||['',''])[0]}</span>
+      </div>
+      <div class="corps">
+        <${FilDossier} d=${dos} />
+
+        ${dos.conclusion && html`
+          <div class="alerte" style="margin-top:16px">Conclusion : ${dos.conclusion}</div>`}
+
+        ${(dos.mesures||[]).map(m => html`
+          <div style="margin-top:24px;padding:16px;border:1px solid var(--filet);
+               border-left:3px solid var(--encre);border-radius:2px">
+            <div class="spread">
+              <strong>${MESURES[m.type] || m.type}</strong>
+              <span class=${'tag '+(m.statut==='annulee'?'vert':m.statut==='executee'?'rouge':'')}>
+                ${m.statut}</span>
+            </div>
+            <p style="margin:8px 0 0">${m.motif}</p>
+            ${m.texte && html`<p class="small" style="margin:8px 0 0;white-space:pre-wrap">${m.texte}</p>`}
+            <div class="small muted" style="margin-top:8px">
+              Effet au ${jour(m.date_effet)}${m.date_fin ? ' · jusqu\u2019au ' + jour(m.date_fin) : ''}
+              ${m.notifiee_le ? ' · notifiée le ' + jour(m.notifiee_le) : ''}
+            </div>
+
+            ${!m.accusee_le && m.notifiee_le && html`
+              <div style="margin-top:12px">
+                <button class="btn sm" onClick=${()=>accuser(m)}>
+                  J\u2019accuse réception de cette décision</button>
+                <p class="small muted" style="margin:6px 0 0">
+                  Le délai de recours de ${30} jours court à compter de votre accusé de
+                  réception, ou à défaut quinze jours après la notification.</p>
+              </div>`}
+
+            ${m.limite_recours && html`
+              <p class="small muted" style="margin-top:8px">
+                Recours possible jusqu\u2019au ${jour(m.limite_recours)}.</p>`}
+
+            ${(m.recours||[]).map(r => html`
+              <div style="margin-top:12px;padding:12px;background:var(--papier);
+                   border:1px solid var(--filet);border-radius:2px">
+                <div class="small muted">Recours déposé le ${jour(r.cree_le)}
+                  · <span class="tag">${r.statut}</span></div>
+                <p class="small" style="margin:8px 0 0;white-space:pre-wrap">${r.contenu}</p>
+                ${r.decision && html`
+                  <p class="small" style="margin:12px 0 0;padding-top:12px;
+                     border-top:1px solid var(--filet)">
+                    <strong>Décision du ${jour(r.decide_le)} :</strong> ${r.decision}</p>`}
+              </div>`)}
+
+            ${m.recours_ouvert && (m.recours||[]).filter(r =>
+                ['depose','recevable'].includes(r.statut)).length === 0 && html`
+              <form onSubmit=${e=>deposerRecours(m, e)} style="margin-top:16px">
+                <div class="field">
+                  <label>Déposer un recours gracieux</label>
+                  <textarea value=${rec[m.id]||''} onInput=${e=>setRec(o=>({...o,[m.id]:e.target.value}))}
+                    placeholder="Exposez les motifs pour lesquels vous contestez cette décision." />
+                </div>
+                <button class="btn sm" style="margin-top:8px">Déposer le recours</button>
+              </form>`}
+          </div>`)}
+
+        ${(dos.pieces||[]).length > 0 && html`
+          <div style="margin-top:24px">
+            <div class="eyebrow" style="margin-bottom:12px">Pièces du dossier</div>
+            ${dos.pieces.map(pc => html`
+              <div style="padding:10px 0;border-bottom:1px solid var(--filet)">
+                <div class="spread">
+                  <span>${pc.titre}</span>
+                  <span class="small muted">${jour(pc.cree_le)}</span>
+                </div>
+                ${pc.contenu && html`<p class="small muted"
+                  style="margin:6px 0 0;white-space:pre-wrap">${pc.contenu}</p>`}
+              </div>`)}
+            ${dos.pieces_non_communicables > 0 && html`
+              <p class="small muted" style="margin-top:12px">
+                ${dos.pieces_non_communicables} pièce${dos.pieces_non_communicables>1?'s':''}
+                du dossier ${dos.pieces_non_communicables>1?'ne sont':'n\u2019est'} pas
+                communicable${dos.pieces_non_communicables>1?'s':''}, afin de protéger
+                l\u2019identité de personnes tierces.</p>`}
+          </div>`}
+
+        ${dos.statut !== 'clos' && html`
+          <form onSubmit=${e=>deposerObs(dos, e)} style="margin-top:24px;
+               padding-top:24px;border-top:1px solid var(--filet)">
+            <div class="field">
+              <label>Vos observations</label>
+              <textarea value=${obs[dos.id]||''}
+                onInput=${e=>setObs(o=>({...o,[dos.id]:e.target.value}))}
+                placeholder="Tout ce que vous souhaitez porter à la connaissance de l\u2019instruction." />
+            </div>
+            <button class="btn sm" style="margin-top:8px">Verser au dossier</button>
+          </form>`}
+      </div>
+    </div>`;
+
+  // Bandeau, pour un compte actif.
+  if (!entier) return html`
+    <div style="margin-bottom:24px">
+      ${d.sous_suivi && html`
+        <p class="small" style="padding:10px 14px;border:1px solid var(--filet);
+           border-left:3px solid var(--laiton);background:#fff;border-radius:2px">
+          Votre compte fait l\u2019objet d\u2019une mesure de suivi des usages.
+        </p>`}
+      ${ouverts.length > 0 && html`
+        <div class="alerte" style=${d.sous_suivi?'margin-top:8px':''}>
+          ${ouverts.length === 1
+            ? 'Un dossier vous concernant est en cours : ' + ETAPE_NOM[ouverts[0].statut].toLowerCase() + '.'
+            : ouverts.length + ' dossiers vous concernant sont en cours.'}
+          <a href="#/espace/mon-dossier">Consulter et répondre</a>
+        </div>`}
+    </div>`;
+
+  // Page entière.
+  return html`
+    <div>
+      <div class="eyebrow">Mon dossier</div>
+      <h1 style="margin:6px 0 8px">Suivi et voies de recours</h1>
+      <p class="muted" style="max-width:60ch">
+        Vous trouvez ici l\u2019état de chaque dossier vous concernant, les pièces
+        qui vous sont communicables, les décisions prises et les délais dont
+        vous disposez pour les contester.
+      </p>
+      ${msg && html`<div class="alerte ok" style="margin:24px 0">${msg}</div>`}
+      <div style="margin-top:24px">
+        ${dossiers.length === 0
+          ? html`<div class="panneau"><div class="vide">
+              Aucun dossier ne vous concerne.</div></div>`
+          : dossiers.map(bloc)}
+      </div>
+    </div>`;
+}
+
+/* --- L'écran d'un compte suspendu ------------------------------------ */
+function EspaceSuspendu({ p }){
+  return html`
+    <div style="min-height:100vh;background:var(--papier)">
+      <header class="entete"><div class="wrap">
+        <a class="logo" href="#/"><b>FFCE</b>
+          <span>Citoyenneté & Égalité des chances</span></a>
+        <a class="btn ghost sm" href="#/" onClick=${()=>db.auth.signOut()}>Se déconnecter</a>
+      </div></header>
+
+      <div class="wrap" style="max-width:760px;padding-top:56px;padding-bottom:80px">
+        <div class="eyebrow">Accès restreint</div>
+        <h1 style="margin:8px 0 16px">Votre compte est suspendu</h1>
+        <p class="muted" style="max-width:58ch">
+          Vos accès à la plateforme sont interrompus. Cette page reste ouverte :
+          elle vous permet de suivre votre dossier, d\u2019y verser vos observations
+          et d\u2019exercer vos voies de recours.
+        </p>
+
+        <div class="panneau" style="margin:32px 0">
+          <div class="tete"><h3 style="font-size:17px">Vos droits</h3></div>
+          <div class="corps">
+            <p class="small">Vous pouvez à tout moment :</p>
+            <ul class="small" style="color:var(--gris);padding-left:18px;margin:8px 0 0">
+              <li>consulter les pièces communicables de votre dossier ;</li>
+              <li>y verser vos observations, qui seront lues par l\u2019instruction ;</li>
+              <li>former un recours gracieux contre toute décision notifiée,
+                  dans le délai indiqué ;</li>
+              <li>demander l\u2019accès à vos données personnelles et leur
+                  rectification, auprès du référent à la protection des données ;</li>
+              <li>être accompagné par la personne de votre choix.</li>
+            </ul>
+            <p class="small muted" style="margin-top:16px">
+              L\u2019épuisement du recours gracieux ne vous prive d\u2019aucun droit
+              devant les juridictions compétentes.
+            </p>
+          </div>
+        </div>
+
+        <${MonDossier} p=${p} entier=${true} />
+
+        <div class="panneau" style="margin-top:24px">
+          <div class="corps small muted">
+            Pour toute question sur la procédure, écrivez à la direction des
+            affaires juridiques à l\u2019adresse de contact de la fédération.
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* --- L'application Discipline ---------------------------------------- */
+function Discipline({ p }){
+  const [onglet, setOnglet] = useState('ouverts');
+  const [dossiers, setDossiers] = useState([]);
+  const [archives, setArchives] = useState([]);
+  const [alertes, setAlertes] = useState([]);
+  const [gens, setGens] = useState([]);
+  const [detail, setDetail] = useState(null);
+  const [creation, setCreation] = useState(false);
+  const [f, setF] = useState({profil:'', objet:'', qualification:'', gravite:'moyenne'});
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a,b,c,d] = await Promise.all([
+      db.rpc('dossiers_discipline', { p_filtre: 'ouverts' }),
+      db.rpc('dossiers_discipline', { p_filtre: 'archives' }),
+      db.from('alertes_suivi').select('*').is('vue_le', null).order('cree_le',{ascending:false}),
+      db.from('v_annuaire').select('id,prenom,nom,matricule,fonction_nom,territoire_nom')
+        .order('nom')
+    ]);
+    setDossiers(a.data||[]); setArchives(b.data||[]);
+    setAlertes(c.data||[]); setGens(d.data||[]);
+    if (detail){
+      const maj = [...(a.data||[]), ...(b.data||[])].find(x => x.id === detail.id);
+      if (maj) setDetail(maj);
+    }
+  }, [detail]);
+  useEffect(() => { charger(); }, []);
+
+  async function ouvrir(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('ouvrir_dossier', {
+      p_profil: f.profil, p_objet: f.objet,
+      p_qualification: f.qualification || null, p_gravite: f.gravite, p_signalement: null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({profil:'', objet:'', qualification:'', gravite:'moyenne'}); setCreation(false);
+    setMsg('Dossier ouvert. L\u2019intéressé est placé sous protection renforcée.');
+    charger();
+  }
+
+  if (detail) return html`<${DossierDetail} p=${p} d=${detail} gens=${gens}
+    fermer=${()=>{ setDetail(null); charger(); }} />`;
+
+  const ligne = d => html`
+    <div class="ligne" style="cursor:pointer" onClick=${()=>setDetail(d)}>
+      <div style="flex:1;min-width:240px">
+        <div>${d.objet}</div>
+        <div class="small muted">
+          <span class="mono">${d.reference}</span> · ${d.concerne}
+          <span class="mono">${d.matricule}</span>
+          ${d.territoire_nom ? ' · ' + d.territoire_nom : ''}
+          · ${d.nb_pieces} pièce${d.nb_pieces>1?'s':''}
+        </div>
+        ${d.qualification && html`<div class="small muted">${d.qualification}</div>`}
+      </div>
+      <div class="row">
+        ${d.recours_en_attente > 0 && html`
+          <span class="tag or">${d.recours_en_attente} recours</span>`}
+        <span class=${'tag '+(GRAVITE[d.gravite]||['',''])[1]}>
+          ${(GRAVITE[d.gravite]||['',''])[0]}</span>
+        <span class="tag">${ETAPE_NOM[d.statut]}</span>
+      </div>
+    </div>`;
+
+  return html`
+    <div>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Discipline et recours</div>
+          <h1 style="margin:6px 0 0">Dossiers</h1>
+        </div>
+        <button class="btn" onClick=${()=>setCreation(c=>!c)}>
+          ${creation ? 'Annuler' : 'Ouvrir un dossier'}</button>
+      </div>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      ${creation && html`
+        <form onSubmit=${ouvrir} class="panneau" style="margin-top:24px">
+          <div class="corps stack">
+            <div class="field"><label>Membre concerné</label>
+              <select required value=${f.profil} onChange=${e=>setF(o=>({...o,profil:e.target.value}))}>
+                <option value="">Choisir…</option>
+                ${gens.map(g => html`<option value=${g.id}>
+                  ${nomComplet(g)} — ${g.fonction_nom}${g.territoire_nom?' · '+g.territoire_nom:''}
+                </option>`)}
+              </select></div>
+            <div class="field"><label>Objet</label>
+              <input required value=${f.objet} onInput=${e=>setF(o=>({...o,objet:e.target.value}))}
+                placeholder="Manquement au cadre d\u2019intervention du 12 mars" /></div>
+            <div class="field"><label>Qualification retenue</label>
+              <input value=${f.qualification}
+                onInput=${e=>setF(o=>({...o,qualification:e.target.value}))}
+                placeholder="Article 8 du règlement intérieur" /></div>
+            <div class="field"><label>Gravité</label>
+              <select value=${f.gravite} onChange=${e=>setF(o=>({...o,gravite:e.target.value}))}>
+                <option value="faible">Faible</option>
+                <option value="moyenne">Moyenne</option>
+                <option value="elevee">Élevée</option>
+              </select></div>
+            <div><button class="btn">Ouvrir le dossier</button></div>
+            <p class="small muted">
+              L\u2019ouverture place l\u2019intéressé sous protection renforcée : toute
+              consultation de son profil sera tracée et signalée.
+            </p>
+          </div>
+        </form>`}
+
+      <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['ouverts','En cours'],['alertes','Alertes de suivi'],['archives','Archives']]
+          .map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--encre)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}${k==='alertes'&&alertes.length?' ('+alertes.length+')':''}</button>`)}
+      </div>
+
+      ${onglet === 'ouverts' && html`
+        <div class="panneau">
+          ${dossiers.length === 0
+            ? html`<div class="vide">Aucun dossier en cours.</div>`
+            : dossiers.map(ligne)}
+        </div>`}
+
+      ${onglet === 'archives' && html`
+        <div class="panneau">
+          ${archives.length === 0
+            ? html`<div class="vide">Aucun dossier archivé.</div>`
+            : archives.map(ligne)}
+        </div>`}
+
+      ${onglet === 'alertes' && html`
+        <div class="panneau">
+          <div class="tete"><h3 style="font-size:17px">Comptes sous suivi des usages</h3></div>
+          ${alertes.length === 0
+            ? html`<div class="vide">Aucune alerte en attente.</div>`
+            : alertes.map(al => {
+              const g = gens.find(x => x.id === al.profil_id);
+              return html`
+                <div class="ligne">
+                  <div>
+                    <div>${g ? nomComplet(g) : 'Membre'} — ${al.application || 'activité'}</div>
+                    <div class="small muted">${al.detail} ·
+                      ${new Date(al.cree_le).toLocaleString('fr-FR',
+                        {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+                  </div>
+                  <button class="btn sm light" onClick=${async ()=>{
+                    await db.from('alertes_suivi').update({
+                      vue_par: p.id, vue_le: new Date().toISOString() }).eq('id', al.id);
+                    charger();
+                  }}>Pris connaissance</button>
+                </div>`;
+            })}
+        </div>`}
+    </div>`;
+}
+
+function DossierDetail({ p, d, gens, fermer }){
+  const [pieces, setPieces] = useState([]);
+  const [mesures, setMesures] = useState([]);
+  const [recours, setRecours] = useState([]);
+  const [piece, setPiece] = useState({type:'note_instruction', titre:'', contenu:'', communicable:false});
+  const [mes, setMes] = useState({type:'avertissement', motif:'', texte:'', effet:'', fin:''});
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a,b] = await Promise.all([
+      db.from('dossier_pieces').select('*').eq('dossier_id', d.id).order('cree_le'),
+      db.from('mesures').select('*').eq('dossier_id', d.id).order('prise_le', {ascending:false})
+    ]);
+    setPieces(a.data||[]); setMesures(b.data||[]);
+    if (b.data && b.data.length){
+      const { data: r } = await db.from('recours').select('*')
+        .in('mesure_id', b.data.map(x => x.id)).order('cree_le',{ascending:false});
+      setRecours(r||[]);
+    }
+  }, [d.id]);
+  useEffect(() => { charger(); }, [charger]);
+
+  const nomDe = i => { const g = gens.find(x => x.id === i); return g ? nomComplet(g) : '—'; };
+
+  async function verser(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('verser_piece', {
+      p_dossier: d.id, p_type: piece.type, p_titre: piece.titre,
+      p_contenu: piece.contenu || null, p_fichier: null,
+      p_communicable: piece.communicable
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setPiece({type:'note_instruction', titre:'', contenu:'', communicable:false});
+    setMsg('Pièce versée au dossier.'); charger();
+  }
+
+  async function prononcer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('prononcer_mesure', {
+      p_dossier: d.id, p_type: mes.type, p_motif: mes.motif,
+      p_texte: mes.texte || null, p_effet: mes.effet || null, p_fin: mes.fin || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMes({type:'avertissement', motif:'', texte:'', effet:'', fin:''});
+    setMsg('Mesure prononcée. Elle ne produira effet qu\u2019une fois notifiée.');
+    charger();
+  }
+
+  async function notifier(m){
+    if (!confirm('Notifier cette décision ? Elle deviendra exécutoire et le délai de recours s\u2019ouvrira.')) return;
+    const { data, error } = await db.rpc('notifier_mesure', { p_mesure: m.id });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Décision notifiée.'); charger();
+  }
+
+  async function statuer(r, issue){
+    const decision = prompt('Décision motivée (obligatoire)');
+    if (!decision) return;
+    const { data, error } = await db.rpc('statuer_recours', {
+      p_recours: r.id, p_issue: issue, p_decision: decision, p_suspensif: false
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Recours tranché.'); charger();
+  }
+
+  async function clore(){
+    const conclusion = prompt('Conclusion du dossier (obligatoire)');
+    if (!conclusion) return;
+    const { data, error } = await db.rpc('clore_dossier',
+      { p_dossier: d.id, p_conclusion: conclusion });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    fermer();
+  }
+
+  return html`
+    <div>
+      <a class="small" href="#" onClick=${e=>{e.preventDefault();fermer()}}>← Tous les dossiers</a>
+      <div class="spread" style="margin-top:12px">
+        <div>
+          <h1 style="font-size:28px">${d.objet}</h1>
+          <div class="small muted" style="margin-top:4px">
+            <span class="mono">${d.reference}</span> · ${d.concerne}
+            <span class="mono">${d.matricule}</span>
+            ${d.territoire_nom ? ' · ' + d.territoire_nom : ''}
+            · ouvert le ${jour(d.ouvert_le)}
+          </div>
+        </div>
+        <span class=${'tag '+(GRAVITE[d.gravite]||['',''])[1]}>
+          ${(GRAVITE[d.gravite]||['',''])[0]}</span>
+      </div>
+
+      <div class="panneau" style="margin-top:24px"><div class="corps">
+        <${FilDossier} d=${d} />
+      </div></div>
+
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Mesures</h3>
+          <span class="tag">${mesures.length}</span></div>
+        ${mesures.length === 0
+          ? html`<div class="vide">Aucune mesure prononcée.</div>`
+          : mesures.map(m => {
+            const rs = recours.filter(r => r.mesure_id === m.id);
+            return html`
+              <div class="ligne" style="align-items:flex-start">
+                <div style="flex:1;min-width:240px">
+                  <div><strong>${MESURES[m.type]||m.type}</strong></div>
+                  <div class="small" style="margin-top:4px">${m.motif}</div>
+                  <div class="small muted" style="margin-top:4px">
+                    Prononcée le ${jour(m.prise_le)} par ${nomDe(m.prise_par)}
+                    · effet au ${jour(m.date_effet)}
+                    ${m.date_fin ? ' · fin le ' + jour(m.date_fin) : ''}
+                    ${m.notifiee_le ? ' · notifiée le ' + jour(m.notifiee_le) : ''}
+                    ${m.accusee_le ? ' · réception accusée le ' + jour(m.accusee_le) : ''}
+                  </div>
+                  ${rs.map(r => html`
+                    <div style="margin-top:12px;padding:12px;background:var(--papier);
+                         border:1px solid var(--filet);border-radius:2px">
+                      <div class="spread">
+                        <span class="small"><strong>Recours du ${jour(r.cree_le)}</strong></span>
+                        <span class="tag">${r.statut}</span>
+                      </div>
+                      <p class="small" style="margin:8px 0 0;white-space:pre-wrap">${r.contenu}</p>
+                      ${r.decision
+                        ? html`<p class="small muted" style="margin:8px 0 0">
+                            Décision : ${r.decision}</p>`
+                        : html`<div class="row" style="margin-top:12px">
+                            <button class="btn sm" onClick=${()=>statuer(r,'accepte')}>Accueillir</button>
+                            <button class="btn sm light" onClick=${()=>statuer(r,'rejete')}>Rejeter</button>
+                            <button class="btn sm light" onClick=${()=>statuer(r,'irrecevable')}>Irrecevable</button>
+                          </div>`}
+                    </div>`)}
+                </div>
+                <div class="row">
+                  <span class=${'tag '+(m.statut==='executee'?'rouge':m.statut==='annulee'?'vert':'')}>
+                    ${m.statut}</span>
+                  ${!m.notifiee_le && html`
+                    <button class="btn sm" onClick=${()=>notifier(m)}>Notifier</button>`}
+                </div>
+              </div>`;
+          })}
+      </div>
+
+      <form onSubmit=${prononcer} class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Prononcer une mesure</h3></div>
+        <div class="corps stack">
+          <div class="field"><label>Nature</label>
+            <select value=${mes.type} onChange=${e=>setMes(o=>({...o,type:e.target.value}))}>
+              ${Object.entries(MESURES).map(([k,v]) => html`<option value=${k}>${v}</option>`)}
+            </select></div>
+          <div class="field"><label>Motif</label>
+            <textarea required value=${mes.motif}
+              onInput=${e=>setMes(o=>({...o,motif:e.target.value}))}
+              placeholder="Les faits reprochés, les éléments retenus, la règle appliquée." /></div>
+          <div class="field"><label>Texte complémentaire</label>
+            <textarea value=${mes.texte} onInput=${e=>setMes(o=>({...o,texte:e.target.value}))} /></div>
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:150px;margin:0"><label>Date d\u2019effet</label>
+              <input type="date" value=${mes.effet}
+                onInput=${e=>setMes(o=>({...o,effet:e.target.value}))} /></div>
+            <div class="field" style="flex:1;min-width:150px;margin:0"><label>Fin (facultatif)</label>
+              <input type="date" value=${mes.fin}
+                onInput=${e=>setMes(o=>({...o,fin:e.target.value}))} /></div>
+          </div>
+          <div><button class="btn">Prononcer</button></div>
+          <p class="small muted">
+            Une mesure prononcée ne produit aucun effet tant qu\u2019elle n\u2019a pas été
+            notifiée. La notification ouvre le délai de recours.
+          </p>
+        </div>
+      </form>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Pièces</h3>
+          <span class="tag">${pieces.length}</span></div>
+        ${pieces.map(pc => html`
+          <div class="ligne">
+            <div style="flex:1;min-width:240px">
+              <div>${pc.titre}</div>
+              ${pc.contenu && html`<div class="small muted"
+                style="margin-top:4px;white-space:pre-wrap;max-width:60ch">${pc.contenu}</div>`}
+              <div class="small muted" style="margin-top:4px">
+                ${pc.type} · ${nomDe(pc.auteur_id)} · ${jour(pc.cree_le)}</div>
+            </div>
+            ${pc.communicable
+              ? html`<span class="tag vert">Communicable</span>`
+              : html`<span class="tag or">Non communicable</span>`}
+          </div>`)}
+      </div>
+
+      <form onSubmit=${verser} class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Verser une pièce</h3></div>
+        <div class="corps stack">
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:180px;margin:0"><label>Nature</label>
+              <select value=${piece.type} onChange=${e=>setPiece(o=>({...o,type:e.target.value}))}>
+                <option value="note_instruction">Note d\u2019instruction</option>
+                <option value="temoignage">Témoignage</option>
+                <option value="piece_jointe">Pièce</option>
+                <option value="convocation">Convocation</option>
+              </select></div>
+            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Titre</label>
+              <input required value=${piece.titre}
+                onInput=${e=>setPiece(o=>({...o,titre:e.target.value}))} /></div>
+          </div>
+          <div class="field"><label>Contenu</label>
+            <textarea value=${piece.contenu}
+              onInput=${e=>setPiece(o=>({...o,contenu:e.target.value}))} /></div>
+          <label class="row" style="text-transform:none;letter-spacing:0;
+              font-size:14px;color:var(--encre);margin:0;cursor:pointer">
+            <input type="checkbox" style="width:auto" checked=${piece.communicable}
+              onChange=${e=>setPiece(o=>({...o,communicable:e.target.checked}))} />
+            <span>Communicable à l\u2019intéressé</span>
+          </label>
+          <p class="small muted">
+            Une pièce non communicable existe et reste datée au dossier, mais son
+            contenu n\u2019est pas ouvert — cela protège l\u2019identité d\u2019un témoin.
+            Le contradictoire suppose que ce soit l\u2019exception.
+          </p>
+          <div><button class="btn">Verser</button></div>
+        </div>
+      </form>
+
+      ${d.statut !== 'clos' && html`
+        <div style="margin-top:32px">
+          <button class="btn light" onClick=${clore}>Clore le dossier</button>
+        </div>`}
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
