@@ -733,6 +733,7 @@ function Flanc({ p, apps, page }){
         ${item('', 'Tableau de bord')}
         ${item('compte', 'Mon compte')}
         ${item('demandes', 'Mes demandes')}
+        ${dispo('formations') && item('formations','Formations')}
         ${dispo('annuaire') && html`
           <div class="groupe">Encadrement</div>
           ${item('annuaire','Annuaire fédéral')}`}
@@ -1008,6 +1009,293 @@ function Annuaire({ p }){
     </div>`;
 }
 
+
+/* =====================================================================
+   5 bis. FORMATIONS
+   Le catalogue, le parcours, la leçon, le quiz. Les bonnes réponses
+   ne descendent jamais dans le navigateur : la correction se fait en base.
+   ===================================================================== */
+
+function Formations({ p }){
+  const [liste, setListe] = useState(null);
+  const [certifs, setCertifs] = useState([]);
+
+  useEffect(() => { (async () => {
+    const { data: fs } = await db.from('formations').select('*')
+      .eq('publiee', true).order('ordre');
+    const avec = await Promise.all((fs||[]).map(async f => {
+      const { data } = await db.rpc('avancement', { p_formation: f.id });
+      const a = Array.isArray(data) ? data[0] : data;
+      return { ...f, ...(a || {total:0, faites:0, pourcent:0}) };
+    }));
+    setListe(avec);
+    const { data: c } = await db.from('certifications_obtenues')
+      .select('*, certifications(nom, description)').eq('profil_id', p.id);
+    setCertifs(c || []);
+  })(); }, [p.id]);
+
+  if (!liste) return html`<div class="vide">Chargement…</div>`;
+
+  return html`
+    <div>
+      <div class="eyebrow">Formations</div>
+      <h1 style="margin:6px 0 8px">Se former</h1>
+      <p class="muted" style="max-width:56ch">
+        Chaque parcours achevé délivre une certification inscrite à votre
+        compte. Certains projets et groupes de travail l'exigeront.
+      </p>
+
+      ${certifs.length > 0 && html`
+        <div class="panneau" style="margin-top:32px">
+          <div class="tete"><h3 style="font-size:17px">Mes certifications</h3></div>
+          ${certifs.map(c => html`
+            <div class="ligne">
+              <div>
+                <div>${c.certifications?.nom || c.code}</div>
+                <div class="small muted">
+                  Délivrée le ${jour(c.obtenue_le)}
+                  ${c.expire_le ? ' · valable jusqu\u2019au ' + jour(c.expire_le) : ''}
+                </div>
+              </div>
+              <span class="mono muted">${c.numero}</span>
+            </div>`)}
+        </div>`}
+
+      <div class="tuiles" style="margin-top:32px">
+        ${liste.map(f => html`
+          <a class="tuile" href=${'#/espace/formation/'+f.id}>
+            <h3>${f.titre}</h3>
+            <p>${f.resume || ''}</p>
+            <div class="jauge" style="margin-top:14px">
+              <i style=${'width:'+(f.pourcent||0)+'%'}></i></div>
+            <div class="small muted" style="margin-top:8px">
+              ${f.faites}/${f.total} leçons
+              ${f.duree_min ? ' · ' + f.duree_min + ' min' : ''}
+              ${f.pourcent === 100 ? ' · achevé' : ''}
+            </div>
+          </a>`)}
+      </div>
+      ${liste.length === 0 && html`<div class="vide">Aucune formation publiée pour l\u2019instant.</div>`}
+    </div>`;
+}
+
+function Formation({ p, id }){
+  const [f, setF] = useState(null);
+  const [parcours, setParcours] = useState([]);
+  const [faites, setFaites] = useState({});
+  const [ouverte, setOuverte] = useState(null);   // leçon affichée
+
+  const charger = useCallback(async () => {
+    const { data: form } = await db.from('formations').select('*').eq('id', id).maybeSingle();
+    setF(form);
+    const { data: par } = await db.from('v_parcours').select('*')
+      .eq('formation_id', id).order('rang');
+    setParcours(par || []);
+    const { data: pr } = await db.from('progression').select('lecon_id,score')
+      .eq('profil_id', p.id);
+    setFaites(Object.fromEntries((pr||[]).map(x => [x.lecon_id, x.score])));
+  }, [id, p.id]);
+
+  useEffect(() => { charger(); }, [charger]);
+
+  if (!f) return html`<div class="vide">Chargement…</div>`;
+
+  const total = parcours.length;
+  const nbFaites = parcours.filter(l => l.lecon_id in faites).length;
+  const pct = total ? Math.round(nbFaites / total * 100) : 0;
+
+  // Une leçon est ouverte si la précédente est achevée.
+  const estOuverte = i => i === 0 || (parcours[i-1] && parcours[i-1].lecon_id in faites);
+
+  if (ouverte){
+    const i = parcours.findIndex(l => l.lecon_id === ouverte);
+    return html`<${Lecon} lecon=${parcours[i]} suivante=${parcours[i+1]}
+      dejaFaite=${ouverte in faites}
+      fermer=${() => { setOuverte(null); charger(); }}
+      allerSuivante=${() => { setOuverte(parcours[i+1]?.lecon_id || null); charger(); }} />`;
+  }
+
+  const modules = [];
+  parcours.forEach(l => {
+    let m = modules.find(x => x.id === l.module_id);
+    if (!m){ m = { id: l.module_id, titre: l.module_titre, lecons: [] }; modules.push(m); }
+    m.lecons.push(l);
+  });
+
+  const picto = { lecture:'Lecture', video:'Vidéo', document:'Document', quiz:'Quiz' };
+
+  return html`
+    <div>
+      <a class="small" href="#/espace/formations">← Toutes les formations</a>
+      <h1 style="margin:12px 0 8px">${f.titre}</h1>
+      <p class="muted" style="max-width:60ch">${f.description || f.resume || ''}</p>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="corps">
+          <div class="spread">
+            <span class="small">${nbFaites} leçon${nbFaites>1?'s':''} sur ${total}</span>
+            <span class="mono">${pct} %</span>
+          </div>
+          <div class="jauge" style="margin-top:10px"><i style=${'width:'+pct+'%'}></i></div>
+          ${pct === 100 && html`<div class="alerte ok" style="margin-top:16px">
+            Parcours achevé. Votre certification est inscrite à votre compte.</div>`}
+        </div>
+      </div>
+
+      ${modules.map(m => html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">${m.titre}</h3></div>
+          ${m.lecons.map(l => {
+            const i = parcours.findIndex(x => x.lecon_id === l.lecon_id);
+            const faite = l.lecon_id in faites;
+            const ok = estOuverte(i);
+            return html`
+              <div class="ligne">
+                <div>
+                  <div style=${ok ? '' : 'opacity:.5'}>${l.lecon_titre}</div>
+                  <div class="small muted">
+                    ${picto[l.type]}${l.duree_min ? ' · ' + l.duree_min + ' min' : ''}
+                    ${faite && faites[l.lecon_id] != null ? ' · ' + faites[l.lecon_id] + ' %' : ''}
+                  </div>
+                </div>
+                ${faite
+                  ? html`<div class="row"><span class="tag vert">Achevée</span>
+                      <button class="btn sm light" onClick=${()=>setOuverte(l.lecon_id)}>Revoir</button></div>`
+                  : ok
+                    ? html`<button class="btn sm" onClick=${()=>setOuverte(l.lecon_id)}>Commencer</button>`
+                    : html`<span class="tag">Verrouillée</span>`}
+              </div>`;
+          })}
+        </div>`)}
+    </div>`;
+}
+
+function Lecon({ lecon, suivante, dejaFaite, fermer, allerSuivante }){
+  const [detail, setDetail] = useState(null);
+  const [questions, setQuestions] = useState([]);
+  const [choix, setChoix] = useState({});      // question_id → Set d'id de réponses
+  const [resultat, setResultat] = useState(null);
+  const [msg, setMsg] = useState('');
+  const [envoi, setEnvoi] = useState(false);
+
+  useEffect(() => { (async () => {
+    const { data: l } = await db.from('lecons').select('*').eq('id', lecon.lecon_id).maybeSingle();
+    setDetail(l);
+    if (l && l.type === 'quiz'){
+      const { data: qs } = await db.from('questions').select('*')
+        .eq('lecon_id', l.id).order('ordre');
+      const avec = await Promise.all((qs||[]).map(async q => {
+        const { data: rs } = await db.from('v_choix').select('id,texte,ordre')
+          .eq('question_id', q.id).order('ordre');
+        return { ...q, choix: rs || [] };
+      }));
+      setQuestions(avec);
+    }
+  })(); }, [lecon.lecon_id]);
+
+  if (!detail) return html`<div class="vide">Chargement…</div>`;
+
+  function cocher(qid, rid){
+    setChoix(c => {
+      const s = new Set(c[qid] || []);
+      s.has(rid) ? s.delete(rid) : s.add(rid);
+      return { ...c, [qid]: s };
+    });
+  }
+
+  async function achever(){
+    setEnvoi(true); setMsg('');
+    const { data, error } = await db.rpc('terminer_lecon', { p_lecon: detail.id });
+    setEnvoi(false);
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    suivante ? allerSuivante() : fermer();
+  }
+
+  async function corriger(){
+    setEnvoi(true); setMsg('');
+    const tous = Object.values(choix).flatMap(s => [...s]);
+    const { data, error } = await db.rpc('valider_quiz',
+      { p_lecon: detail.id, p_choix: tous });
+    setEnvoi(false);
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setResultat(data);
+  }
+
+  return html`
+    <div>
+      <a class="small" href="#" onClick=${e=>{e.preventDefault();fermer()}}>← Retour au parcours</a>
+      <div class="eyebrow" style="margin-top:16px">${lecon.module_titre}</div>
+      <h1 style="margin:6px 0 24px">${detail.titre}</h1>
+
+      ${detail.type === 'lecture' && html`
+        <div class="panneau"><div class="corps"
+          style="white-space:pre-wrap;font-size:16px;max-width:62ch">${detail.contenu||''}</div></div>`}
+
+      ${detail.type === 'video' && html`
+        <div class="panneau"><div class="corps">
+          <p><a class="btn" href=${detail.url} target="_blank" rel="noopener">Ouvrir la vidéo ↗</a></p>
+          ${detail.contenu && html`<div style="white-space:pre-wrap;margin-top:16px">${detail.contenu}</div>`}
+        </div></div>`}
+
+      ${detail.type === 'document' && html`
+        <div class="panneau"><div class="corps">
+          <p><a class="btn" href=${detail.url} target="_blank" rel="noopener">Ouvrir le document ↗</a></p>
+          ${detail.contenu && html`<div style="white-space:pre-wrap;margin-top:16px">${detail.contenu}</div>`}
+        </div></div>`}
+
+      ${detail.type === 'quiz' && html`
+        <div>
+          ${resultat && html`
+            <div class=${'alerte ' + (resultat.reussi ? 'ok' : 'err')} style="margin-bottom:24px">
+              ${resultat.justes} bonne${resultat.justes>1?'s':''} réponse${resultat.justes>1?'s':''}
+              sur ${resultat.total} — ${resultat.score} %.
+              ${resultat.reussi
+                ? ' Quiz validé.'
+                : ' Il en faut ' + resultat.seuil + ' % pour valider. Reprenez vos réponses.'}
+            </div>`}
+
+          ${questions.map((q, n) => html`
+            <div class="panneau" style="margin-bottom:16px">
+              <div class="corps">
+                <div class="mono muted">Question ${n+1} sur ${questions.length}</div>
+                <div style="font-size:16px;margin:8px 0 16px">${q.enonce}</div>
+                ${q.choix.map(r => html`
+                  <label class="row" style="text-transform:none;letter-spacing:0;
+                      font-size:15px;color:var(--encre);padding:6px 0;margin:0;cursor:pointer">
+                    <input type="checkbox" style="width:auto"
+                      checked=${(choix[q.id]||new Set()).has(r.id)}
+                      onChange=${()=>cocher(q.id, r.id)} />
+                    <span>${r.texte}</span>
+                  </label>`)}
+                ${q.aide && html`<p class="small muted" style="margin:12px 0 0">${q.aide}</p>`}
+              </div>
+            </div>`)}
+          <p class="small muted">Une question peut appeler plusieurs réponses.</p>
+        </div>`}
+
+      ${msg && html`<div class="alerte err" style="margin-top:24px">${msg}</div>`}
+
+      <div class="row" style="margin-top:32px">
+        ${detail.type === 'quiz'
+          ? (resultat && resultat.reussi
+              ? (suivante
+                  ? html`<button class="btn" onClick=${allerSuivante}>Leçon suivante</button>`
+                  : html`<button class="btn" onClick=${fermer}>Terminer le parcours</button>`)
+              : html`<button class="btn" onClick=${corriger} disabled=${envoi}>
+                  ${envoi ? 'Correction…' : (resultat ? 'Corriger à nouveau' : 'Valider mes réponses')}</button>`)
+          : (dejaFaite
+              ? (suivante
+                  ? html`<button class="btn" onClick=${allerSuivante}>Leçon suivante</button>`
+                  : html`<button class="btn" onClick=${fermer}>Retour au parcours</button>`)
+              : html`<button class="btn" onClick=${achever} disabled=${envoi}>
+                  ${envoi ? 'Enregistrement…' : 'J\u2019ai terminé cette leçon'}</button>`)}
+        <button class="btn light" onClick=${fermer}>Revenir au parcours</button>
+      </div>
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
@@ -1015,12 +1303,25 @@ function Validation(){
   const [msg, setMsg] = useState('');
 
   const charger = useCallback(async () => {
+    // La table demandes pointe deux fois vers profils (profil_id et
+    // traite_par). On lit donc les deux séparément plutôt que de laisser
+    // PostgREST deviner de quel lien il s'agit.
     const [a, d] = await Promise.all([
       db.from('v_annuaire').select('*').eq('statut','en_attente').order('cree_le'),
-      db.from('demandes').select('*, profils(prenom,nom,matricule)')
-        .in('statut',['ouverte','en_cours']).order('cree_le')
+      db.from('demandes').select('*').in('statut',['ouverte','en_cours']).order('cree_le')
     ]);
-    setAttente(a.data || []); setDemandes(d.data || []);
+    if (d.error) setMsg('Lecture des demandes impossible : ' + d.error.message);
+    const dem = d.data || [];
+
+    let auteurs = {};
+    if (dem.length){
+      const ids = [...new Set(dem.map(x => x.profil_id))];
+      const { data: ps } = await db.from('v_annuaire')
+        .select('id,prenom,nom,matricule,email,fonction_nom,territoire_nom').in('id', ids);
+      auteurs = Object.fromEntries((ps||[]).map(x => [x.id, x]));
+    }
+    setAttente(a.data || []);
+    setDemandes(dem.map(x => ({ ...x, auteur: auteurs[x.profil_id] || null })));
   }, []);
   useEffect(() => { charger(); }, [charger]);
 
@@ -1092,8 +1393,10 @@ function Validation(){
               <div>
                 <div>${d.objet}</div>
                 <div class="small muted">
-                  ${d.profils ? nomComplet(d.profils) : '—'}
-                  <span class="mono">${d.profils?.matricule||''}</span> · ${jour(d.cree_le)}
+                  ${d.auteur ? nomComplet(d.auteur) : 'Membre inconnu'}
+                  <span class="mono">${d.auteur?.matricule||''}</span>
+                  ${d.auteur?.territoire_nom ? ' · ' + d.auteur.territoire_nom : ''}
+                  · ${jour(d.cree_le)}
                 </div>
                 ${d.message && html`<div class="small" style="margin-top:6px;max-width:56ch">
                   « ${d.message} »</div>`}
@@ -1292,6 +1595,16 @@ function Espace({ session, sous }){
       <div class="alerte">Ce module arrive dans une prochaine mise en ligne.</div></div>`;
 
   let vue;
+  if (sous.startsWith('formation/')){
+    const idF = sous.slice('formation/'.length);
+    return html`
+      <div class="app">
+        <${Flanc} p=${p} apps=${apps} page="formations" />
+        <main class="contenu">
+          ${acces('formations') ? html`<${Formation} p=${p} id=${idF} />` : refus}
+        </main>
+      </div>`;
+  }
   switch (sous){
     case '':           vue = html`<${TableauDeBord} p=${p} apps=${apps} chemin=${chemin} demandes=${demandes} />`; break;
     case 'compte':     vue = html`<${MonCompte} p=${p} recharger=${charger} />`; break;
@@ -1300,7 +1613,7 @@ function Espace({ session, sous }){
     case 'validation': vue = admin ? html`<${Validation} />` : refus; break;
     case 'reseau':     vue = admin ? html`<${ReseauAdmin} />` : refus; break;
     case 'vitrine':    vue = admin ? html`<${VitrineAdmin} />` : refus; break;
-    case 'formations': vue = acces('formations') ? bientot('Formations') : refus; break;
+    case 'formations': vue = acces('formations') ? html`<${Formations} p=${p} />` : refus; break;
     case 'groupes':    vue = acces('groupes')    ? bientot('Groupes de travail') : refus; break;
     case 'messagerie': vue = acces('messagerie') ? bientot('Messagerie interne') : refus; break;
     case 'notes_frais':vue = acces('notes_frais')? bientot('Notes de frais') : refus; break;
