@@ -170,14 +170,14 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
 .entete{border-bottom:1px solid var(--filet);background:var(--blanc);
   position:sticky;top:0;z-index:50}
 .entete .wrap{display:flex;align-items:center;justify-content:space-between;
-  gap:24px;height:84px}
+  gap:24px;height:112px}
 /* Zone de protection du logo : la largeur du E de FFCE tout autour. */
-.logo{display:flex;align-items:center;gap:12px;color:var(--bleu);padding:8px}
+.logo{display:flex;align-items:center;gap:12px;color:var(--bleu);padding:10px 0}
 .logo:hover{text-decoration:none}
-.logo img{height:52px;width:auto;display:block}
-.flanc .logo img{height:40px}
-.pied .logo img{height:48px}
-@media(max-width:600px){.logo img{height:42px}}
+.logo img{height:74px;width:auto;display:block}
+.flanc .logo img{height:56px}
+.pied .logo img{height:64px}
+@media(max-width:600px){.logo img{height:52px}}
 .logo .sigle{font-family:var(--titre);font-size:27px;font-weight:900;
   letter-spacing:.01em;color:#000;line-height:1}
 .logo .baseline{font-size:10px;letter-spacing:.06em;text-transform:uppercase;
@@ -738,8 +738,9 @@ function Inscription(){
         <h1 style="margin-bottom:16px">Votre demande est enregistrée</h1>
         <div class="alerte ok">
           La Direction générale vérifie votre inscription. Vous recevrez un
-          message dès l'ouverture de vos accès. En attendant, vous pouvez déjà
-          vous connecter : votre espace affichera l'état de votre dossier.
+          message dès l'ouverture de vos accès. En attendant, connectez-vous et
+          complétez votre dossier d'adhésion dans Mon compte : c'est ce qui
+          permettra de vous proposer des missions qui vous correspondent.
         </div>
         <p style="margin-top:24px"><a class="btn" href="#/espace">Aller à mon espace</a></p>
       </div>
@@ -831,6 +832,7 @@ function Flanc({ p, apps, page }){
       </div>
       <nav>
         ${item('', 'Tableau de bord')}
+        ${dispo('engagement') && item('engagement','Mon engagement')}
         ${item('compte', 'Mon compte')}
         ${item('demandes', 'Mes demandes')}
         ${item('referentiel', 'Comprendre mes droits')}
@@ -910,6 +912,8 @@ function TableauDeBord({ p, apps, chemin, demandes }){
 
       <${MonDossier} p=${p} entier=${false} />
 
+      <${CurseurEngagement} compact=${true} />
+
       <${CeQuiAttend} />
 
       <${CarteFederale} p=${p} chemin=${chemin} />
@@ -959,6 +963,7 @@ function TableauDeBord({ p, apps, chemin, demandes }){
 function MonCompte({ p, recharger }){
   const [f, setF] = useState({
     prenom:p.prenom, nom:p.nom, telephone:p.telephone||'',
+    pronoms:p.pronoms||'', langues:p.langues||'', devise:p.devise||'',
     bio:p.bio||'', visible_public:!!p.visible_public
   });
   const [msg, setMsg] = useState('');
@@ -991,6 +996,24 @@ function MonCompte({ p, recharger }){
           <div class="field">
             <label>Téléphone</label>
             <input value=${f.telephone} onInput=${e=>maj('telephone',e.target.value)} />
+          </div>
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:150px;margin:0">
+              <label>Pronoms</label>
+              <input value=${f.pronoms} placeholder="elle, il, iel…"
+                onInput=${e=>maj('pronoms',e.target.value)} />
+            </div>
+            <div class="field" style="flex:1;min-width:150px;margin:0">
+              <label>Langues parlées</label>
+              <input value=${f.langues} placeholder="français, arabe, LSF…"
+                onInput=${e=>maj('langues',e.target.value)} />
+            </div>
+          </div>
+          <div class="field">
+            <label>Une phrase qui vous ressemble</label>
+            <input value=${f.devise} maxlength="120"
+              onInput=${e=>maj('devise',e.target.value)}
+              placeholder="Elle apparaîtra en tête de votre fiche." />
           </div>
           <div class="field">
             <label>Présentation</label>
@@ -1028,6 +1051,8 @@ function MonCompte({ p, recharger }){
           de fonction ou d'échelon, déposez une demande.
         </div>
       </div>
+
+      <${DossierAdhesion} />
 
       <${MonRib} />
 
@@ -4680,6 +4705,463 @@ function Matrice({ setMsg }){
     </div>`;
 }
 
+
+/* =====================================================================
+   MON ENGAGEMENT
+   La première chose qu'on voit. Ce que je donne ce mois-ci, ce qu'on
+   attend de moi, et ce que je peux rejoindre.
+   ===================================================================== */
+
+const MOIS = ['janvier','février','mars','avril','mai','juin','juillet',
+              'août','septembre','octobre','novembre','décembre'];
+const nomMois = d => { const x = new Date(d); return MOIS[x.getMonth()] + ' ' + x.getFullYear(); };
+
+/* Le curseur d'engagement, en tête du tableau de bord. */
+function CurseurEngagement({ compact }){
+  const [e, setE] = useState(null);
+  const [h, setH] = useState(0);
+  const [enregistre, setEnregistre] = useState(false);
+
+  const charger = useCallback(async () => {
+    const { data } = await db.rpc('mon_engagement');
+    setE(data); setH(Number(data?.heures_visees || 0));
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function poser(valeur){
+    setH(valeur);
+    await db.rpc('regler_engagement',
+      { p_mois: null, p_visees: valeur, p_realisees: null, p_commentaire: null });
+    setEnregistre(true);
+    setTimeout(() => setEnregistre(false), 2000);
+    charger();
+  }
+
+  if (!e) return null;
+  const fait = Number(e.heures_realisees || 0);
+  const pct = h > 0 ? Math.min(Math.round(fait / h * 100), 100) : 0;
+
+  return html`
+    <div class="panneau">
+      <div class="tete">
+        <div class="row" style="gap:8px">
+          <h3 style="font-size:17px">Mon engagement — ${nomMois(e.mois)}</h3>
+          <${Info} texte="Vous dites ce que vous pouvez donner ce mois-ci. Cela sert à s'organiser collectivement, jamais à vous être reproché : un bénévole n'est pas un salarié." />
+        </div>
+        ${enregistre && html`<span class="tag vert">Enregistré</span>`}
+      </div>
+      <div class="corps">
+        <div class="spread" style="align-items:baseline">
+          <span class="small muted">Je peux donner</span>
+          <span style="font-family:var(--titre);font-weight:900;font-size:34px;
+                       color:var(--bordeaux);line-height:1">
+            ${h}<span style="font-size:16px;color:var(--gris)"> h</span></span>
+        </div>
+        <input type="range" min="0" max="40" step="1" value=${h}
+          onInput=${ev => setH(Number(ev.target.value))}
+          onChange=${ev => poser(Number(ev.target.value))}
+          style="width:100%;margin-top:12px;accent-color:var(--bordeaux);padding:0" />
+        <div class="spread small muted" style="margin-top:2px">
+          <span>0 h</span><span>20 h</span><span>40 h et plus</span>
+        </div>
+
+        ${h > 0 && html`
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--filet)">
+            <div class="spread">
+              <span class="small muted">Heures déjà réalisées</span>
+              <span class="mono">${fait} / ${h} h</span>
+            </div>
+            <div class="jauge" style="margin-top:8px">
+              <i style=${'width:'+pct+'%;background:var(--bleu)'}></i></div>
+            <div class="row" style="margin-top:12px;gap:8px">
+              ${[1,2,3,5].map(n => html`
+                <button class="btn sm light" onClick=${async ()=>{
+                  await db.rpc('regler_engagement', { p_mois:null, p_visees:h,
+                    p_realisees: fait + n, p_commentaire:null });
+                  charger();
+                }}>+${n} h</button>`)}
+              ${fait > 0 && html`<button class="btn sm light" onClick=${async ()=>{
+                await db.rpc('regler_engagement', { p_mois:null, p_visees:h,
+                  p_realisees: 0, p_commentaire:null });
+                charger();
+              }}>Remettre à zéro</button>`}
+            </div>
+          </div>`}
+
+        ${!compact && (e.historique||[]).length > 1 && html`
+          <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--filet)">
+            <div class="eyebrow" style="margin-bottom:10px">Douze derniers mois</div>
+            <div style="display:flex;gap:4px;align-items:flex-end;height:56px">
+              ${[...e.historique].reverse().map(x => {
+                const v = Number(x.visees||0), r = Number(x.realisees||0);
+                const max = Math.max(v, r, 1);
+                return html`
+                  <div style="flex:1;display:flex;flex-direction:column;
+                              justify-content:flex-end;height:100%" title=${nomMois(x.mois)}>
+                    <div style=${'height:'+Math.round(r/max*100)+'%;background:var(--bleu);min-height:2px'}></div>
+                    <div style=${'height:'+Math.round(Math.max(v-r,0)/max*100)+'%;background:var(--filet)'}></div>
+                  </div>`;
+              })}
+            </div>
+            <div class="small muted" style="margin-top:6px">
+              En bleu, les heures réalisées ; en gris, ce qui restait annoncé.
+            </div>
+          </div>`}
+      </div>
+    </div>`;
+}
+
+function Engagement({ p }){
+  const [e, setE] = useState(null);
+  const [missions, setMissions] = useState([]);
+  const [creation, setCreation] = useState(false);
+  const [f, setF] = useState({titre:'',description:'',lieu:'',debut:'',fin:'',
+                              heures:'',places:'1',territoire:'',certification:''});
+  const [terr, setTerr] = useState([]);
+  const [certifs, setCertifs] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const peutProposer = p.echelon >= 3 || p.niveau >= 50;
+
+  const charger = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      db.rpc('mon_engagement'), db.rpc('missions_ouvertes')
+    ]);
+    setE(a.data); setMissions(b.data || []);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  useEffect(() => { (async () => {
+    if (!peutProposer) return;
+    const [t, c] = await Promise.all([
+      db.from('territoires').select('id,nom,echelle').order('echelle').order('nom'),
+      db.from('certifications').select('code,nom').eq('actif',true).order('nom')
+    ]);
+    setTerr(t.data||[]); setCertifs(c.data||[]);
+  })(); }, [peutProposer]);
+
+  async function postuler(m){
+    const message = prompt('Un mot pour le porteur de la mission (facultatif)') || '';
+    const { data, error } = await db.rpc('postuler_mission',
+      { p_mission: m.id, p_message: message });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Candidature transmise.'); charger();
+  }
+
+  async function proposer(ev){
+    ev.preventDefault();
+    const { data, error } = await db.rpc('creer_mission', {
+      p_titre: f.titre, p_description: f.description || null,
+      p_territoire: f.territoire || null, p_groupe: null,
+      p_certification: f.certification || null, p_lieu: f.lieu || null,
+      p_debut: f.debut || null, p_fin: f.fin || null,
+      p_heures: f.heures ? Number(f.heures) : null,
+      p_places: Number(f.places||1)
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({titre:'',description:'',lieu:'',debut:'',fin:'',heures:'',places:'1',
+          territoire:'',certification:''});
+    setCreation(false); setMsg('Mission publiée.'); charger();
+  }
+
+  if (!e) return html`<div class="vide">Chargement…</div>`;
+  const taches = e.taches || [];
+  const retards = taches.filter(t => t.retard);
+
+  return html`
+    <div>
+      <div class="eyebrow">Mon engagement</div>
+      <h1 style="margin:6px 0 8px">Ce que je donne, ce qui m\u2019attend</h1>
+      <p class="muted" style="max-width:58ch">
+        Vous fixez vous-même ce que vous pouvez donner. Rien ici n\u2019est un
+        objectif imposé : c\u2019est un repère, pour vous et pour celles et ceux
+        qui organisent les actions.
+      </p>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div style="margin-top:24px"><${CurseurEngagement} /></div>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete">
+          <h3 style="font-size:17px">Mes tâches</h3>
+          <div class="row">
+            ${retards.length > 0 && html`<span class="tag rouge">${retards.length} en retard</span>`}
+            <span class="tag">${taches.length}</span>
+          </div>
+        </div>
+        ${taches.length === 0
+          ? html`<div class="vide">Aucune tâche ne vous est assignée.</div>`
+          : taches.map(t => html`
+            <div class="ligne">
+              <div style="flex:1;min-width:220px">
+                <div>${t.titre}</div>
+                <div class="small muted">${t.groupe}
+                  ${t.echeance ? ' · ' + jour(t.echeance) : ' · sans échéance'}</div>
+              </div>
+              <div class="row">
+                ${t.retard && html`<span class="tag rouge">En retard</span>`}
+                ${t.priorite === 'haute' && html`<span class="tag rouge">Prioritaire</span>`}
+                <a class="btn sm light" href=${'#/espace/groupe/'+t.groupe_id}>Ouvrir</a>
+              </div>
+            </div>`)}
+      </div>
+
+      ${(e.formations_en_cours||[]).length > 0 && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Formations commencées</h3></div>
+          ${e.formations_en_cours.map(x => html`
+            <div class="ligne">
+              <div style="flex:1;min-width:200px">
+                <div>${x.titre}</div>
+                <div class="jauge" style="margin-top:8px">
+                  <i style=${'width:'+x.pourcent+'%'}></i></div>
+              </div>
+              <div class="row">
+                <span class="mono">${x.pourcent} %</span>
+                <a class="btn sm light" href=${'#/espace/formation/'+x.id}>Reprendre</a>
+              </div>
+            </div>`)}
+        </div>`}
+
+      ${(e.missions||[]).length > 0 && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Mes missions</h3></div>
+          ${e.missions.map(m => html`
+            <div class="ligne">
+              <div><div>${m.titre}</div>
+                <div class="small muted">${m.lieu||''}
+                  ${m.debut ? ' · ' + jour(m.debut) : ''}</div></div>
+              <span class=${'tag '+(m.statut==='retenu'?'vert':'bleu')}>
+                ${m.statut === 'retenu' ? 'Retenu' : 'Candidature déposée'}</span>
+            </div>`)}
+        </div>`}
+
+      <div class="spread" style="margin-top:40px">
+        <div>
+          <h2 style="font-size:23px">Missions ouvertes</h2>
+          <p class="small muted" style="margin:4px 0 0">
+            Des actions auxquelles vous pouvez vous porter volontaire.</p>
+        </div>
+        ${peutProposer && html`<button class="btn" onClick=${()=>setCreation(c=>!c)}>
+          ${creation ? 'Annuler' : 'Proposer une mission'}</button>`}
+      </div>
+
+      ${creation && html`
+        <form onSubmit=${proposer} class="panneau" style="margin-top:20px">
+          <div class="corps stack">
+            <div class="field"><label>Intitulé</label>
+              <input required value=${f.titre} onInput=${ev=>setF(o=>({...o,titre:ev.target.value}))}
+                placeholder="Animer un atelier citoyenneté au collège Jean-Moulin" /></div>
+            <div class="field"><label>Description</label>
+              <textarea value=${f.description}
+                onInput=${ev=>setF(o=>({...o,description:ev.target.value}))} /></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:160px;margin:0"><label>Lieu</label>
+                <input value=${f.lieu} onInput=${ev=>setF(o=>({...o,lieu:ev.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:140px;margin:0"><label>Début</label>
+                <input type="date" value=${f.debut}
+                  onInput=${ev=>setF(o=>({...o,debut:ev.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:140px;margin:0"><label>Fin</label>
+                <input type="date" value=${f.fin}
+                  onInput=${ev=>setF(o=>({...o,fin:ev.target.value}))} /></div>
+            </div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:120px;margin:0"><label>Heures estimées</label>
+                <input type="number" step="0.5" min="0" value=${f.heures}
+                  onInput=${ev=>setF(o=>({...o,heures:ev.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:100px;margin:0"><label>Places</label>
+                <input type="number" min="1" value=${f.places}
+                  onInput=${ev=>setF(o=>({...o,places:ev.target.value}))} /></div>
+            </div>
+            <div class="field"><label>Territoire</label>
+              <select value=${f.territoire} onChange=${ev=>setF(o=>({...o,territoire:ev.target.value}))}>
+                <option value="">Toute la France</option>
+                ${terr.map(t => html`<option value=${t.id}>${t.nom} (${t.echelle})</option>`)}
+              </select></div>
+            <div class="field"><label>Certification exigée</label>
+              <select value=${f.certification}
+                onChange=${ev=>setF(o=>({...o,certification:ev.target.value}))}>
+                <option value="">Aucune</option>
+                ${certifs.map(c => html`<option value=${c.code}>${c.nom}</option>`)}
+              </select></div>
+            <div><button class="btn">Publier la mission</button></div>
+          </div>
+        </form>`}
+
+      <div class="tuiles" style="margin-top:20px">
+        ${missions.length === 0
+          ? html`<div class="tuile"><div class="vide">Aucune mission ouverte pour l\u2019instant.</div></div>`
+          : missions.map(m => html`
+            <div class="tuile" style="min-height:auto">
+              <h3>${m.titre}</h3>
+              <p>${m.description || ''}</p>
+              <div class="row" style="margin-top:12px;gap:6px">
+                ${m.lieu && html`<span class="tag">${m.lieu}</span>`}
+                ${m.debut && html`<span class="tag">${jour(m.debut)}</span>`}
+                ${m.heures_estimees && html`<span class="tag">${m.heures_estimees} h</span>`}
+                <span class="tag">${m.retenus}/${m.places} place${m.places>1?'s':''}</span>
+                ${m.certification_nom && html`<span class="tag or">${m.certification_nom}</span>`}
+              </div>
+              <div style="margin-top:14px">
+                ${m.ma_candidature
+                  ? html`<span class=${'tag '+(m.ma_candidature==='retenu'?'vert':'bleu')}>
+                      ${m.ma_candidature === 'retenu' ? 'Vous êtes retenu' :
+                        m.ma_candidature === 'candidat' ? 'Candidature déposée' : m.ma_candidature}
+                    </span>`
+                  : m.obstacle
+                    ? html`<span class="small muted">${m.obstacle}</span>`
+                    : html`<button class="btn sm" onClick=${()=>postuler(m)}>
+                        Je me porte volontaire</button>`}
+              </div>
+              ${m.porteur && html`<div class="small muted" style="margin-top:10px">
+                Proposée par ${m.porteur}</div>`}
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- Le dossier d'adhésion, côté membre ------------------------------- */
+function DossierAdhesion(){
+  const [a, setA] = useState(null);
+  const [f, setF] = useState({});
+  const [ouvert, setOuvert] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const { data } = await db.rpc('mon_adhesion');
+    setA(data || {}); setF(data || {});
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+  if (!a) return null;
+
+  const maj = (k,v) => setF(o => ({...o, [k]: v}));
+  const rempli = Object.keys(a).length > 0;
+
+  async function enregistrer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('enregistrer_adhesion', {
+      d: { ...f, accepte_statuts: true, accepte_rgpd: true }
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setOuvert(false); setMsg('Dossier enregistré.'); charger();
+  }
+
+  return html`
+    <div class="panneau" style="margin-top:24px">
+      <div class="tete">
+        <div class="row" style="gap:8px">
+          <h3 style="font-size:17px">Mon dossier d\u2019adhésion</h3>
+          <${Info} texte="Ces informations sont conservées à part de l'annuaire et ne sont lisibles que par les personnes chargées de la validation des adhésions." />
+        </div>
+        <button class="btn sm light" onClick=${()=>setOuvert(o=>!o)}>
+          ${ouvert ? 'Annuler' : (rempli ? 'Modifier' : 'Compléter')}</button>
+      </div>
+      ${msg && html`<div class="corps"><div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}>
+        ${msg}</div></div>`}
+      ${!ouvert && html`
+        <div class="corps small muted">
+          ${rempli
+            ? 'Dossier complété' + (a.maj_le ? ' — mis à jour le ' + jour(a.maj_le) : '') + '.'
+            : 'Votre dossier est incomplet. Le compléter aide la fédération à vous proposer des missions qui vous correspondent.'}
+        </div>`}
+      ${ouvert && html`
+        <form onSubmit=${enregistrer} class="corps stack">
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:160px;margin:0"><label>Date de naissance</label>
+              <input type="date" value=${f.date_naissance||''}
+                onInput=${e=>maj('date_naissance', e.target.value)} /></div>
+            <div class="field" style="flex:1;min-width:160px;margin:0"><label>Pronoms</label>
+              <input value=${f.pronoms||''} placeholder="elle, il, iel…"
+                onInput=${e=>maj('pronoms', e.target.value)} /></div>
+          </div>
+          <div class="field"><label>Adresse</label>
+            <input value=${f.adresse||''} onInput=${e=>maj('adresse', e.target.value)} /></div>
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:120px;margin:0"><label>Code postal</label>
+              <input value=${f.code_postal||''} onInput=${e=>maj('code_postal', e.target.value)} /></div>
+            <div class="field" style="flex:2;min-width:160px;margin:0"><label>Ville</label>
+              <input value=${f.ville||''} onInput=${e=>maj('ville', e.target.value)} /></div>
+          </div>
+          <div class="field"><label>Situation</label>
+            <select value=${f.situation||''} onChange=${e=>maj('situation', e.target.value)}>
+              <option value="">Choisir…</option>
+              ${['Lycéen·ne','Étudiant·e','En emploi','En recherche d\u2019emploi',
+                 'En service civique','Retraité·e','Autre'].map(x =>
+                html`<option value=${x}>${x}</option>`)}
+            </select></div>
+          <div class="field"><label>Profession ou formation</label>
+            <input value=${f.profession||''} onInput=${e=>maj('profession', e.target.value)} /></div>
+          <div class="field"><label>Compétences et savoir-faire</label>
+            <textarea value=${f.competences||''} onInput=${e=>maj('competences', e.target.value)}
+              placeholder="Animation, graphisme, droit, langues, comptabilité…" /></div>
+          <div class="field"><label>Disponibilités habituelles</label>
+            <input value=${f.disponibilites||''} onInput=${e=>maj('disponibilites', e.target.value)}
+              placeholder="Soirs de semaine, samedis, vacances scolaires…" /></div>
+          <div class="field"><label>Ce qui vous amène à la FFCE</label>
+            <textarea value=${f.motivation||''} onInput=${e=>maj('motivation', e.target.value)} /></div>
+          <div class="field"><label>Comment avez-vous connu la fédération ?</label>
+            <input value=${f.origine||''} onInput=${e=>maj('origine', e.target.value)} /></div>
+          <label class="row" style="text-transform:none;letter-spacing:0;font-size:14px;
+              color:var(--nuit);margin:0;cursor:pointer">
+            <input type="checkbox" style="width:auto" checked=${!!f.accepte_image}
+              onChange=${e=>maj('accepte_image', e.target.checked)} />
+            <span>J\u2019autorise la fédération à utiliser mon image sur ses supports</span>
+          </label>
+          <p class="small muted">
+            En enregistrant, vous confirmez adhérer aux statuts et avoir pris
+            connaissance de la <a href="#/confidentialite">politique de confidentialité</a>.
+          </p>
+          <div><button class="btn">Enregistrer</button></div>
+        </form>`}
+    </div>`;
+}
+
+/* --- Le dossier d'adhésion, vu par la validation ----------------------
+   Replié par défaut : on ne consulte pas des données personnelles par
+   inadvertance, on les ouvre parce qu'on en a besoin.
+   --------------------------------------------------------------------- */
+function ApercuAdhesion({ id }){
+  const [d, setD] = useState(null);
+  const [ouvert, setOuvert] = useState(false);
+
+  async function ouvrir(){
+    setOuvert(true);
+    const { data } = await db.from('dossier_adhesion').select('*').eq('profil_id', id).maybeSingle();
+    setD(data || {});
+  }
+  if (!ouvert) return html`
+    <button class="btn sm light" style="margin-top:8px;border:0;background:transparent;
+      padding:0;font-size:12.5px;color:var(--action)"
+      onClick=${ouvrir}>Voir le dossier d\u2019adhésion</button>`;
+  if (!d) return html`<div class="small muted" style="margin-top:8px">Chargement…</div>`;
+  if (Object.keys(d).length === 0) return html`
+    <div class="small muted" style="margin-top:8px">Dossier non complété par le membre.</div>`;
+
+  const ligne = (l, v) => v ? html`
+    <div style="display:flex;gap:8px;padding:3px 0">
+      <span class="small muted" style="min-width:140px">${l}</span>
+      <span class="small">${v}</span>
+    </div>` : null;
+
+  return html`
+    <div style="margin-top:10px;padding:12px;background:var(--papier);
+         border:1px solid var(--filet);border-radius:2px">
+      ${ligne('Naissance', d.date_naissance ? jour(d.date_naissance) : null)}
+      ${ligne('Adresse', [d.adresse, d.code_postal, d.ville].filter(Boolean).join(', '))}
+      ${ligne('Situation', d.situation)}
+      ${ligne('Profession', d.profession)}
+      ${ligne('Compétences', d.competences)}
+      ${ligne('Disponibilités', d.disponibilites)}
+      ${ligne('Motivation', d.motivation)}
+      ${ligne('Nous a connus par', d.origine)}
+      ${ligne('Droit à l\u2019image', d.accepte_image ? 'Accordé' : 'Refusé')}
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
@@ -4744,6 +5226,30 @@ function Validation(){
     charger();
   }
 
+  // Export du registre des adhésions. Réservé au droit membres.exporter,
+  // et tracé comme toute sortie massive de données personnelles.
+  async function exporterAdhesions(){
+    const { data, error } = await db.rpc('registre_adhesions');
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data || data.length === 0)
+      return setMsg('Erreur : accès refusé ou registre vide.');
+    const cols = Object.keys(data[0]);
+    const ech = v => {
+      if (v === null || v === undefined) return '';
+      const t = String(v).replace(/"/g, '""');
+      return /[";\n]/.test(t) ? '"' + t + '"' : t;
+    };
+    const csv = '\ufeff' + cols.join(';') + '\n' +
+      data.map(l => cols.map(c => ech(l[c])).join(';')).join('\n');
+    const nom = 'FFCE-registre-adhesions-' + new Date().toISOString().slice(0,10) + '.csv';
+    const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+    const a = document.createElement('a');
+    a.href = url; a.download = nom; a.click();
+    URL.revokeObjectURL(url);
+    await db.rpc('tracer_export', { p_objet: nom, p_lignes: data.length });
+    setMsg(data.length + ' adhésion(s) extraites. Déposez le fichier sur le Drive.');
+  }
+
   async function ouvrirDossier(sg){
     const cible = prompt(
       'Identifiant du membre mis en cause (copiez-le depuis l\u2019annuaire), ' +
@@ -4795,8 +5301,15 @@ function Validation(){
 
   return html`
     <div>
-      <div class="eyebrow">Direction générale</div>
-      <h1 style="margin:6px 0 32px">Vérifications</h1>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Direction générale</div>
+          <h1 style="margin:6px 0 0">Vérifications</h1>
+        </div>
+        <button class="btn light" onClick=${exporterAdhesions}>
+          Extraire le registre des adhésions</button>
+      </div>
+      <div style="height:32px"></div>
       ${msg && html`<div class="alerte ok" style="margin-bottom:24px">${msg}</div>`}
 
       ${alertes.length > 0 && html`
@@ -4874,11 +5387,12 @@ function Validation(){
         ${attente.length === 0
           ? html`<div class="vide">Aucune inscription en attente.</div>`
           : attente.map(m => html`
-            <div class="ligne">
-              <div>
+            <div class="ligne" style="align-items:flex-start">
+              <div style="flex:1;min-width:240px">
                 <div>${nomComplet(m)} <span class="mono muted">${m.matricule}</span></div>
                 <div class="small muted">${m.email} · ${m.territoire_nom || 'sans territoire'}
                   · inscrit le ${jour(m.cree_le)}</div>
+                <${ApercuAdhesion} id=${m.id} />
               </div>
               <div class="row">
                 <button class="btn sm" onClick=${()=>validerMembre(m.id,true)}>Activer</button>
@@ -5132,6 +5646,7 @@ function Espace({ session, sous }){
     case 'compte':     vue = html`<${MonCompte} p=${p} recharger=${charger} />`; break;
     case 'mon-dossier':vue = html`<${MonDossier} p=${p} entier=${true} />`; break;
     case 'referentiel':vue = html`<${Referentiel} />`; break;
+    case 'engagement': vue = acces('engagement') ? html`<${Engagement} p=${p} />` : refus; break;
     case 'discipline': vue = acces('discipline') ? html`<${Discipline} p=${p} />` : refus; break;
     case 'demandes':   vue = html`<${MesDemandes} p=${p} apps=${apps} demandes=${demandes} recharger=${charger} />`; break;
     case 'annuaire':   vue = acces('annuaire') ? html`<${Annuaire} p=${p} />` : refus; break;
