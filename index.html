@@ -410,7 +410,8 @@ function Logo({ href = '#/', baseline = true, clair = false }){
 function EntetePublique({ route, session }){
   const liens = [
     ['/', 'Accueil'], ['/association','La fédération'], ['/actions','Nos actions'],
-    ['/reseau','Le réseau'], ['/rejoindre','Nous rejoindre'], ['/contact','Contact']
+    ['/reseau','Le réseau'], ['/actualites','Actualités'],
+    ['/rejoindre','Nous rejoindre'], ['/contact','Contact']
   ];
   return html`
     <header class="entete">
@@ -448,8 +449,13 @@ function Pied({ txt }){
           </div>
           <div>
             <div class="eyebrow" style="margin-bottom:8px">Pratique</div>
+            <a href="#/actualites">Actualités</a>
             <a href="#/rejoindre">Nous rejoindre</a>
             <a href="#/contact">Contact</a>
+            ${txt.reseaux_instagram && html`
+              <a href=${txt.reseaux_instagram} target="_blank" rel="noopener">Instagram ↗</a>`}
+            ${txt.reseaux_linkedin && html`
+              <a href=${txt.reseaux_linkedin} target="_blank" rel="noopener">LinkedIn ↗</a>`}
             <a href="#/espace">Espace membre</a>
             <a href="#/mentions">Mentions légales</a>
             <a href="#/confidentialite">Confidentialité</a>
@@ -457,6 +463,96 @@ function Pied({ txt }){
         </div>
       </div>
     </footer>`;
+}
+
+/* Un jeu de blocs administrables, pour n'importe quelle page. */
+function Blocs({ page }){
+  const [b, setB] = useState([]);
+  useEffect(() => {
+    db.rpc('vitrine_blocs', { p_page: page }).then(({data}) => setB(data||[]));
+  }, [page]);
+  if (b.length === 0) return null;
+  return html`
+    <div class="cartes">
+      ${b.map(x => html`
+        <div>
+          ${x.image && html`<img src=${urlPublique(x.image)} alt=""
+            style="width:100%;height:150px;object-fit:cover;margin-bottom:16px;
+                   border:1px solid var(--filet)" />`}
+          <h3>${x.titre}</h3>
+          <p>${x.contenu||''}</p>
+          ${x.lien && html`<p style="margin:12px 0 0">
+            <a href=${x.lien}>${x.lien_texte || 'En savoir plus'} →</a></p>`}
+        </div>`)}
+    </div>`;
+}
+
+/* Les actualités, sur l'accueil et sur leur page. */
+function Actualites({ limite = 3, titre = true }){
+  const [a, setA] = useState([]);
+  useEffect(() => {
+    db.rpc('actualites', { p_limite: limite }).then(({data}) => setA(data||[]));
+  }, [limite]);
+  if (a.length === 0) return null;
+  return html`
+    <div>
+      ${titre && html`<div class="spread" style="margin-bottom:24px">
+        <h2>Actualités</h2>
+        <a href="#/actualites">Toutes les actualités →</a>
+      </div>`}
+      <div class="cartes" style="margin-top:0">
+        ${a.map(x => html`
+          <div>
+            ${x.image && html`<img src=${urlPublique(x.image)} alt=""
+              style="width:100%;height:170px;object-fit:cover;margin-bottom:16px;
+                     border:1px solid var(--filet)" />`}
+            <div class="eyebrow" style="margin-bottom:8px">
+              ${x.categorie}${x.publie_le ? ' · ' + jour(x.publie_le) : ''}</div>
+            <h3><a href=${'#/actualite/'+x.slug}>${x.titre}</a></h3>
+            <p>${x.chapo||''}</p>
+          </div>`)}
+      </div>
+    </div>`;
+}
+
+function PageActualites(){
+  return html`
+    <section class="bloc blanc">
+      <div class="wrap">
+        <div class="eyebrow">Actualités</div>
+        <h1 style="margin:8px 0 32px">Ce que nous faisons, au fil des jours</h1>
+        <${Actualites} limite=${30} titre=${false} />
+      </div>
+    </section>`;
+}
+
+function PageArticle({ slug }){
+  const [a, setA] = useState(undefined);
+  useEffect(() => {
+    db.rpc('article', { p_slug: slug }).then(({data}) => setA(data || null));
+  }, [slug]);
+  if (a === undefined) return html`<div class="vide" style="padding:120px">Chargement…</div>`;
+  if (!a) return html`
+    <section class="bloc blanc"><div class="wrap">
+      <h1>Article introuvable</h1>
+      <p style="margin-top:16px"><a href="#/actualites">← Toutes les actualités</a></p>
+    </div></section>`;
+  return html`
+    <article class="bloc blanc">
+      <div class="wrap" style="max-width:760px">
+        <a class="small" href="#/actualites">← Toutes les actualités</a>
+        <div class="eyebrow" style="margin:24px 0 10px">
+          ${a.categorie}${a.publie_le ? ' · ' + jour(a.publie_le) : ''}</div>
+        <h1>${a.titre}</h1>
+        ${a.chapo && html`<p style="font-size:19px;color:var(--gris);margin-top:20px">
+          ${a.chapo}</p>`}
+        ${a.image && html`<img src=${urlPublique(a.image)} alt=""
+          style="width:100%;margin:32px 0;border:1px solid var(--filet)" />`}
+        <div style="white-space:pre-wrap;font-size:17px;margin-top:24px">${a.contenu||''}</div>
+        ${a.auteur && html`<p class="small muted" style="margin-top:40px;
+          padding-top:20px;border-top:1px solid var(--filet)">Par ${a.auteur}</p>`}
+      </div>
+    </article>`;
 }
 
 function Accueil({ txt }){
@@ -468,7 +564,8 @@ function Accueil({ txt }){
         <h1>${txt.accroche}</h1>
         <p>${txt.sous_accroche}</p>
         <div class="row" style="margin-top:36px">
-          <a class="btn" href="#/rejoindre">Rejoindre la fédération</a>
+          <a class="btn" href=${txt.hero_bouton_lien || '#/rejoindre'}>
+            ${txt.hero_bouton || 'Rejoindre la fédération'}</a>
           <a class="btn ghost" href="#/actions">Voir nos actions</a>
         </div>
       </div>
@@ -477,39 +574,16 @@ function Accueil({ txt }){
     <section class="bloc blanc">
       <div class="wrap">
         <div class="eyebrow">Ce que nous faisons</div>
-        <h2>Quatre terrains d'engagement</h2>
-        <p class="intro">Nous intervenons en milieu scolaire, périscolaire et
-        extra-scolaire, aux côtés des établissements, des collectivités et des
-        acteurs de terrain.</p>
-        <div class="cartes">
-          <div>
-            <h3>Éducation à la citoyenneté</h3>
-            <p>Ateliers d'éducation civique et de culture démocratique, du collège
-            au lycée.</p>
-          </div>
-          <div>
-            <h3>Mémoire et transmission</h3>
-            <p>Transmission de l'histoire de la Résistance et du devoir de mémoire
-            auprès des jeunes générations.</p>
-          </div>
-          <div>
-            <h3>Égalité des chances</h3>
-            <p>Lutte contre les discriminations et le harcèlement, égalité entre
-            les femmes et les hommes.</p>
-          </div>
-          <div>
-            <h3>Éducation aux médias</h3>
-            <p>Comprendre l'information, ses circuits et ses pièges, pour exercer
-            un esprit critique.</p>
-          </div>
-        </div>
+        <h2>${txt.titre_actions || 'Nos terrains d\u2019engagement'}</h2>
+        <p class="intro">${txt.intro_actions || ''}</p>
+        <${Blocs} page="accueil" />
       </div>
     </section>
 
     <section class="bloc">
       <div class="wrap">
         <div class="eyebrow">Le réseau en chiffres</div>
-        <h2>Une fédération de terrain</h2>
+        <h2>${txt.titre_chiffres || 'Une fédération de terrain'}</h2>
         <div class="chiffres">
           <div><div class="n">${txt.nb_benevoles}</div><div class="l">Bénévoles engagés</div></div>
           <div><div class="n">${txt.nb_departements}</div><div class="l">Départements couverts</div></div>
@@ -519,15 +593,19 @@ function Accueil({ txt }){
       </div>
     </section>
 
-    <section class="bloc blanc">
+    ${txt.afficher_actualites !== 'non' && html`
+      <section class="bloc blanc">
+        <div class="wrap"><${Actualites} limite=${3} /></div>
+      </section>`}
+
+    <section class="bloc nuit">
       <div class="wrap spread">
         <div>
-          <h2>Un engagement se construit, il ne s'impose pas.</h2>
-          <p class="intro" style="margin-top:12px">Il n'y a ni parcours attendu,
-          ni profil imposé. Les rôles se construisent avec chacun, selon les
-          disponibilités et les envies.</p>
+          <h2>${txt.appel_final || 'Un engagement se construit, il ne s\u2019impose pas.'}</h2>
+          <p class="intro" style="margin-top:12px">${txt.appel_final_texte || ''}</p>
         </div>
-        <a class="btn" href="#/rejoindre">Commencer</a>
+        <a class="btn" style="background:#fff;color:var(--bleu);border-color:#fff"
+          href="#/rejoindre">Commencer</a>
       </div>
     </section>`;
 }
@@ -556,14 +634,6 @@ function Association({ txt }){
 }
 
 function Actions(){
-  const items = [
-    ['Quartiers d\'été', 'Un relais local dans chaque département, pour faire vivre l\'été des quartiers populaires.'],
-    ['Interventions scolaires', 'Ateliers citoyenneté, valeurs de la République et lutte contre le harcèlement.'],
-    ['Mémoire vivante', 'Rencontres, visites et travaux d\'élèves autour de l\'histoire de la Résistance.'],
-    ['Jeunesse et forces de l\'ordre', 'Temps d\'échange encadrés pour rétablir un dialogue direct.'],
-    ['Éducation aux médias', 'Décryptage de l\'information et sensibilisation à la désinformation.'],
-    ['Orientation', 'Accompagnement des lycéens dans la construction de leur parcours.']
-  ];
   return html`
     <section class="bloc blanc">
       <div class="wrap">
@@ -571,9 +641,7 @@ function Actions(){
         <h1 style="margin:8px 0 16px">Ce que nous menons sur le terrain</h1>
         <p class="intro">Chaque action est portée par une équipe locale et
         soutenue par l'équipe nationale.</p>
-        <div class="cartes">
-          ${items.map(([t,d]) => html`<div><h3>${t}</h3><p>${d}</p></div>`)}
-        </div>
+        <${Blocs} page="actions" />
       </div>
     </section>`;
 }
@@ -908,11 +976,12 @@ function Flanc({ p, apps, page }){
         ${dispo('notes_frais') && item('notes_frais','Mes notes de frais')}
 
         ${(dispo('annuaire') || dispo('tresorerie') || dispo('ordonnancement')
-           || dispo('discipline')) && html`
+           || dispo('discipline') || dispo('communication')) && html`
           <div class="groupe">Mes responsabilités</div>
           ${dispo('annuaire') && item('annuaire','Annuaire fédéral')}
           ${dispo('ordonnancement') && item('ordonnancement','Ordonnancement')}
           ${dispo('tresorerie') && item('tresorerie','Direction financière')}
+          ${dispo('communication') && item('communication','Communication')}
           ${dispo('discipline') && item('discipline','Discipline et recours')}`}
 
         ${pilote && html`
@@ -5478,6 +5547,436 @@ function ApercuAdhesion({ id }){
     </div>`;
 }
 
+
+/* =====================================================================
+   COMMUNICATION
+   Un chargé de com rédige, la direction valide, puis publie.
+   ===================================================================== */
+
+const CANAUX = { instagram:'Instagram', linkedin:'LinkedIn', facebook:'Facebook',
+                 x:'X', site:'Site public', newsletter:'Infolettre', presse:'Presse' };
+const ETAT_PUB = {
+  brouillon:['Brouillon',''], a_valider:['À valider','bleu'],
+  validee:['Validée','vert'], publiee:['Publiée','vert'],
+  refusee:['À reprendre','rouge'], archivee:['Archivée','']
+};
+
+/* Adresse publique d'une image du dépôt vitrine. */
+const urlPublique = chemin => chemin
+  ? SUPABASE_URL + '/storage/v1/object/public/public/' + chemin : null;
+
+/* Dépôt d'image partagé par la vitrine et la communication. */
+async function deposerImage(fichier, prefixe){
+  if (!fichier) return null;
+  if (fichier.size > 5 * 1024 * 1024)
+    throw new Error('L\u2019image ne doit pas dépasser 5 Mo.');
+  const ext = fichier.name.split('.').pop();
+  const chemin = prefixe + '/' + Date.now() + '.' + ext;
+  const { error } = await db.storage.from('public').upload(chemin, fichier);
+  if (error) throw error;
+  return chemin;
+}
+
+function Communication({ p }){
+  const [onglet, setOnglet] = useState('calendrier');
+  const [pubs, setPubs] = useState([]);
+  const [campagnes, setCampagnes] = useState([]);
+  const [modeles, setModeles] = useState([]);
+  const [edition, setEdition] = useState(null);
+  const [msg, setMsg] = useState('');
+
+  const valide = (p.postes||[]).some(x => x.nom.includes('communication')) || p.niveau >= 90;
+
+  const charger = useCallback(async () => {
+    const [a, b, c] = await Promise.all([
+      db.rpc('calendrier_com', { p_depuis: null, p_jusqu: null }),
+      db.from('campagnes').select('*').order('debut', {nullsFirst:false}),
+      db.from('modeles_com').select('*').order('titre')
+    ]);
+    setPubs(a.data||[]); setCampagnes(b.data||[]); setModeles(c.data||[]);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function statuer(pub, issue){
+    const obs = issue === 'refusee' ? prompt('Ce qu\u2019il faut reprendre (obligatoire)') : null;
+    if (issue === 'refusee' && !obs) return;
+    const { data, error } = await db.rpc('statuer_publication',
+      { p_id: pub.id, p_issue: issue, p_observation: obs });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Publication mise à jour.'); charger();
+  }
+
+  async function soumettre(pub){
+    const { data, error } = await db.rpc('soumettre_publication', { p_id: pub.id });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Transmise à la direction de la communication.'); charger();
+  }
+
+  if (edition) return html`<${EditionPublication} p=${p} pub=${edition}
+    campagnes=${campagnes} modeles=${modeles}
+    fermer=${()=>{ setEdition(null); charger(); }} />`;
+
+  const aValider = pubs.filter(x => x.statut === 'a_valider');
+  const aVenir = pubs.filter(x => ['validee','a_valider','brouillon'].includes(x.statut)
+    && x.date_prevue && new Date(x.date_prevue) >= new Date());
+
+  const lignePub = x => html`
+    <div class="ligne" style="align-items:flex-start">
+      ${x.image && html`<img src=${urlPublique(x.image)} alt=""
+        style="width:64px;height:64px;object-fit:cover;border:1px solid var(--filet);
+               border-radius:2px;flex:0 0 64px" />`}
+      <div style="flex:1;min-width:220px;cursor:pointer" onClick=${()=>setEdition(x)}>
+        <div>${x.titre}</div>
+        <div class="small muted">
+          ${CANAUX[x.canal]||x.canal}
+          ${x.campagne ? ' · ' + x.campagne : ''}
+          ${x.date_prevue ? ' · ' + new Date(x.date_prevue).toLocaleString('fr-FR',
+              {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}) : ' · sans date'}
+          ${x.auteur ? ' · ' + x.auteur : ''}
+        </div>
+        ${x.observation && html`<div class="small" style="color:var(--bordeaux);margin-top:4px">
+          ${x.observation}</div>`}
+      </div>
+      <div class="row">
+        <span class=${'tag '+(ETAT_PUB[x.statut]||['',''])[1]}>
+          ${(ETAT_PUB[x.statut]||[x.statut,''])[0]}</span>
+        ${x.statut === 'brouillon' && html`
+          <button class="btn sm light" onClick=${()=>soumettre(x)}>Soumettre</button>`}
+        ${x.statut === 'a_valider' && valide && html`
+          <button class="btn sm" onClick=${()=>statuer(x,'validee')}>Valider</button>
+          <button class="btn sm light" onClick=${()=>statuer(x,'refusee')}>À reprendre</button>`}
+        ${x.statut === 'validee' && valide && html`
+          <button class="btn sm" onClick=${()=>statuer(x,'publiee')}>Marquer publiée</button>`}
+      </div>
+    </div>`;
+
+  return html`
+    <div>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Communication</div>
+          <h1 style="margin:6px 0 0">Calendrier éditorial</h1>
+        </div>
+        <button class="btn" onClick=${()=>setEdition({nouveau:true})}>
+          Nouvelle publication</button>
+      </div>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div class="chiffres" style="margin:24px 0">
+        <div><div class="n" style="font-size:32px">${aValider.length}</div>
+          <div class="l">À valider</div></div>
+        <div><div class="n" style="font-size:32px">${aVenir.length}</div>
+          <div class="l">À venir</div></div>
+        <div><div class="n" style="font-size:32px">
+          ${pubs.filter(x=>x.statut==='publiee').length}</div>
+          <div class="l">Publiées</div></div>
+        <div><div class="n" style="font-size:32px">
+          ${campagnes.filter(c=>c.statut==='en_cours').length}</div>
+          <div class="l">Campagnes en cours</div></div>
+      </div>
+
+      <div class="row" style="margin:0 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['calendrier','Calendrier'],['valider','À valider'],
+           ['campagnes','Campagnes'],['modeles','Modèles'],['charte','La charte']]
+          .map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'calendrier' && html`
+        <div class="panneau">
+          ${pubs.length === 0
+            ? html`<div class="vide">Aucune publication. Commencez par en créer une.</div>`
+            : pubs.map(lignePub)}
+        </div>`}
+
+      ${onglet === 'valider' && html`
+        <div class="panneau">
+          ${aValider.length === 0
+            ? html`<div class="vide">Rien à valider.</div>`
+            : aValider.map(lignePub)}
+        </div>`}
+
+      ${onglet === 'campagnes' && html`<${Campagnes} valide=${valide}
+        campagnes=${campagnes} recharger=${charger} setMsg=${setMsg} />`}
+
+      ${onglet === 'modeles' && html`
+        <div>
+          <p class="small muted" style="margin-bottom:16px;max-width:62ch">
+            Des trames éprouvées. On les copie, on les adapte : personne ne
+            réécrit un communiqué de zéro à minuit.
+          </p>
+          ${modeles.map(m => html`
+            <div class="panneau" style="margin-bottom:16px">
+              <div class="tete">
+                <h3 style="font-size:17px">${m.titre}</h3>
+                <div class="row">
+                  ${m.canal && html`<span class="tag">${CANAUX[m.canal]||m.canal}</span>`}
+                  <button class="btn sm light" onClick=${()=>{
+                    navigator.clipboard.writeText(m.contenu);
+                    setMsg('Modèle copié.');
+                  }}>Copier</button>
+                </div>
+              </div>
+              <div class="corps">
+                <pre style="white-space:pre-wrap;font-family:var(--sans);font-size:14px;
+                     margin:0;background:var(--papier);padding:14px;border-radius:2px">${m.contenu}</pre>
+                ${m.conseils && html`<p class="small muted" style="margin:12px 0 0">
+                  ${m.conseils}</p>`}
+              </div>
+            </div>`)}
+        </div>`}
+
+      ${onglet === 'charte' && html`<${RappelCharte} />`}
+    </div>`;
+}
+
+/* --- La charte, sous la main -------------------------------------------
+   Une charte qu'il faut rouvrir en PDF n'est pas appliquée.
+   --------------------------------------------------------------------- */
+function RappelCharte(){
+  const couleurs = [
+    ['#00325B','Bleu profond','Couleur maîtresse. Identité, titres, fonds institutionnels.'],
+    ['#A5053C','Rouge bordeaux','Couleur maîtresse. Engagement, fraternité, accents forts.'],
+    ['#1E2A38','Bleu nuit','Arrière-plans, texte courant.'],
+    ['#0045D1','Bleu vif','Action seulement : boutons, liens, appels à l\u2019engagement.'],
+    ['#E80855','Rose framboise','Chiffres-clés et mobilisation. Jamais dominant.'],
+    ['#DDE6F0','Bleu ciel désaturé','Fonds subtils, encadrés discrets.'],
+    ['#6B4C3B','Brun chaud','Chaleur, contextes particuliers.'],
+    ['#4B4F56','Gris anthracite','Sous-titres, légendes, métadonnées.'],
+    ['#F5F5F5','Blanc cassé','Alternative douce au blanc pur.']
+  ];
+  const regles = [
+    'Le logo ne se modifie jamais : ni couleur, ni proportions, ni disposition.',
+    'Zone de protection : la largeur du E de « FFCE » tout autour, libre de tout élément.',
+    'Largeur minimale du logo : 150 pixels. En dessous, il devient illisible.',
+    'Jamais de logo sur une image, un fond chargé, ou l\u2019une de ses propres couleurs.',
+    'Raleway pour les titres — Black pour les principaux, Bold pour les sous-titres.',
+    'Calibri pour le corps de texte. Les deux ne se mélangent jamais dans un même bloc.',
+    'Interlignage : 130 à 150 % pour l\u2019écran, 120 à 130 % pour l\u2019imprimé.',
+    'Aucun effet décoratif : pas d\u2019ombre portée, pas de contour, pas de dégradé.',
+    'Marges claires, mise en page aérée.'
+  ];
+  return html`
+    <div>
+      <p class="intro" style="margin-bottom:24px">
+        L\u2019essentiel de la charte, à portée de main. Elle s\u2019applique à tous
+        les supports, imprimés comme numériques.
+      </p>
+
+      <div class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">Palette</h3></div>
+        <div class="corps">
+          ${couleurs.map(([hex, nom, usage]) => html`
+            <div class="row" style="padding:8px 0;border-bottom:1px solid var(--filet);gap:14px">
+              <span style=${'width:42px;height:42px;flex:0 0 42px;background:'+hex+
+                ';border:1px solid var(--filet);border-radius:2px'}></span>
+              <span style="flex:1;min-width:180px">
+                <span style="display:block;font-family:var(--titre);font-weight:700">${nom}</span>
+                <span class="small muted">${usage}</span>
+              </span>
+              <button class="btn sm light" onClick=${()=>navigator.clipboard.writeText(hex)}>
+                <span class="mono">${hex}</span></button>
+            </div>`)}
+        </div>
+      </div>
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">Règles d\u2019usage</h3></div>
+        <div class="corps">
+          ${regles.map(r => html`
+            <div style="padding:7px 0;border-bottom:1px solid var(--filet);font-size:14.5px">
+              ${r}</div>`)}
+        </div>
+      </div>
+    </div>`;
+}
+
+function Campagnes({ valide, campagnes, recharger, setMsg }){
+  const [ouvert, setOuvert] = useState(false);
+  const [f, setF] = useState({titre:'',objectif:'',debut:'',fin:''});
+
+  async function creer(e){
+    e.preventDefault();
+    const { error } = await db.from('campagnes').insert({
+      titre: f.titre, objectif: f.objectif || null,
+      debut: f.debut || null, fin: f.fin || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setF({titre:'',objectif:'',debut:'',fin:''}); setOuvert(false);
+    setMsg('Campagne créée.'); recharger();
+  }
+
+  return html`
+    <div>
+      ${valide && html`
+        <div class="spread" style="margin-bottom:16px">
+          <span class="small muted">${campagnes.length} campagne${campagnes.length>1?'s':''}</span>
+          <button class="btn sm" onClick=${()=>setOuvert(o=>!o)}>
+            ${ouvert ? 'Annuler' : 'Nouvelle campagne'}</button>
+        </div>`}
+      ${ouvert && html`
+        <form onSubmit=${creer} class="panneau" style="margin-bottom:24px">
+          <div class="corps stack">
+            <div class="field"><label>Titre</label>
+              <input required value=${f.titre}
+                onInput=${e=>setF(o=>({...o,titre:e.target.value}))} /></div>
+            <div class="field"><label>Objectif</label>
+              <textarea value=${f.objectif}
+                onInput=${e=>setF(o=>({...o,objectif:e.target.value}))} /></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:140px;margin:0"><label>Début</label>
+                <input type="date" value=${f.debut}
+                  onInput=${e=>setF(o=>({...o,debut:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:140px;margin:0"><label>Fin</label>
+                <input type="date" value=${f.fin}
+                  onInput=${e=>setF(o=>({...o,fin:e.target.value}))} /></div>
+            </div>
+            <div><button class="btn">Créer</button></div>
+          </div>
+        </form>`}
+      <div class="panneau">
+        ${campagnes.length === 0
+          ? html`<div class="vide">Aucune campagne.</div>`
+          : campagnes.map(c => html`
+            <div class="ligne">
+              <div><div>${c.titre}</div>
+                <div class="small muted">${c.objectif||''}
+                  ${c.debut ? ' · ' + jour(c.debut) : ''}
+                  ${c.fin ? ' au ' + jour(c.fin) : ''}</div></div>
+              <span class="tag">${c.statut.replace('_',' ')}</span>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+function EditionPublication({ p, pub, campagnes, modeles, fermer }){
+  const neuf = !!pub.nouveau;
+  const [f, setF] = useState({
+    titre: pub.titre||'', canal: pub.canal||'instagram', texte: pub.texte||'',
+    lien: pub.lien||'', campagne_id: pub.campagne_id||'',
+    date_prevue: pub.date_prevue ? pub.date_prevue.slice(0,16) : '', image: pub.image||''
+  });
+  const [fichier, setFichier] = useState(null);
+  const [msg, setMsg] = useState('');
+  const [envoi, setEnvoi] = useState(false);
+
+  useEffect(() => { (async () => {
+    if (neuf || !pub.id) return;
+    const { data } = await db.from('publications').select('*').eq('id', pub.id).maybeSingle();
+    if (data) setF({
+      titre:data.titre, canal:data.canal, texte:data.texte||'', lien:data.lien||'',
+      campagne_id:data.campagne_id||'', image:data.image||'',
+      date_prevue: data.date_prevue ? data.date_prevue.slice(0,16) : ''
+    });
+  })(); }, [pub.id, neuf]);
+
+  async function enregistrer(e){
+    e.preventDefault(); setEnvoi(true); setMsg('');
+    try {
+      let image = f.image;
+      if (fichier) image = await deposerImage(fichier, 'com');
+      const corps = {
+        titre: f.titre, canal: f.canal, texte: f.texte || null,
+        lien: f.lien || null, campagne_id: f.campagne_id || null,
+        date_prevue: f.date_prevue || null, image: image || null
+      };
+      if (neuf){
+        const { error } = await db.from('publications')
+          .insert({ ...corps, auteur_id: p.id });
+        if (error) throw error;
+      } else {
+        const { error } = await db.from('publications').update(corps).eq('id', pub.id);
+        if (error) throw error;
+      }
+      fermer();
+    } catch (err){ setMsg(err.message || 'Enregistrement impossible.'); }
+    setEnvoi(false);
+  }
+
+  const limites = { instagram:2200, x:280, linkedin:3000, facebook:5000 };
+  const limite = limites[f.canal];
+
+  return html`
+    <div>
+      <button class="lien-discret" onClick=${fermer}>← Calendrier</button>
+      <h1 style="font-size:28px;margin:12px 0 24px">
+        ${neuf ? 'Nouvelle publication' : f.titre || 'Publication'}</h1>
+      ${msg && html`<div class="alerte err" style="margin-bottom:16px">${msg}</div>`}
+
+      <form onSubmit=${enregistrer} class="panneau">
+        <div class="corps stack">
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:2;min-width:200px;margin:0"><label>Titre interne</label>
+              <input required value=${f.titre}
+                onInput=${e=>setF(o=>({...o,titre:e.target.value}))} /></div>
+            <div class="field" style="flex:1;min-width:150px;margin:0"><label>Canal</label>
+              <select value=${f.canal} onChange=${e=>setF(o=>({...o,canal:e.target.value}))}>
+                ${Object.entries(CANAUX).map(([k,v]) => html`<option value=${k}>${v}</option>`)}
+              </select></div>
+          </div>
+
+          <div class="field">
+            <div class="spread" style="margin-bottom:6px">
+              <label style="margin:0">Texte</label>
+              ${limite && html`<span class=${'small '+(f.texte.length>limite?'':'muted')}
+                style=${f.texte.length>limite?'color:var(--bordeaux)':''}>
+                ${f.texte.length} / ${limite} signes</span>`}
+            </div>
+            <textarea value=${f.texte} style="min-height:180px"
+              onInput=${e=>setF(o=>({...o,texte:e.target.value}))} />
+          </div>
+
+          ${modeles.length > 0 && html`
+            <div class="field">
+              <label>Partir d\u2019un modèle</label>
+              <select value="" onChange=${e=>{
+                const m = modeles.find(x => x.id === e.target.value);
+                if (m) setF(o => ({...o, texte: m.contenu}));
+              }}>
+                <option value="">Choisir…</option>
+                ${modeles.map(m => html`<option value=${m.id}>${m.titre}</option>`)}
+              </select>
+            </div>`}
+
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:190px;margin:0"><label>Campagne</label>
+              <select value=${f.campagne_id}
+                onChange=${e=>setF(o=>({...o,campagne_id:e.target.value}))}>
+                <option value="">Aucune</option>
+                ${campagnes.map(c => html`<option value=${c.id}>${c.titre}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:190px;margin:0"><label>Date prévue</label>
+              <input type="datetime-local" value=${f.date_prevue}
+                onInput=${e=>setF(o=>({...o,date_prevue:e.target.value}))} /></div>
+          </div>
+
+          <div class="field"><label>Lien</label>
+            <input type="url" value=${f.lien}
+              onInput=${e=>setF(o=>({...o,lien:e.target.value}))} /></div>
+
+          <div class="field"><label>Visuel</label>
+            ${f.image && html`<img src=${urlPublique(f.image)} alt=""
+              style="max-width:220px;display:block;margin-bottom:10px;
+                     border:1px solid var(--filet);border-radius:2px" />`}
+            <input type="file" accept="image/*"
+              onChange=${e=>setFichier(e.target.files[0]||null)} />
+            <p class="small muted" style="margin:6px 0 0">
+              Cinq mégaoctets maximum. Aucun visage de mineur sans autorisation écrite.
+            </p>
+          </div>
+
+          <div><button class="btn" disabled=${envoi}>
+            ${envoi ? 'Enregistrement…' : 'Enregistrer'}</button></div>
+        </div>
+      </form>
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
@@ -5827,10 +6326,40 @@ function ReseauAdmin(){
     </div>`;
 }
 
-/* --- Direction générale : textes du site public ---------------------- */
+/* --- Direction générale : le site public ------------------------------
+   Textes, blocs répétables et actualités. Plus une ligne de contenu
+   public n'est écrite dans le code.
+   --------------------------------------------------------------------- */
 function VitrineAdmin(){
-  const [c, setC] = useState([]);
+  const [onglet, setOnglet] = useState('textes');
   const [msg, setMsg] = useState('');
+  return html`
+    <div>
+      <div class="eyebrow">Pilotage</div>
+      <h1 style="margin:6px 0 8px">Site public</h1>
+      <p class="muted" style="max-width:60ch">
+        Tout ce que voient les visiteurs se règle ici. Aucun texte, aucun
+        chiffre, aucune carte n\u2019est écrit dans le code.
+      </p>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['textes','Textes et chiffres'],['blocs','Blocs de page'],
+           ['articles','Actualités']].map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'textes'   && html`<${VitrineTextes} setMsg=${setMsg} />`}
+      ${onglet === 'blocs'    && html`<${VitrineBlocs} setMsg=${setMsg} />`}
+      ${onglet === 'articles' && html`<${VitrineArticles} setMsg=${setMsg} />`}
+    </div>`;
+}
+
+function VitrineTextes({ setMsg }){
+  const [c, setC] = useState([]);
   const charger = useCallback(() =>
     db.from('contenus').select('*').order('section').order('ordre')
       .then(({data}) => setC(data||[])), []);
@@ -5838,32 +6367,274 @@ function VitrineAdmin(){
 
   async function enregistrer(cle, valeur){
     const { error } = await db.from('contenus').update({ valeur }).eq('cle', cle);
-    setMsg(error ? error.message : 'Texte publié.');
+    setMsg(error ? 'Erreur : ' + error.message : 'Texte publié.');
   }
 
   const sections = [...new Set(c.map(x => x.section))];
+  const titre = { accueil:'Page d\u2019accueil', apparence:'Apparence et blocs',
+                  association:'La fédération', chiffres:'Chiffres-clés',
+                  contact:'Contact et réseaux', legal:'Mentions légales', general:'Général' };
+
   return html`
     <div>
-      <div class="eyebrow">Direction générale</div>
-      <h1 style="margin:6px 0 8px">Site public</h1>
-      <p class="muted">Aucun texte public n'est écrit dans le code. Tout se modifie ici.</p>
-      ${msg && html`<div class="alerte ok" style="margin:16px 0">${msg}</div>`}
-
-      ${sections.map(s => html`
-        <div class="panneau" style="margin-top:24px">
-          <div class="tete"><h3 style="font-size:17px;text-transform:capitalize">${s}</h3></div>
+      ${sections.map(sec => html`
+        <div class="panneau" style="margin-bottom:24px">
+          <div class="tete"><h3 style="font-size:17px">${titre[sec]||sec}</h3></div>
           <div class="corps stack">
-            ${c.filter(x => x.section === s).map(x => html`
+            ${c.filter(x => x.section === sec).map(x => html`
               <div class="field">
                 <label>${x.libelle}</label>
                 ${x.format === 'long'
-                  ? html`<textarea value=${x.valeur} onBlur=${e=>enregistrer(x.cle,e.target.value)} />`
-                  : html`<input value=${x.valeur} onBlur=${e=>enregistrer(x.cle,e.target.value)} />`}
+                  ? html`<textarea defaultValue=${x.valeur}
+                      onBlur=${e=>enregistrer(x.cle, e.target.value)} />`
+                  : html`<input type=${x.format==='nombre'?'text':'text'}
+                      defaultValue=${x.valeur}
+                      onBlur=${e=>enregistrer(x.cle, e.target.value)} />`}
               </div>`)}
-            <p class="small muted">Les modifications sont enregistrées lorsque vous
-            quittez le champ.</p>
+            <p class="small muted">Enregistré à la sortie du champ.</p>
           </div>
         </div>`)}
+    </div>`;
+}
+
+function VitrineBlocs({ setMsg }){
+  const [blocs, setBlocs] = useState([]);
+  const [page, setPage] = useState('accueil');
+  const [ouvert, setOuvert] = useState(false);
+  const [f, setF] = useState({titre:'',contenu:'',type:'carte',lien:'',lien_texte:''});
+  const [fichier, setFichier] = useState(null);
+
+  const charger = useCallback(() =>
+    db.from('blocs_vitrine').select('*').order('page').order('ordre')
+      .then(({data}) => setBlocs(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const PAGES = { accueil:'Accueil', association:'La fédération', actions:'Nos actions',
+                  reseau:'Le réseau', rejoindre:'Nous rejoindre', contact:'Contact' };
+  const TYPES = { carte:'Carte', chiffre:'Chiffre', citation:'Citation',
+                  encart:'Encart', etape:'Étape' };
+
+  async function ajouter(e){
+    e.preventDefault();
+    let image = null;
+    try { image = fichier ? await deposerImage(fichier, 'vitrine') : null; }
+    catch (err){ return setMsg('Erreur : ' + err.message); }
+    const max = Math.max(0, ...blocs.filter(b => b.page === page).map(b => b.ordre));
+    const { error } = await db.from('blocs_vitrine').insert({
+      page, type: f.type, titre: f.titre, contenu: f.contenu || null,
+      lien: f.lien || null, lien_texte: f.lien_texte || null,
+      image, ordre: max + 10
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setF({titre:'',contenu:'',type:'carte',lien:'',lien_texte:''});
+    setFichier(null); setOuvert(false); setMsg('Bloc ajouté.'); charger();
+  }
+
+  async function modifier(b, champ, valeur){
+    const { error } = await db.from('blocs_vitrine')
+      .update({ [champ]: valeur, maj_le: new Date().toISOString() }).eq('id', b.id);
+    setMsg(error ? 'Erreur : ' + error.message : 'Enregistré.');
+    charger();
+  }
+
+  async function deplacer(b, sens){
+    const memePage = blocs.filter(x => x.page === b.page).sort((a,c)=>a.ordre-c.ordre);
+    const i = memePage.findIndex(x => x.id === b.id);
+    const j = i + sens;
+    if (j < 0 || j >= memePage.length) return;
+    await db.from('blocs_vitrine').update({ ordre: memePage[j].ordre }).eq('id', b.id);
+    await db.from('blocs_vitrine').update({ ordre: b.ordre }).eq('id', memePage[j].id);
+    charger();
+  }
+
+  async function retirer(b){
+    if (!confirm('Supprimer « ' + b.titre + ' » ?')) return;
+    await db.from('blocs_vitrine').delete().eq('id', b.id);
+    setMsg('Bloc supprimé.'); charger();
+  }
+
+  const liste = blocs.filter(b => b.page === page);
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:20px">
+        <div class="field" style="margin:0;max-width:260px">
+          <label>Page</label>
+          <select value=${page} onChange=${e=>setPage(e.target.value)}>
+            ${Object.entries(PAGES).map(([k,v]) => html`<option value=${k}>${v}</option>`)}
+          </select>
+        </div>
+        <button class="btn sm" onClick=${()=>setOuvert(o=>!o)}>
+          ${ouvert ? 'Annuler' : 'Ajouter un bloc'}</button>
+      </div>
+
+      ${ouvert && html`
+        <form onSubmit=${ajouter} class="panneau" style="margin-bottom:24px">
+          <div class="corps stack">
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:2;min-width:200px;margin:0"><label>Titre</label>
+                <input required value=${f.titre}
+                  onInput=${e=>setF(o=>({...o,titre:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:140px;margin:0"><label>Type</label>
+                <select value=${f.type} onChange=${e=>setF(o=>({...o,type:e.target.value}))}>
+                  ${Object.entries(TYPES).map(([k,v]) => html`<option value=${k}>${v}</option>`)}
+                </select></div>
+            </div>
+            <div class="field"><label>Contenu</label>
+              <textarea value=${f.contenu}
+                onInput=${e=>setF(o=>({...o,contenu:e.target.value}))} /></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:180px;margin:0"><label>Lien</label>
+                <input value=${f.lien} placeholder="#/actions"
+                  onInput=${e=>setF(o=>({...o,lien:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:180px;margin:0"><label>Texte du lien</label>
+                <input value=${f.lien_texte}
+                  onInput=${e=>setF(o=>({...o,lien_texte:e.target.value}))} /></div>
+            </div>
+            <div class="field"><label>Image</label>
+              <input type="file" accept="image/*"
+                onChange=${e=>setFichier(e.target.files[0]||null)} /></div>
+            <div><button class="btn">Ajouter</button></div>
+          </div>
+        </form>`}
+
+      <div class="panneau">
+        ${liste.length === 0
+          ? html`<div class="vide">Aucun bloc sur cette page.</div>`
+          : liste.map((b, i) => html`
+            <div class="ligne" style="align-items:flex-start">
+              ${b.image && html`<img src=${urlPublique(b.image)} alt=""
+                style="width:56px;height:56px;object-fit:cover;flex:0 0 56px;
+                       border:1px solid var(--filet);border-radius:2px" />`}
+              <div style="flex:1;min-width:220px">
+                <input defaultValue=${b.titre} style="font-weight:700"
+                  onBlur=${e=>modifier(b,'titre',e.target.value)} />
+                <textarea defaultValue=${b.contenu||''} style="min-height:64px;margin-top:8px"
+                  onBlur=${e=>modifier(b,'contenu',e.target.value)} />
+                <div class="row" style="margin-top:8px;gap:6px">
+                  <span class="tag">${TYPES[b.type]||b.type}</span>
+                  <span class="mono muted">ordre ${b.ordre}</span>
+                </div>
+              </div>
+              <div class="row">
+                <button class="btn sm light" onClick=${()=>deplacer(b,-1)}
+                  disabled=${i===0}>↑</button>
+                <button class="btn sm light" onClick=${()=>deplacer(b,1)}
+                  disabled=${i===liste.length-1}>↓</button>
+                <button class="btn sm light"
+                  onClick=${()=>modifier(b,'publie',!b.publie)}>
+                  ${b.publie ? 'Masquer' : 'Publier'}</button>
+                <button class="btn sm light" onClick=${()=>retirer(b)}>Supprimer</button>
+              </div>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+function VitrineArticles({ setMsg }){
+  const [liste, setListe] = useState([]);
+  const [edition, setEdition] = useState(null);
+  const [f, setF] = useState({titre:'',chapo:'',contenu:'',categorie:'Actualité',
+                              publie:false, image:''});
+  const [fichier, setFichier] = useState(null);
+
+  const charger = useCallback(() =>
+    db.from('articles').select('*').order('cree_le', {ascending:false})
+      .then(({data}) => setListe(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  function ouvrir(a){
+    setEdition(a || {nouveau:true});
+    setF(a ? {titre:a.titre, chapo:a.chapo||'', contenu:a.contenu||'',
+              categorie:a.categorie||'Actualité', publie:a.publie, image:a.image||''}
+           : {titre:'',chapo:'',contenu:'',categorie:'Actualité',publie:false,image:''});
+    setFichier(null);
+  }
+
+  async function enregistrer(e){
+    e.preventDefault();
+    let image = f.image;
+    try { if (fichier) image = await deposerImage(fichier, 'articles'); }
+    catch (err){ return setMsg('Erreur : ' + err.message); }
+    const { data, error } = await db.rpc('enregistrer_article', {
+      p_id: edition.nouveau ? null : edition.id,
+      p_titre: f.titre, p_chapo: f.chapo || null, p_contenu: f.contenu || null,
+      p_image: image || null, p_categorie: f.categorie, p_publie: f.publie
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setEdition(null); setMsg('Article enregistré.'); charger();
+  }
+
+  async function retirer(a){
+    if (!confirm('Supprimer « ' + a.titre + ' » ?')) return;
+    await db.from('articles').delete().eq('id', a.id);
+    setMsg('Article supprimé.'); charger();
+  }
+
+  if (edition) return html`
+    <div>
+      <button class="lien-discret" onClick=${()=>setEdition(null)}>← Toutes les actualités</button>
+      <form onSubmit=${enregistrer} class="panneau" style="margin-top:16px">
+        <div class="corps stack">
+          <div class="field"><label>Titre</label>
+            <input required value=${f.titre}
+              onInput=${e=>setF(o=>({...o,titre:e.target.value}))} /></div>
+          <div class="field"><label>Chapô</label>
+            <textarea value=${f.chapo} style="min-height:70px"
+              onInput=${e=>setF(o=>({...o,chapo:e.target.value}))} /></div>
+          <div class="field"><label>Texte</label>
+            <textarea value=${f.contenu} style="min-height:260px"
+              onInput=${e=>setF(o=>({...o,contenu:e.target.value}))} /></div>
+          <div class="field"><label>Catégorie</label>
+            <input value=${f.categorie}
+              onInput=${e=>setF(o=>({...o,categorie:e.target.value}))} /></div>
+          <div class="field"><label>Image</label>
+            ${f.image && html`<img src=${urlPublique(f.image)} alt=""
+              style="max-width:260px;display:block;margin-bottom:10px;
+                     border:1px solid var(--filet);border-radius:2px" />`}
+            <input type="file" accept="image/*"
+              onChange=${e=>setFichier(e.target.files[0]||null)} /></div>
+          <label class="row" style="text-transform:none;letter-spacing:0;font-size:14px;
+              color:var(--nuit);margin:0;cursor:pointer">
+            <input type="checkbox" style="width:auto" checked=${f.publie}
+              onChange=${e=>setF(o=>({...o,publie:e.target.checked}))} />
+            <span>Publier sur le site</span>
+          </label>
+          <div><button class="btn">Enregistrer</button></div>
+        </div>
+      </form>
+    </div>`;
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:16px">
+        <span class="small muted">${liste.length} article${liste.length>1?'s':''}</span>
+        <button class="btn sm" onClick=${()=>ouvrir(null)}>Nouvel article</button>
+      </div>
+      <div class="panneau">
+        ${liste.length === 0
+          ? html`<div class="vide">Aucun article.</div>`
+          : liste.map(a => html`
+            <div class="ligne">
+              ${a.image && html`<img src=${urlPublique(a.image)} alt=""
+                style="width:56px;height:56px;object-fit:cover;flex:0 0 56px;
+                       border:1px solid var(--filet);border-radius:2px" />`}
+              <div style="flex:1;min-width:220px">
+                <div>${a.titre}</div>
+                <div class="small muted">${a.categorie}
+                  ${a.publie_le ? ' · ' + jour(a.publie_le) : ' · non publié'}
+                  · <span class="mono">/${a.slug}</span></div>
+              </div>
+              <div class="row">
+                ${a.publie
+                  ? html`<span class="tag vert">En ligne</span>`
+                  : html`<span class="tag">Brouillon</span>`}
+                <button class="btn sm light" onClick=${()=>ouvrir(a)}>Ouvrir</button>
+                <button class="btn sm light" onClick=${()=>retirer(a)}>Supprimer</button>
+              </div>
+            </div>`)}
+      </div>
     </div>`;
 }
 
@@ -5964,6 +6735,8 @@ function Espace({ session, sous }){
     case 'mon-dossier':vue = html`<${MonDossier} p=${p} entier=${true} />`; break;
     case 'referentiel':vue = html`<${Referentiel} />`; break;
     case 'engagement': vue = acces('engagement') ? html`<${Engagement} p=${p} />` : refus; break;
+    case 'communication': vue = acces('communication')
+                          ? html`<${Communication} p=${p} />` : refus; break;
     case 'discipline': vue = acces('discipline') ? html`<${Discipline} p=${p} />` : refus; break;
     case 'demandes':   vue = html`<${MesDemandes} p=${p} apps=${apps} demandes=${demandes} recharger=${charger} />`; break;
     case 'annuaire':   vue = acces('annuaire') ? html`<${Annuaire} p=${p} />` : refus; break;
@@ -6022,6 +6795,13 @@ function Site(){
     return html`<${Espace} session=${session} sous=${sous} />`;
   }
 
+  if (route.startsWith('/actualite/')){
+    return html`
+      <${EntetePublique} route=${route} session=${session} />
+      <${PageArticle} slug=${route.slice('/actualite/'.length)} />
+      <${Pied} txt=${txt} />`;
+  }
+
   let page;
   switch (route){
     case '/':                 page = html`<${Accueil} txt=${txt} />`; break;
@@ -6030,6 +6810,7 @@ function Site(){
     case '/reseau':           page = html`<${Reseau} />`; break;
     case '/rejoindre':        page = html`<${Rejoindre} />`; break;
     case '/contact':          page = html`<${Contact} txt=${txt} />`; break;
+    case '/actualites':       page = html`<${PageActualites} />`; break;
     case '/inscription':      page = session ? html`<${Accueil} txt=${txt} />` : html`<${Inscription} />`; break;
     case '/mentions':         page = html`<${PageTexte} titre="Mentions légales" corps=${txt.mentions} />`; break;
     case '/confidentialite':  page = html`<${PageTexte} titre="Politique de confidentialité" corps=${txt.confidentialite} />`; break;
