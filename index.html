@@ -2119,7 +2119,13 @@ function Groupes({ p }){
         achevant la formation correspondante.
       </p>
 
-      ${msg && html`<div class="alerte err" style="margin-top:24px">${msg}</div>`}
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:24px">${msg}</div>`}
+
+      <div style="margin-top:24px">
+        <${CandidaturesGroupe} setMsg=${setMsg} />
+        <${GroupesOuverts} setMsg=${setMsg} />
+      </div>
 
       ${creer && html`
         <form onSubmit=${envoyerCreation} class="panneau" style="margin-top:24px">
@@ -2799,10 +2805,18 @@ function Conversation({ p, id, fermer }){
   }
 
   async function retirer(m){
-    if (!confirm('Retirer ce message ?')) return;
+    if (!confirm('Retirer ce message ? La pièce jointe sera effacée.')) return;
     const { data, error } = await db.rpc('retirer_message', { p_id: m.id });
     if (error) return setMsg(error.message);
     if (data && !data.ok) return setMsg(data.message);
+    // La base a coupé le lien ; elle ne peut pas atteindre Storage. On
+    // efface le fichier ici, faute de quoi il resterait accessible à qui
+    // en connaîtrait le chemin.
+    if (data.piece){
+      const { error: eDel } = await db.storage.from('pieces').remove([data.piece]);
+      if (eDel) setMsg('Message retiré, mais le fichier n\u2019a pas pu être effacé : '
+        + eDel.message);
+    }
     charger();
   }
 
@@ -9664,6 +9678,7 @@ function MonComite({ p, apps }){
       <div class="row" style="margin:0 0 24px;gap:0;border-bottom:1px solid var(--filet)">
         ${[['vie','La vie du comité'],['projets','Projets'],
            ['propositions','Propositions'],['equipe','Qui anime'],
+           ['equipes','Équipes'],
            ...(peutRelayer ? [['relayer','À relayer']] : [])]
           .map(([k,lab]) => html`
           <button class="btn light" style=${'border:0;border-bottom:2px solid '+
@@ -9673,6 +9688,17 @@ function MonComite({ p, apps }){
       </div>
 
       ${onglet === 'relayer' && html`<${Publier} p=${p} />`}
+
+      ${onglet === 'equipes' && html`
+        <div>
+          <p class="muted" style="max-width:60ch;margin:0 0 4px">
+            Le pendant local des groupes de travail : une équipe de structure
+            réunit quelques personnes autour d\u2019un projet, avec ses documents
+            et ses tâches. Elle se propose, se valide, et se dissout quand
+            l\u2019objet est atteint.
+          </p>
+          <${EquipesLocales} p=${p} apps=${apps} territoire=${t.id} setMsg=${setMsg} />
+        </div>`}
 
       ${onglet === 'vie' && html`
         <div>
@@ -14643,6 +14669,263 @@ function JournalPieces({ setMsg }){
               </tbody>
             </table>
           </div>`}
+    </div>`;
+}
+
+/* =====================================================================
+   LES ÉQUIPES
+   Un groupe ne se rejoint plus d'un clic : on postule, on est retenu.
+   Une équipe locale se propose, et la présidence de la structure la
+   valide — sauf si c'est elle qui l'a proposée.
+
+   Une équipe n'hérite d'aucun droit. Elle reçoit une fiche, comme un
+   poste, remplie par qui valide et bornée à ce qu'il détient lui-même.
+   ===================================================================== */
+function GroupesOuverts({ setMsg }){
+  const [l, setL] = useState([]);
+  const [ouvert, setOuvert] = useState(null);
+  const [motivation, setMotivation] = useState('');
+
+  const charger = useCallback(() =>
+    db.rpc('groupes_ouverts').then(({data}) => setL(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function postuler(e, g){
+    e.preventDefault();
+    const { data, error } = await db.rpc('postuler_groupe',
+      { p_groupe: g.id, p_motivation: motivation });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMotivation(''); setOuvert(null);
+    setMsg('Candidature déposée. Le responsable du groupe vous répondra.');
+    charger();
+  }
+
+  if (l.length === 0) return null;
+  return html`
+    <div class="panneau" style="margin-bottom:24px">
+      <div class="tete"><h3 style="font-size:17px">Groupes qui recrutent</h3>
+        <span class="tag">${l.length}</span></div>
+      ${l.map(g => html`
+        <div key=${g.id}>
+          <div class="ligne" style="align-items:flex-start">
+            <div style="flex:1;min-width:240px">
+              <div class="row" style="gap:8px;flex-wrap:wrap">
+                <span style="font-weight:600">${g.nom}</span>
+                <span class="tag">${g.portee === 'locale' ? g.territoire : 'National'}</span>
+                <span class="small muted">${g.membres} membre(s)</span>
+              </div>
+              ${g.objet && html`<div class="small muted" style="margin-top:4px">${g.objet}</div>`}
+            </div>
+            ${g.ma_candidature === 'deposee'
+              ? html`<span class="tag or">Candidature déposée</span>`
+              : g.ma_candidature === 'ecartee'
+                ? html`<span class="tag muted">Non retenue</span>`
+                : html`<button class="btn sm"
+                    onClick=${()=>setOuvert(ouvert===g.id?null:g.id)}>
+                    ${ouvert===g.id ? 'Fermer' : 'Postuler'}</button>`}
+          </div>
+          ${ouvert === g.id && html`
+            <form class="corps stack" onSubmit=${e=>postuler(e,g)}
+              style="background:var(--papier);border-bottom:1px solid var(--filet)">
+              <div class="field" style="margin:0">
+                <label>Pourquoi souhaitez-vous rejoindre ce groupe ?</label>
+                <textarea value=${motivation} style="min-height:80px"
+                  placeholder="Ce que vous savez faire, ce que vous voulez y apporter."
+                  onInput=${e=>setMotivation(e.target.value)}></textarea>
+              </div>
+              <div><button class="btn sm">Déposer ma candidature</button></div>
+            </form>`}
+        </div>`)}
+    </div>`;
+}
+
+/* --- Les candidatures reçues, côté responsable de groupe --------------- */
+function CandidaturesGroupe({ setMsg }){
+  const [l, setL] = useState([]);
+  const charger = useCallback(() =>
+    db.rpc('candidatures_groupe', { p_groupe: null }).then(({data}) => setL(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const traiter = async (c, retenue) => {
+    const r = retenue ? (prompt('Mot d\u2019accueil (facultatif)') || '')
+                      : prompt('Motif du refus (obligatoire)');
+    if (!retenue && !r) return;
+    const { data, error } = await db.rpc('retenir_candidature',
+      { p_id: c.id, p_retenue: retenue, p_reponse: r || null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg(retenue ? 'Candidature retenue. Le groupe lui est ouvert.'
+                   : 'Candidature écartée.');
+    charger();
+  };
+
+  if (l.length === 0) return null;
+  return html`
+    <div class="panneau" style="margin-bottom:24px">
+      <div class="tete"><h3 style="font-size:17px">Candidatures reçues</h3>
+        <span class="tag">${l.length}</span></div>
+      ${l.map(c => html`
+        <div class="ligne" key=${c.id} style="align-items:flex-start">
+          <div style="flex:1;min-width:260px">
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <span style="font-weight:600">${c.candidat}</span>
+              <span class="tag">${c.groupe}</span>
+            </div>
+            <div class="small muted" style="margin-top:3px">
+              ${c.fonction}${c.territoire ? ' · ' + c.territoire : ''} · ${jour(c.cree_le)}
+            </div>
+            <div class="small" style="margin-top:6px">${c.motivation}</div>
+          </div>
+          <div class="row" style="gap:6px">
+            <button class="btn sm" onClick=${()=>traiter(c, true)}>Retenir</button>
+            <button class="btn sm light" onClick=${()=>traiter(c, false)}>Écarter</button>
+          </div>
+        </div>`)}
+    </div>`;
+}
+
+/* --- Constituer une équipe locale --------------------------------------
+   La fiche ne peut contenir que des applications que le proposant
+   détient. Au moment de valider, elle est ramenée à ce que le
+   validateur détient : il engage sa signature, pas celle du proposant.
+   --------------------------------------------------------------------- */
+function EquipesLocales({ p, apps, territoire, setMsg }){
+  const [aValider, setAValider] = useState([]);
+  const [gens, setGens] = useState([]);
+  const [ouvert, setOuvert] = useState(false);
+  const [f, setF] = useState({ nom:'', objet:'' });
+  const [membres, setMembres] = useState([]);
+  const [fiche, setFiche] = useState([]);
+
+  const charger = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      db.rpc('equipes_a_valider'),
+      db.from('v_annuaire').select('id,prenom,nom,fonction_nom')
+        .eq('statut','actif').order('nom')
+    ]);
+    setAValider(a.data||[]); setGens(b.data||[]);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const partageables = (apps||[]).filter(a => a.ouvert && a.code !== 'groupes');
+
+  async function proposer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('proposer_equipe', {
+      p_nom: f.nom, p_objet: f.objet, p_territoire: territoire || null,
+      p_membres: membres, p_applications: fiche
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({ nom:'', objet:'' }); setMembres([]); setFiche([]); setOuvert(false);
+    setMsg(data.statut === 'actif'
+      ? 'Équipe créée. Les membres reçoivent une invitation à accepter.'
+      : 'Équipe proposée. La présidence de la structure la validera.');
+    charger();
+  }
+
+  async function valider(g, ok){
+    const m = ok ? null : prompt('Motif du refus (obligatoire)');
+    if (!ok && !m) return;
+    const { data, error } = await db.rpc('valider_equipe',
+      { p_groupe: g.id, p_ok: ok, p_motif: m });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg(ok ? 'Équipe validée.' : 'Proposition refusée.');
+    charger();
+  }
+
+  const bascule = (liste, set, v) =>
+    set(liste.includes(v) ? liste.filter(x => x !== v) : [...liste, v]);
+
+  return html`
+    <div style="margin-top:24px">
+      ${aValider.length > 0 && html`
+        <div class="panneau" style="margin-bottom:24px;border-color:var(--bordeaux)">
+          <div class="tete" style="border-bottom-color:var(--bordeaux)">
+            <h3 style="font-size:17px">Équipes proposées</h3>
+            <span class="tag">${aValider.length}</span></div>
+          ${aValider.map(g => html`
+            <div class="ligne" key=${g.id} style="align-items:flex-start">
+              <div style="flex:1;min-width:250px">
+                <div style="font-weight:600">${g.nom}</div>
+                <div class="small muted" style="margin-top:3px">
+                  Proposée par ${g.propose_par} · ${g.territoire}
+                  · ${g.membres} personne(s) · ${jour(g.cree_le)}
+                </div>
+                <div class="small" style="margin-top:6px">${g.objet}</div>
+                ${(g.applications||[]).length > 0 && html`
+                  <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+                    <span class="small muted">Fiche demandée :</span>
+                    ${g.applications.map((a,i) => html`<span class="tag" key=${i}>${a}</span>`)}
+                  </div>`}
+              </div>
+              <div class="row" style="gap:6px">
+                <button class="btn sm" onClick=${()=>valider(g, true)}>Valider</button>
+                <button class="btn sm light" onClick=${()=>valider(g, false)}>Refuser</button>
+              </div>
+            </div>`)}
+          <div class="corps small muted">
+            En validant, la fiche est ramenée aux applications que vous détenez
+            vous-même : vous engagez votre signature, pas celle du proposant.
+          </div>
+        </div>`}
+
+      <div class="panneau">
+        <div class="tete spread">
+          <h3 style="font-size:17px">Constituer une équipe</h3>
+          <button class="btn sm" onClick=${()=>setOuvert(!ouvert)}>
+            ${ouvert ? 'Fermer' : 'Proposer une équipe'}</button>
+        </div>
+        ${ouvert
+          ? html`<form class="corps stack" onSubmit=${proposer}>
+              <div class="field" style="margin:0"><label>Nom de l\u2019équipe</label>
+                <input value=${f.nom} placeholder="Équipe animation du forum des associations"
+                  onInput=${e=>setF(o=>({...o,nom:e.target.value}))} /></div>
+              <div class="field"><label>Objet</label>
+                <textarea value=${f.objet} style="min-height:70px"
+                  placeholder="Ce qu\u2019elle est chargée de faire, et jusqu\u2019à quand."
+                  onInput=${e=>setF(o=>({...o,objet:e.target.value}))}></textarea></div>
+
+              <div class="field">
+                <label>Qui en fait partie</label>
+                <div class="row" style="gap:6px;flex-wrap:wrap;max-height:180px;
+                  overflow-y:auto;padding:4px 0">
+                  ${gens.map(g => html`
+                    <button type="button" key=${g.id}
+                      class=${'btn sm ' + (membres.includes(g.id) ? '' : 'light')}
+                      onClick=${()=>bascule(membres, setMembres, g.id)}>
+                      ${nomComplet(g)}</button>`)}
+                </div>
+                <div class="small muted">Chacun recevra une invitation à accepter.
+                  On n\u2019enrôle personne malgré lui.</div>
+              </div>
+
+              ${partageables.length > 0 && html`
+                <div class="field">
+                  <label>Ce que l\u2019appartenance ouvrira</label>
+                  <div class="row" style="gap:6px;flex-wrap:wrap">
+                    ${partageables.map(a => html`
+                      <button type="button" key=${a.code}
+                        class=${'btn sm ' + (fiche.includes(a.code) ? '' : 'light')}
+                        onClick=${()=>bascule(fiche, setFiche, a.code)}>
+                        ${a.nom_court || a.nom}</button>`)}
+                  </div>
+                  <div class="small muted">
+                    Une équipe n\u2019hérite de rien : elle reçoit une fiche, comme un
+                    poste. Vous ne pouvez y mettre que ce dont vous disposez.
+                  </div>
+                </div>`}
+
+              <div><button class="btn">Proposer</button></div>
+            </form>`
+          : html`<div class="corps small muted">
+              Une équipe de structure permet de travailler à plusieurs sur un
+              projet local : documents partagés, tâches, échanges. Si vous
+              présidez la structure, votre proposition vaut décision ; sinon
+              elle est soumise à la présidence.</div>`}
+      </div>
     </div>`;
 }
 
