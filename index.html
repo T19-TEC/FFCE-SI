@@ -991,9 +991,12 @@ function Flanc({ p, apps, page }){
         ${dispo('notes_frais') && item('notes_frais','Mes notes de frais')}
 
         ${(dispo('annuaire') || dispo('tresorerie') || dispo('ordonnancement')
+           || dispo('pilotage') || dispo('parcours')
            || dispo('discipline') || dispo('communication')
            || dispo('chancellerie')) && html`
           <div class="groupe">Mes responsabilités</div>
+          ${dispo('pilotage') && item('pilotage','Pilotage du réseau')}
+          ${dispo('parcours') && item('parcours','Parcours adhérent')}
           ${dispo('annuaire') && item('annuaire','Annuaire fédéral')}
           ${dispo('ordonnancement') && item('ordonnancement','Ordonnancement')}
           ${dispo('tresorerie') && item('tresorerie','Direction financière')}
@@ -1121,6 +1124,8 @@ function TableauDeBord({ p, apps, chemin, demandes }){
       </div>
 
       <${MonDossier} p=${p} entier=${false} />
+
+      <${PrendreRendezVous} />
 
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px">
         <${CurseurEngagement} compact=${true} />
@@ -7413,6 +7418,619 @@ function AppelPublic({ token }){
     </section>`;
 }
 
+
+/* =====================================================================
+   PARCOURS ADHÉRENT
+   Six marches, de l'inscription à la première mission. Chacune est
+   datée par le système quand il peut la constater.
+   ===================================================================== */
+
+function ParcoursAdherent({ p }){
+  const [onglet, setOnglet] = useState('accueillir');
+  const [liste, setListe] = useState([]);
+  const [tunnel, setTunnel] = useState(null);
+  const [creneaux, setCreneaux] = useState([]);
+  const [rdv, setRdv] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a,b,c,d] = await Promise.all([
+      db.rpc('nouveaux_a_accueillir', { p_territoire: null }),
+      db.rpc('tunnel_benevole', { p_territoire: null, p_mois: 6 }),
+      db.from('creneaux').select('*').eq('hote_id', p.id).is('annule_le', null)
+        .gte('debut', new Date().toISOString()).order('debut'),
+      db.rpc('mes_rendez_vous')
+    ]);
+    setListe(a.data||[]); setTunnel(b.data);
+    setCreneaux(c.data||[]); setRdv(d.data||[]);
+  }, [p.id]);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function noter(x, champ, notes){
+    const { data, error } = await db.rpc('noter_parcours',
+      { p_profil: x.profil_id, p_champ: champ, p_notes: notes || null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Enregistré.'); charger();
+  }
+
+  const enRetard = liste.filter(x => x.jours > 14);
+
+  return html`
+    <div>
+      <div class="eyebrow">Parcours adhérent</div>
+      <h1 style="margin:6px 0 8px">Accueillir</h1>
+      <p class="muted" style="max-width:60ch">
+        Personne ne doit se perdre entre l\u2019inscription et la première mission.
+        Chaque étape se date d\u2019elle-même quand le système peut la constater.
+      </p>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div class="chiffres" style="margin:24px 0">
+        <div><div class="n" style="font-size:30px">${liste.length}</div>
+          <div class="l">À accompagner</div></div>
+        <div><div class="n" style="font-size:30px">${enRetard.length}</div>
+          <div class="l">Sans réponse depuis 15 j</div></div>
+        <div><div class="n" style="font-size:30px">
+          ${rdv.filter(r=>!r.passe).length}</div>
+          <div class="l">Rendez-vous à venir</div></div>
+        <div><div class="n" style="font-size:30px">
+          ${tunnel && tunnel.retention_6m !== null ? tunnel.retention_6m + ' %' : '—'}</div>
+          <div class="l">Encore là à six mois</div></div>
+      </div>
+
+      <div class="row" style="margin:0 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['accueillir','À accompagner'],['rdv','Rendez-vous'],
+           ['creneaux','Mes disponibilités'],['tunnel','Le tunnel']]
+          .map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'accueillir' && html`
+        <div class="panneau">
+          ${liste.length === 0
+            ? html`<div class="vide">Personne n\u2019attend. C\u2019est bon signe.</div>`
+            : liste.map(x => html`
+              <div class="ligne" style="align-items:flex-start">
+                <div style="flex:1;min-width:250px">
+                  <div class="row" style="gap:8px">
+                    <strong>${x.membre}</strong>
+                    <span class="tag">${x.etape}</span>
+                    ${x.jours > 14 && html`<span class="tag rouge">${x.jours} jours</span>`}
+                  </div>
+                  <div class="small muted" style="margin-top:4px">
+                    <span class="mono">${x.matricule}</span> · ${x.email}
+                    ${x.territoire ? ' · ' + x.territoire : ''}
+                    · inscrit le ${jour(x.inscrit_le)}
+                  </div>
+                  ${x.prochaine_action && html`
+                    <div class="small" style="margin-top:6px;color:var(--action)">
+                      → ${x.prochaine_action}</div>`}
+                  ${x.rdv_le && html`<div class="small muted" style="margin-top:4px">
+                    Rendez-vous le ${new Date(x.rdv_le).toLocaleString('fr-FR',
+                      {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`}
+                  ${x.referent && html`<div class="small muted">Suivi par ${x.referent}</div>`}
+                  ${x.notes && html`<div class="small" style="margin-top:6px;
+                    padding:8px;background:var(--papier);border-radius:2px">${x.notes}</div>`}
+                </div>
+                <div class="row">
+                  ${!x.referent && html`<button class="btn sm light"
+                    onClick=${()=>noter(x,'referent')}>Je m\u2019en charge</button>`}
+                  <button class="btn sm light" onClick=${()=>noter(x,'contacte')}>
+                    Contacté</button>
+                  <button class="btn sm light" onClick=${()=>{
+                    const n = prompt('Note de suivi', x.notes||'');
+                    if (n !== null) noter(x,'notes',n);
+                  }}>Noter</button>
+                  <button class="btn sm light" onClick=${()=>{
+                    const m = prompt('Pourquoi le parcours s\u2019arrête (obligatoire)');
+                    if (m) noter(x,'abandon',m);
+                  }}>Clore</button>
+                </div>
+              </div>`)}
+        </div>`}
+
+      ${onglet === 'rdv' && html`
+        <div class="panneau">
+          ${rdv.length === 0
+            ? html`<div class="vide">Aucun rendez-vous.</div>`
+            : rdv.map(r => html`
+              <div class="ligne">
+                <div>
+                  <div>${r.avec} <span class="small muted">${r.avec_fonction||''}</span></div>
+                  <div class="small muted">
+                    ${new Date(r.debut).toLocaleString('fr-FR',
+                      {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})}
+                    · ${r.duree_min} min
+                    ${r.lieu ? ' · ' + r.lieu : ''}
+                  </div>
+                  ${r.visio && html`<a class="small" href=${r.visio}
+                    target="_blank" rel="noopener">Rejoindre en visioconférence ↗</a>`}
+                </div>
+                <div class="row">
+                  ${r.passe
+                    ? html`<span class="tag">Passé</span>`
+                    : html`<button class="btn sm light" onClick=${async ()=>{
+                        const m = prompt('Motif de l\u2019annulation') || '';
+                        await db.rpc('annuler_creneau', { p_creneau: r.id, p_motif: m });
+                        charger();
+                      }}>Annuler</button>`}
+                </div>
+              </div>`)}
+        </div>`}
+
+      ${onglet === 'creneaux' && html`<${MesCreneaux} p=${p} creneaux=${creneaux}
+        recharger=${charger} setMsg=${setMsg} />`}
+
+      ${onglet === 'tunnel' && tunnel && html`<${Tunnel} t=${tunnel} />`}
+    </div>`;
+}
+
+function MesCreneaux({ p, creneaux, recharger, setMsg }){
+  const [f, setF] = useState({date:'', heures:'', duree:'30', lieu:'', visio:''});
+
+  async function poser(e){
+    e.preventDefault();
+    const liste = f.heures.split(',').map(h => h.trim()).filter(Boolean)
+      .map(h => new Date(f.date + 'T' + h).toISOString());
+    if (liste.length === 0) return setMsg('Erreur : indiquez au moins une heure.');
+    const { data, error } = await db.rpc('poser_creneaux', {
+      p_creneaux: liste, p_duree: Number(f.duree||30),
+      p_lieu: f.lieu || null, p_visio: f.visio || null,
+      p_territoire: p.territoire_id || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({date:'', heures:'', duree:'30', lieu:'', visio:''});
+    setMsg(data.poses + ' créneau(x) posé(s).'); recharger();
+  }
+
+  return html`
+    <div>
+      <form onSubmit=${poser} class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">Ouvrir des créneaux</h3></div>
+        <div class="corps stack">
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:160px;margin:0"><label>Jour</label>
+              <input type="date" required value=${f.date}
+                onInput=${e=>setF(o=>({...o,date:e.target.value}))} /></div>
+            <div class="field" style="flex:2;min-width:200px;margin:0"><label>Heures</label>
+              <input required value=${f.heures} placeholder="18:00, 18:30, 19:00"
+                onInput=${e=>setF(o=>({...o,heures:e.target.value}))} /></div>
+            <div class="field" style="flex:0 0 110px;margin:0"><label>Durée</label>
+              <input type="number" min="15" step="15" value=${f.duree}
+                onInput=${e=>setF(o=>({...o,duree:e.target.value}))} /></div>
+          </div>
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:180px;margin:0"><label>Lieu</label>
+              <input value=${f.lieu} placeholder="Maison des associations"
+                onInput=${e=>setF(o=>({...o,lieu:e.target.value}))} /></div>
+            <div class="field" style="flex:1;min-width:180px;margin:0"><label>Lien visio</label>
+              <input type="url" value=${f.visio}
+                onInput=${e=>setF(o=>({...o,visio:e.target.value}))} /></div>
+          </div>
+          <div><button class="btn">Ouvrir ces créneaux</button></div>
+          <p class="small muted">
+            Séparez les heures par des virgules. Ils seront proposés aux nouveaux
+            adhérents de votre territoire et de ceux qui en dépendent.
+          </p>
+        </div>
+      </form>
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">Créneaux ouverts</h3>
+          <span class="tag">${creneaux.length}</span></div>
+        ${creneaux.length === 0
+          ? html`<div class="vide">Aucun créneau ouvert.</div>`
+          : creneaux.map(c => html`
+            <div class="ligne">
+              <div>
+                <div>${new Date(c.debut).toLocaleString('fr-FR',
+                  {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})}</div>
+                <div class="small muted">${c.duree_min} min
+                  ${c.lieu ? ' · ' + c.lieu : ''}${c.visio ? ' · visioconférence' : ''}</div>
+              </div>
+              <div class="row">
+                ${c.reserve_par
+                  ? html`<span class="tag vert">Réservé</span>`
+                  : html`<span class="tag">Libre</span>
+                    <button class="btn sm light" onClick=${async ()=>{
+                      await db.from('creneaux').delete().eq('id', c.id);
+                      recharger();
+                    }}>Retirer</button>`}
+              </div>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- Le tunnel : chaque marche perdue se voit ------------------------- */
+function Tunnel({ t, compact }){
+  if (!t || t.erreur) return html`<div class="alerte err">${t?.erreur||'Indisponible.'}</div>`;
+  const depart = t.marches[0].n || 1;
+  return html`
+    <div>
+      <div class="panneau">
+        <div class="tete">
+          <div class="row" style="gap:8px">
+            <h3 style="font-size:17px">De l\u2019inscription à la première mission</h3>
+            <${Info} texte="Sur les six derniers mois. Chaque marche montre combien de personnes l'ont franchie, et combien s'y sont arrêtées. C'est là qu'il faut agir." />
+          </div>
+          <span class="small muted">${t.periode_mois} derniers mois</span>
+        </div>
+        <div class="corps">
+          ${t.marches.map(m => {
+            const pct = Math.round(m.n / depart * 100);
+            return html`
+              <div style="margin-bottom:14px">
+                <div class="spread small">
+                  <span>${m.rang}. ${m.nom}</span>
+                  <span>
+                    <span class="mono">${m.n}</span>
+                    <span class="muted"> · ${pct} %</span>
+                    ${m.perte > 0 && html`<span style="color:var(--bordeaux)">
+                      · ${m.perte} perdu${m.perte>1?'s':''}</span>`}
+                  </span>
+                </div>
+                <div style="height:22px;background:var(--filet);margin-top:5px;position:relative">
+                  <div style=${'height:100%;width:'+pct+'%;background:'+
+                    (m.rang===6?'var(--valide)':'var(--bleu)')}></div>
+                </div>
+              </div>`;
+          })}
+        </div>
+      </div>
+
+      ${!compact && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Ce que disent les délais</h3></div>
+          <div class="ligne"><span class="muted">Délai médian de validation</span>
+            <span class="mono">${t.delai_median_validation !== null
+              ? t.delai_median_validation + ' jours' : '—'}</span></div>
+          <div class="ligne"><span class="muted">Délai médian jusqu\u2019à la formation</span>
+            <span class="mono">${t.delai_median_formation !== null
+              ? t.delai_median_formation + ' jours' : '—'}</span></div>
+          <div class="ligne"><span class="muted">Encore présents à six mois</span>
+            <span class="mono">${t.retention_6m !== null
+              ? t.retention_6m + ' %' : '—'}
+              ${t.cohorte_6m ? html`<span class="muted"> sur ${t.cohorte_6m}</span>` : ''}</span></div>
+          <div class="ligne"><span class="muted">Parcours interrompus</span>
+            <span class="mono">${t.abandons}</span></div>
+        </div>`}
+    </div>`;
+}
+
+/* =====================================================================
+   PILOTAGE DU RÉSEAU
+   Trois vues selon l'échelon : local, territorial, national.
+   ===================================================================== */
+function Pilotage({ p }){
+  const national = p.niveau >= 80;
+  const [onglet, setOnglet] = useState(national ? 'national' : 'local');
+
+  const vues = [['local','Mon terrain']];
+  if (p.niveau >= 50) vues.push(['tunnel','Tunnel du bénévole']);
+  if (p.niveau >= 60) vues.push(['structures','Structures']);
+  if (national) vues.push(['national','Vue nationale']);
+
+  return html`
+    <div>
+      <div class="eyebrow">Pilotage</div>
+      <h1 style="margin:6px 0 8px">Où le réseau tient, où il lâche</h1>
+
+      <div class="row" style="margin:28px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${vues.map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'local'      && html`<${BordLocal} />`}
+      ${onglet === 'tunnel'     && html`<${BordTunnel} p=${p} />`}
+      ${onglet === 'structures' && html`<${Structures} setMsg=${()=>{}} ouvrir=${()=>{}} />`}
+      ${onglet === 'national'   && html`<${BordNational} />`}
+    </div>`;
+}
+
+/* --- Local : quatre choses, pas une de plus --------------------------- */
+function BordLocal(){
+  const [b, setB] = useState(null);
+  useEffect(() => { db.rpc('bord_local').then(({data}) => setB(data)); }, []);
+  if (!b) return html`<div class="vide">Chargement…</div>`;
+
+  return html`
+    <div>
+      <p class="muted" style="max-width:56ch;margin-bottom:24px">
+        ${b.territoire || 'Votre territoire'} — quatre choses, rien de plus.
+      </p>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:24px">
+        <div class="panneau">
+          <div class="tete"><h3 style="font-size:17px">Mes membres</h3></div>
+          <div class="ligne"><span class="muted">Actifs</span>
+            <span class="mono" style="font-size:16px">${b.membres.total}</span></div>
+          <div class="ligne"><span class="muted">Arrivés ce mois</span>
+            <span class="mono">${b.membres.nouveaux}</span></div>
+          <div class="ligne">
+            <span class="muted">À accueillir</span>
+            <span class=${b.membres.a_accueillir > 0 ? 'tag rouge' : 'mono'}>
+              ${b.membres.a_accueillir}</span></div>
+        </div>
+
+        <div class="panneau">
+          <div class="tete"><h3 style="font-size:17px">Ce qui attend une réponse</h3></div>
+          ${(b.attentes||[]).length === 0
+            ? html`<div class="corps small muted">Rien en attente.</div>`
+            : b.attentes.map(x => html`
+              <div class="ligne">
+                <a href=${x.lien} class="small">${x.libelle}</a>
+                <span class="pastille">${x.nombre}</span>
+              </div>`)}
+        </div>
+      </div>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Mes actions à venir</h3></div>
+        ${(b.actions||[]).length === 0
+          ? html`<div class="vide">Aucune action programmée.</div>`
+          : b.actions.map(a => html`
+            <div class="ligne">
+              <div>
+                <div>${a.titre}</div>
+                <div class="small muted">
+                  ${a.debut ? jour(a.debut) : 'sans date'}${a.lieu ? ' · ' + a.lieu : ''}</div>
+              </div>
+              <span class="tag">${a.retenus}/${a.places} place${a.places>1?'s':''}</span>
+            </div>`)}
+      </div>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Mes tâches</h3></div>
+        ${(b.taches||[]).length === 0
+          ? html`<div class="vide">Aucune tâche assignée.</div>`
+          : b.taches.map(t => html`
+            <div class="ligne">
+              <div>
+                <div>${t.titre}</div>
+                <div class="small muted">${t.groupe}
+                  ${t.echeance ? ' · ' + jour(t.echeance) : ''}</div>
+              </div>
+              <div class="row">
+                ${t.retard && html`<span class="tag rouge">En retard</span>`}
+                <a class="btn sm light" href=${'#/espace/groupe/'+t.groupe_id}>Ouvrir</a>
+              </div>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+function BordTunnel({ p }){
+  const [t, setT] = useState(null);
+  const [terr, setTerr] = useState([]);
+  const [filtre, setFiltre] = useState('');
+  const [mois, setMois] = useState('6');
+  const [liste, setListe] = useState([]);
+
+  useEffect(() => {
+    db.from('territoires').select('id,nom,echelle')
+      .in('echelle',['region','departement']).eq('actif',true).order('nom')
+      .then(({data}) => setTerr(data||[]));
+  }, []);
+  useEffect(() => {
+    db.rpc('tunnel_benevole', { p_territoire: filtre||null, p_mois: Number(mois) })
+      .then(({data}) => setT(data));
+    db.rpc('nouveaux_a_accueillir', { p_territoire: filtre||null })
+      .then(({data}) => setListe(data||[]));
+  }, [filtre, mois]);
+
+  return html`
+    <div>
+      <div class="row" style="margin-bottom:24px;gap:12px">
+        <div class="field" style="width:auto;margin:0">
+          <label>Périmètre</label>
+          <select value=${filtre} onChange=${e=>setFiltre(e.target.value)}>
+            <option value="">Mon périmètre</option>
+            ${terr.map(x => html`<option value=${x.id}>${x.nom}</option>`)}
+          </select>
+        </div>
+        <div class="field" style="width:auto;margin:0">
+          <label>Sur</label>
+          <select value=${mois} onChange=${e=>setMois(e.target.value)}>
+            <option value="3">3 mois</option><option value="6">6 mois</option>
+            <option value="12">12 mois</option><option value="24">24 mois</option>
+          </select>
+        </div>
+      </div>
+
+      ${t && html`<${Tunnel} t=${t} />`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Qui attend, et quoi</h3>
+          <span class="tag">${liste.length}</span></div>
+        ${liste.length === 0
+          ? html`<div class="vide">Personne en attente.</div>`
+          : liste.slice(0,40).map(x => html`
+            <div class="ligne">
+              <div style="flex:1;min-width:220px">
+                <div>${x.membre} <span class="tag">${x.etape}</span></div>
+                <div class="small muted">
+                  ${x.territoire||''} · inscrit il y a ${x.jours} jour${x.jours>1?'s':''}
+                  ${x.referent ? ' · suivi par ' + x.referent : ' · sans référent'}
+                </div>
+                ${x.prochaine_action && html`<div class="small"
+                  style="color:var(--action);margin-top:4px">→ ${x.prochaine_action}</div>`}
+              </div>
+              ${x.jours > 14 && html`<span class="tag rouge">Relancer</span>`}
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- National : on ne regarde que ce qui va mal ----------------------- */
+function BordNational(){
+  const [b, setB] = useState(null);
+  const [exc, setExc] = useState([]);
+  useEffect(() => {
+    db.rpc('bord_national').then(({data}) => setB(data));
+    db.rpc('exceptions_reseau').then(({data}) => setExc(data||[]));
+  }, []);
+  if (!b) return html`<div class="vide">Chargement…</div>`;
+  if (b.erreur) return html`<div class="alerte err">${b.erreur}</div>`;
+
+  const a = b.alertes;
+  const cartes = [
+    ['Structures sans président élu', a.structures_sans_president, '#/espace/habilitations', true],
+    ['Structures sans aucun membre', a.structures_vides, '#/espace/habilitations', true],
+    ['Structures sans action depuis 6 mois', a.structures_inactives, '#/espace/habilitations', true],
+    ['Mandats échus', a.mandats_echus, '#/espace/assemblees', true],
+    ['Mandats à renouveler sous 6 mois', a.mandats_proches, '#/espace/assemblees', false],
+    ['Habilitations expirant sous 90 jours', a.habilitations_expirantes, '#/espace/habilitations', false],
+    ['Accès ouverts jamais utilisés', a.acces_dormants, '#/espace/habilitations', false],
+    ['Encadrants sans formation aux outils', a.formation_accueil_manquante, '#/espace/pilotage', false],
+    ['Actes en attente de contrôle', a.actes_a_controler, '#/espace/validation', true],
+    ['Dossiers disciplinaires ouverts', a.dossiers_disciplinaires, '#/espace/discipline', false]
+  ].filter(x => x[1] > 0);
+
+  return html`
+    <div>
+      <div class="chiffres" style="margin:0 0 24px">
+        <div><div class="n" style="font-size:30px">${b.membres_actifs}</div>
+          <div class="l">Membres actifs</div></div>
+        <div><div class="n" style="font-size:30px">${b.nouveaux_30j}</div>
+          <div class="l">Arrivés ce mois</div></div>
+        <div><div class="n" style="font-size:30px">${b.departements_couverts}</div>
+          <div class="l">Départements couverts</div></div>
+        <div><div class="n" style="font-size:30px">${Number(b.heures_mois||0)}</div>
+          <div class="l">Heures ce mois</div></div>
+      </div>
+
+      <div class="spread" style="margin-bottom:12px">
+        <div class="row" style="gap:8px">
+          <h2 style="font-size:22px">Ce qui appelle une décision</h2>
+          <${Info} texte="Le national ne regarde pas les 101 départements : il regarde ceux qui vont mal. Cette liste ne montre que les écarts, et disparaît quand tout va bien." />
+        </div>
+      </div>
+
+      ${cartes.length === 0
+        ? html`<div class="panneau"><div class="vide">
+            Aucune alerte. Le réseau est en ordre.</div></div>`
+        : html`
+          <div class="tuiles">
+            ${cartes.map(([nom, n, lien, urgent]) => html`
+              <a class="tuile" href=${lien} style=${'border-top:3px solid '+
+                  (urgent?'var(--bordeaux)':'var(--brun)')}>
+                <div style=${'font-family:var(--titre);font-weight:900;font-size:32px;'+
+                  'line-height:1;color:'+(urgent?'var(--bordeaux)':'var(--brun)')}>${n}</div>
+                <p style="margin-top:8px">${nom}</p>
+              </a>`)}
+          </div>`}
+
+      ${exc.length > 0 && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Structures à reprendre</h3>
+            <span class="tag rouge">${exc.length}</span></div>
+          <div style="overflow-x:auto">
+            <table>
+              <thead><tr><th>Structure</th><th>Rattachement</th>
+                <th>Membres</th><th>Constat</th></tr></thead>
+              <tbody>
+                ${exc.slice(0,40).map(x => html`
+                  <tr>
+                    <td>${x.territoire}</td>
+                    <td class="small muted">${x.parent||'—'}</td>
+                    <td class="mono">${x.membres}</td>
+                    <td><span class=${'tag '+(x.gravite<=2?'rouge':'or')}>${x.alerte}</span></td>
+                  </tr>`)}
+              </tbody>
+            </table>
+          </div>
+        </div>`}
+
+      <div style="margin-top:24px"><${Tunnel} t=${b.tunnel} compact=${true} /></div>
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Répartition par région</h3></div>
+        <div class="corps">
+          ${(b.top_regions||[]).map(r => {
+            const max = Math.max(...(b.top_regions||[{membres:1}]).map(x=>x.membres));
+            return html`
+              <div style="padding:6px 0">
+                <div class="spread small"><span>${r.nom}</span>
+                  <span class="mono">${r.membres}</span></div>
+                <div class="jauge" style="margin-top:5px">
+                  <i style=${'width:'+Math.round(r.membres/Math.max(max,1)*100)+
+                    '%;background:var(--bleu)'}></i></div>
+              </div>`;
+          })}
+        </div>
+      </div>
+    </div>`;
+}
+
+/* --- Prendre rendez-vous, côté nouvel adhérent ------------------------ */
+function PrendreRendezVous(){
+  const [libres, setLibres] = useState([]);
+  const [miens, setMiens] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a,b] = await Promise.all([
+      db.rpc('creneaux_disponibles'), db.rpc('mes_rendez_vous')
+    ]);
+    setLibres(a.data||[]); setMiens((b.data||[]).filter(x => !x.je_suis_hote && !x.passe));
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  if (miens.length === 0 && libres.length === 0) return null;
+
+  return html`
+    <div class="panneau" style="margin-bottom:24px">
+      <div class="tete"><h3 style="font-size:17px">Rendez-vous d\u2019accueil</h3></div>
+      ${msg && html`<div class="corps"><div class="alerte ok">${msg}</div></div>`}
+      ${miens.length > 0
+        ? miens.map(r => html`
+          <div class="ligne">
+            <div>
+              <div>Avec ${r.avec}</div>
+              <div class="small muted">
+                ${new Date(r.debut).toLocaleString('fr-FR',
+                  {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})}
+                ${r.lieu ? ' · ' + r.lieu : ''}</div>
+              ${r.visio && html`<a class="small" href=${r.visio} target="_blank"
+                rel="noopener">Rejoindre en visioconférence ↗</a>`}
+            </div>
+            <button class="btn sm light" onClick=${async ()=>{
+              await db.rpc('annuler_creneau', { p_creneau: r.id, p_motif: '' });
+              setMsg('Rendez-vous annulé.'); charger();
+            }}>Annuler</button>
+          </div>`)
+        : html`
+          <div class="corps">
+            <p class="small muted" style="margin:0 0 14px">
+              Un temps d\u2019échange avec votre référent pour comprendre où vous
+              pouvez agir. Choisissez ce qui vous arrange.
+            </p>
+            ${libres.slice(0,8).map(c => html`
+              <div class="ligne" style="padding-left:0;padding-right:0">
+                <div>
+                  <div>${new Date(c.debut).toLocaleString('fr-FR',
+                    {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})}</div>
+                  <div class="small muted">Avec ${c.hote} · ${c.duree_min} min
+                    ${c.lieu ? ' · ' + c.lieu : ''}${c.visio ? ' · visioconférence' : ''}</div>
+                </div>
+                <button class="btn sm" onClick=${async ()=>{
+                  const { data } = await db.rpc('reserver_creneau', { p_creneau: c.id });
+                  if (!data.ok) return setMsg(data.message);
+                  setMsg('Rendez-vous confirmé.'); charger();
+                }}>Réserver</button>
+              </div>`)}
+          </div>`}
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
@@ -8242,6 +8860,10 @@ function Espace({ session, sous }){
     case 'mon-dossier':vue = html`<${MonDossier} p=${p} entier=${true} />`; break;
     case 'referentiel':vue = html`<${Referentiel} />`; break;
     case 'engagement': vue = acces('engagement') ? html`<${Engagement} p=${p} />` : refus; break;
+    case 'parcours':   vue = acces('parcours')
+                          ? html`<${ParcoursAdherent} p=${p} />` : refus; break;
+    case 'pilotage':   vue = acces('pilotage')
+                          ? html`<${Pilotage} p=${p} />` : refus; break;
     case 'assemblees': vue = acces('assemblees')
                           ? html`<${Assemblees} p=${p} />` : refus; break;
     case 'chancellerie': vue = acces('chancellerie')
