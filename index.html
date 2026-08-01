@@ -9627,6 +9627,515 @@ function PropositionsNationales({ setMsg }){
     </div>`;
 }
 
+
+/* =====================================================================
+   BUDGET ET COMPTES
+   Ce que la plateforme sait déjà, elle le compte. La direction ne
+   saisit que ce qu'elle ignore : subventions, cotisations, dons.
+   ===================================================================== */
+
+const STATUT_EX = { prevision:['Prévision',''], vote:['Voté','bleu'],
+  en_cours:['En cours','vert'], arrete:['Arrêté','or'], clos:['Clos',''] };
+
+function Budget({ p }){
+  const [exercices, setExercices] = useState([]);
+  const [actif, setActif] = useState(null);
+  const [b, setB] = useState(null);
+  const [onglet, setOnglet] = useState('budget');
+  const [sauv, setSauv] = useState(null);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a, c] = await Promise.all([
+      db.rpc('mes_exercices'), db.rpc('etat_sauvegardes')
+    ]);
+    setExercices(a.data||[]); setSauv(c.data);
+    const id = actif || (a.data||[])[0]?.id;
+    if (id){
+      setActif(id);
+      const { data } = await db.rpc('budget_exercice', { p_exercice: id });
+      setB(data);
+    }
+  }, [actif]);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function ouvrir(){
+    const annee = prompt('Année de l\u2019exercice', new Date().getFullYear());
+    if (!annee) return;
+    const { data, error } = await db.rpc('ouvrir_exercice',
+      { p_annee: Number(annee), p_territoire: null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setActif(data.id); setMsg('Exercice ouvert.'); charger();
+  }
+
+  async function regler(ligne, champ, valeur){
+    const { data, error } = await db.rpc('regler_ligne',
+      { p_id: ligne.id, p_champ: champ, p_valeur: String(valeur) });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    charger();
+  }
+
+  async function statut(st){
+    const obs = st === 'arrete'
+      ? prompt('Observations sur l\u2019arrêté des comptes (facultatif)') : null;
+    const { data, error } = await db.rpc('changer_statut_exercice',
+      { p_id: actif, p_statut: st, p_observations: obs });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Exercice mis à jour.'); charger();
+  }
+
+  async function exporter(quoi){
+    const fn = quoi === 'budget' ? 'export_budget' : 'export_depenses';
+    const { data, error } = await db.rpc(fn, { p_exercice: actif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data || data.length === 0) return setMsg('Rien à exporter.');
+    const cols = Object.keys(data[0]);
+    const ech = v => {
+      if (v === null || v === undefined) return '';
+      const t = String(v).replace(/"/g,'""');
+      return /[";\n]/.test(t) ? '"'+t+'"' : t;
+    };
+    const csv = '\ufeff' + cols.join(';') + '\n' +
+      data.map(l => cols.map(c => ech(l[c])).join(';')).join('\n');
+    const ex = exercices.find(x => x.id === actif);
+    const nom = 'FFCE-' + (quoi === 'budget' ? 'budget' : 'depenses') +
+      '-' + (ex ? ex.annee : '') + '.csv';
+    const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+    const a = document.createElement('a'); a.href = url; a.download = nom; a.click();
+    URL.revokeObjectURL(url);
+    await db.rpc('tracer_export', { p_objet: nom, p_lignes: data.length });
+    setMsg(data.length + ' ligne(s) exportées. Déposez le fichier sur le Drive.');
+  }
+
+  if (!b && exercices.length === 0) return html`
+    <div>
+      <div class="eyebrow">Budget et comptes</div>
+      <h1 style="margin:6px 0 16px">Aucun exercice ouvert</h1>
+      <p class="muted" style="max-width:56ch">
+        Un exercice couvre une année civile. Une fois ouvert, les dépenses
+        payées, les abandons de frais et le bénévolat valorisé s\u2019y inscrivent
+        d\u2019eux-mêmes.
+      </p>
+      ${msg && html`<div class="alerte err" style="margin-top:16px">${msg}</div>`}
+      <div style="margin-top:24px"><button class="btn" onClick=${ouvrir}>
+        Ouvrir un exercice</button></div>
+    </div>`;
+  if (!b) return html`<div class="vide">Chargement…</div>`;
+
+  const ex = b.exercice || {};
+  const lignes = b.lignes || [];
+  const produits = lignes.filter(l => l.sens === 'produit');
+  const charges  = lignes.filter(l => l.sens === 'charge');
+  const fige = ['arrete','clos'].includes(ex.statut);
+
+  const bloc = (titre, liste) => {
+    const cats = [...new Set(liste.map(l => l.categorie))];
+    return html`
+      <div class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">${titre}</h3></div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th style="min-width:220px">Poste</th>
+              <th style="text-align:right">Prévu</th>
+              <th style="text-align:right">Réalisé</th>
+              <th style="text-align:right">Écart</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              ${cats.map(cat => html`
+                <tr><td colspan="5" style="background:var(--papier);
+                  font-family:var(--titre);font-weight:700;font-size:11px;
+                  letter-spacing:.1em;text-transform:uppercase;color:var(--gris)">
+                  ${cat}</td></tr>
+                ${liste.filter(l => l.categorie === cat).map(l => {
+                  const ecart = Number(l.realise||0) - Number(l.prevu||0);
+                  return html`
+                    <tr>
+                      <td>
+                        <div class="row" style="gap:8px">
+                          <span class="mono muted">${l.poste}</span>
+                          <span>${l.libelle}</span>
+                          ${l.automatique && html`
+                            <${Info} texte=${'Calculé automatiquement : ' + (l.source||'')} />`}
+                        </div>
+                        ${!fige && html`<input defaultValue=${l.intitule||''}
+                          placeholder="Précision (facultatif)"
+                          style="margin-top:6px;font-size:13px;padding:5px 8px"
+                          onBlur=${e=>regler(l,'libelle',e.target.value)} />`}
+                      </td>
+                      <td style="text-align:right">
+                        ${fige
+                          ? html`<span class="mono">${EURO(l.prevu)}</span>`
+                          : html`<input type="number" step="0.01" defaultValue=${l.prevu}
+                              style="width:110px;text-align:right"
+                              onBlur=${e=>regler(l,'prevu',e.target.value)} />`}
+                      </td>
+                      <td style="text-align:right">
+                        ${l.automatique
+                          ? html`<span class="mono" title="Calculé">${EURO(l.realise)}</span>`
+                          : fige
+                            ? html`<span class="mono">${EURO(l.realise)}</span>`
+                            : html`<input type="number" step="0.01" defaultValue=${l.realise_saisi}
+                                style="width:110px;text-align:right"
+                                onBlur=${e=>regler(l,'realise',e.target.value)} />`}
+                      </td>
+                      <td style="text-align:right" class="mono"
+                        style=${'text-align:right;color:'+(ecart<0?'var(--bordeaux)':'var(--gris)')}>
+                        ${ecart === 0 ? '—' : EURO(ecart)}</td>
+                      <td style="width:34px">
+                        ${l.automatique && html`<span class="tag">auto</span>`}</td>
+                    </tr>`;
+                })}`)}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  };
+
+  return html`
+    <div>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Budget et comptes</div>
+          <h1 style="margin:6px 0 0">Exercice ${ex.annee || ''}</h1>
+        </div>
+        <div class="row">
+          <select style="width:auto" value=${actif}
+            onChange=${e=>{ setActif(e.target.value); setB(null); }}>
+            ${exercices.map(x => html`<option value=${x.id}>
+              ${x.annee}${x.territoire ? ' · '+x.territoire : ' · national'}</option>`)}
+          </select>
+          <button class="btn sm light" onClick=${ouvrir}>Nouvel exercice</button>
+        </div>
+      </div>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      ${sauv && !sauv.faite_ce_mois && html`
+        <div class="alerte" style="margin-top:24px;border-left-color:var(--bordeaux)">
+          <strong>Sauvegarde du mois non effectuée.</strong>
+          ${sauv.derniere
+            ? ' Dernière : ' + sauv.derniere.periode + ', il y a ' + sauv.jours_depuis + ' jours.'
+            : ' Aucune sauvegarde n\u2019a jamais été déclarée.'}
+          <button class="btn sm" style="margin-left:10px" onClick=${async ()=>{
+            const ou = prompt('Où avez-vous déposé la sauvegarde ?',
+              'Drive FFCE / Sauvegardes');
+            if (!ou) return;
+            const { data } = await db.rpc('declarer_sauvegarde',
+              { p_portee: 'complete', p_emplacement: ou, p_observation: null });
+            if (data?.ok){ setMsg('Sauvegarde enregistrée. Merci.'); charger(); }
+          }}>C\u2019est fait</button>
+        </div>`}
+
+      <div class="chiffres" style="margin:24px 0">
+        <div><div class="n" style="font-size:28px">${EURO(b.produits_realises)}</div>
+          <div class="l">Produits réalisés</div></div>
+        <div><div class="n" style="font-size:28px">${EURO(b.charges_realisees)}</div>
+          <div class="l">Charges réalisées</div></div>
+        <div><div class="n" style=${'font-size:28px;color:'+
+          (Number(b.resultat_realise)<0?'var(--bordeaux)':'var(--valide)')}>
+          ${EURO(b.resultat_realise)}</div>
+          <div class="l">Résultat</div></div>
+        <div><div class="n" style="font-size:28px">${EURO(b.benevolat)}</div>
+          <div class="l">Bénévolat valorisé</div></div>
+      </div>
+
+      <div class="row" style="margin:0 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['budget','Budget et réalisé'],['synthese','Synthèse'],
+           ['sauvegardes','Sauvegardes']].map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'budget' && html`
+        <div>
+          <div class="spread" style="margin-bottom:16px">
+            <span class=${'tag '+(STATUT_EX[ex.statut]||['',''])[1]}>
+              ${(STATUT_EX[ex.statut]||[ex.statut,''])[0]}
+              ${ex.arrete_le ? ' le ' + jour(ex.arrete_le) : ''}</span>
+            <div class="row">
+              <button class="btn sm light" onClick=${()=>exporter('budget')}>
+                Exporter le budget</button>
+              <button class="btn sm light" onClick=${()=>exporter('depenses')}>
+                Exporter les dépenses</button>
+              ${!fige && html`
+                <select style="width:auto" value=${ex.statut}
+                  onChange=${e=>statut(e.target.value)}>
+                  ${Object.entries(STATUT_EX).map(([k,v]) =>
+                    html`<option value=${k}>${v[0]}</option>`)}
+                </select>`}
+            </div>
+          </div>
+          ${bloc('Produits', produits)}
+          ${bloc('Charges', charges)}
+        </div>`}
+
+      ${onglet === 'synthese' && html`
+        <div>
+          <div class="panneau">
+            <div class="tete"><h3 style="font-size:17px">Compte de résultat</h3></div>
+            <div class="ligne"><span class="muted">Total des produits</span>
+              <span class="mono" style="font-size:15px">${EURO(b.produits_realises)}</span></div>
+            <div class="ligne"><span class="muted">Total des charges</span>
+              <span class="mono" style="font-size:15px">${EURO(b.charges_realisees)}</span></div>
+            <div class="ligne" style="background:var(--papier)">
+              <strong>Résultat de l\u2019exercice</strong>
+              <span class="mono" style=${'font-size:17px;font-weight:700;color:'+
+                (Number(b.resultat_realise)<0?'var(--bordeaux)':'var(--valide)')}>
+                ${EURO(b.resultat_realise)}</span></div>
+            <div class="corps small muted" style="border-top:1px solid var(--filet)">
+              Le bénévolat valorisé (${EURO(b.benevolat)}) figure en produit comme
+              en charge, conformément au plan comptable associatif : il ne change
+              pas le résultat, mais il montre le poids réel de l\u2019engagement —
+              ce que tout financeur regarde.
+            </div>
+          </div>
+
+          <div class="panneau" style="margin-top:24px">
+            <div class="tete"><h3 style="font-size:17px">Exécution du budget</h3>
+              ${b.execution !== null && html`<span class="mono">${b.execution} %</span>`}</div>
+            <div class="corps">
+              <div class="spread small"><span>Charges prévues</span>
+                <span class="mono">${EURO(b.charges)}</span></div>
+              <div class="jauge" style="margin-top:8px;height:8px">
+                <i style=${'width:'+Math.min(b.execution||0,100)+'%;background:'+
+                  ((b.execution||0)>100?'var(--bordeaux)':'var(--bleu)')}></i></div>
+              <div class="spread small muted" style="margin-top:6px">
+                <span>Réalisé ${EURO(b.charges_realisees)}</span>
+                <span>${(b.execution||0) > 100 ? 'Dépassement' : 'Dans l\u2019enveloppe'}</span>
+              </div>
+            </div>
+          </div>
+        </div>`}
+
+      ${onglet === 'sauvegardes' && sauv && html`
+        <div>
+          <p class="small muted" style="margin-bottom:16px;max-width:62ch">
+            Le plan gratuit de Supabase ne fournit aucune sauvegarde automatique.
+            Exportez chaque mois le budget, les dépenses, le registre des adhésions
+            et le registre disciplinaire, déposez-les sur le Drive de la fédération,
+            puis déclarez-le ici.
+          </p>
+          <div class="panneau">
+            <div class="tete">
+              <h3 style="font-size:17px">${sauv.periode}</h3>
+              ${sauv.faite_ce_mois
+                ? html`<span class="tag vert">Faite</span>`
+                : html`<span class="tag rouge">À faire</span>`}
+            </div>
+            ${(sauv.historique||[]).length === 0
+              ? html`<div class="vide">Aucune sauvegarde déclarée.</div>`
+              : (sauv.historique||[]).map(h => html`
+                <div class="ligne">
+                  <div>
+                    <div>${h.periode} — ${h.portee}</div>
+                    <div class="small muted">${h.par} · ${jour(h.le)}
+                      ${h.emplacement ? ' · ' + h.emplacement : ''}</div>
+                  </div>
+                  <span class="tag vert">Déclarée</span>
+                </div>`)}
+          </div>
+        </div>`}
+    </div>`;
+}
+
+/* =====================================================================
+   RAPPORT D'ACTIVITÉ
+   Les chiffres se calculent, le récit se rédige.
+   ===================================================================== */
+function Rapport({ p }){
+  const [annee, setAnnee] = useState(new Date().getFullYear() - 1);
+  const [c, setC] = useState(null);
+  const [r, setR] = useState({});
+  const [edition, setEdition] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const peutRediger = p.niveau >= 60 || (p.postes||[]).length > 0;
+
+  const charger = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      db.rpc('chiffres_annee', { p_annee: annee, p_territoire: null }),
+      db.from('rapports').select('*').eq('annee', annee).is('territoire_id', null).maybeSingle()
+    ]);
+    setC(a.data); setR(b.data || {annee});
+  }, [annee]);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function enregistrer(e, statut){
+    if (e) e.preventDefault();
+    const { data, error } = await db.rpc('enregistrer_rapport', {
+      p_annee: annee, p_territoire: null, p_titre: r.titre || null,
+      p_edito: r.edito || null, p_faits: r.faits_marquants || null,
+      p_perspectives: r.perspectives || null, p_remerciements: r.remerciements || null,
+      p_statut: statut || r.statut || 'brouillon'
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setEdition(false); setMsg('Rapport enregistré.'); charger();
+  }
+
+  async function exporter(){
+    if (!c) return;
+    const plat = [];
+    const parcourir = (obj, prefixe) => {
+      Object.entries(obj).forEach(([k,v]) => {
+        if (v && typeof v === 'object' && !Array.isArray(v)) parcourir(v, prefixe + k + ' / ');
+        else plat.push({ indicateur: prefixe + k, valeur: v });
+      });
+    };
+    parcourir(c, '');
+    const csv = '\ufeff' + 'indicateur;valeur\n' +
+      plat.map(l => l.indicateur + ';' + l.valeur).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'FFCE-chiffres-' + annee + '.csv'; a.click();
+    URL.revokeObjectURL(url);
+    setMsg('Chiffres exportés.');
+  }
+
+  if (!c) return html`<div class="vide">Chargement…</div>`;
+
+  const carte = (titre, entrees) => html`
+    <div class="panneau" style="margin-bottom:20px">
+      <div class="tete"><h3 style="font-size:17px">${titre}</h3></div>
+      <div class="corps">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px">
+          ${entrees.map(([lab, val]) => html`
+            <div>
+              <div style="font-family:var(--titre);font-weight:900;font-size:26px;
+                color:var(--framboise);line-height:1">${val ?? 0}</div>
+              <div class="small muted" style="margin-top:4px">${lab}</div>
+            </div>`)}
+        </div>
+      </div>
+    </div>`;
+
+  const champ = (cle, lab, aide) => html`
+    <div class="field">
+      <label>${lab}</label>
+      <textarea value=${r[cle]||''} style="min-height:120px"
+        onInput=${e=>setR(o=>({...o,[cle]:e.target.value}))} placeholder=${aide} />
+    </div>`;
+
+  return html`
+    <div>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Rapport d\u2019activité</div>
+          <h1 style="margin:6px 0 0">${r.titre || 'Année ' + annee}</h1>
+        </div>
+        <div class="row">
+          <select style="width:auto" value=${annee}
+            onChange=${e=>setAnnee(Number(e.target.value))}>
+            ${[0,1,2,3].map(n => {
+              const a = new Date().getFullYear() - n;
+              return html`<option value=${a}>${a}</option>`;
+            })}
+          </select>
+          <button class="btn sm light" onClick=${exporter}>Exporter les chiffres</button>
+          ${peutRediger && html`<button class="btn sm"
+            onClick=${()=>setEdition(x=>!x)}>
+            ${edition ? 'Annuler' : 'Rédiger'}</button>`}
+        </div>
+      </div>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      ${r.statut && html`<div style="margin-top:16px">
+        <span class=${'tag '+(r.statut==='adopte'||r.statut==='publie'?'vert':'')}>
+          ${r.statut}${r.adopte_le ? ' le ' + jour(r.adopte_le) : ''}</span></div>`}
+
+      ${edition
+        ? html`
+          <form onSubmit=${e=>enregistrer(e)} class="panneau" style="margin-top:24px">
+            <div class="corps stack">
+              <div class="field"><label>Titre du rapport</label>
+                <input value=${r.titre||''}
+                  onInput=${e=>setR(o=>({...o,titre:e.target.value}))}
+                  placeholder=${'Rapport d\u2019activité ' + annee} /></div>
+              ${champ('edito','Éditorial',
+                'Le mot d\u2019introduction — ce que cette année a représenté.')}
+              ${champ('faits_marquants','Faits marquants',
+                'Trois à cinq moments qui ont compté.')}
+              ${champ('perspectives','Perspectives',
+                'Ce que la fédération entend faire l\u2019an prochain.')}
+              ${champ('remerciements','Remerciements',
+                'Partenaires, financeurs, bénévoles.')}
+              <div class="row">
+                <button class="btn">Enregistrer</button>
+                <button type="button" class="btn light"
+                  onClick=${()=>enregistrer(null,'adopte')}>Enregistrer et adopter</button>
+              </div>
+              <p class="small muted">
+                Un rapport adopté devient lisible de tous les membres.
+              </p>
+            </div>
+          </form>`
+        : html`
+          <div style="margin-top:24px">
+            ${r.edito && html`
+              <div class="panneau" style="margin-bottom:20px">
+                <div class="tete"><h3 style="font-size:17px">Éditorial</h3></div>
+                <div class="corps" style="white-space:pre-wrap;max-width:66ch">
+                  ${r.edito}</div>
+              </div>`}
+
+            ${carte('Les adhérents', [
+              ['Membres actifs', c.adherents.total_fin_annee],
+              ['Nouvelles adhésions', c.adherents.nouveaux]
+            ])}
+            ${carte('Le bénévolat', [
+              ['Heures données', Number(c.benevolat.heures||0)],
+              ['Bénévoles actifs', c.benevolat.benevoles_actifs]
+            ])}
+            ${carte('Les actions', [
+              ['Missions organisées', c.actions.missions],
+              ['Participations', c.actions.participations],
+              ['Projets menés', c.actions.projets],
+              ['Bénéficiaires', c.actions.beneficiaires]
+            ])}
+            ${carte('La formation', [
+              ['Certifications délivrées', c.formation.certifications],
+              ['Parcours disponibles', c.formation.formations_publiees]
+            ])}
+            ${carte('Le réseau', [
+              ['Départements couverts', c.reseau.departements],
+              ['Structures actives', c.reseau.structures_actives],
+              ['Assemblées tenues', c.reseau.assemblees],
+              ['Groupes de travail', c.reseau.groupes_travail]
+            ])}
+            ${carte('La vie démocratique', [
+              ['Propositions déposées', c.vie_democratique.propositions],
+              ['Propositions retenues', c.vie_democratique.propositions_retenues]
+            ])}
+
+            ${r.faits_marquants && html`
+              <div class="panneau" style="margin-bottom:20px">
+                <div class="tete"><h3 style="font-size:17px">Faits marquants</h3></div>
+                <div class="corps" style="white-space:pre-wrap;max-width:66ch">
+                  ${r.faits_marquants}</div>
+              </div>`}
+            ${r.perspectives && html`
+              <div class="panneau" style="margin-bottom:20px">
+                <div class="tete"><h3 style="font-size:17px">Perspectives</h3></div>
+                <div class="corps" style="white-space:pre-wrap;max-width:66ch">
+                  ${r.perspectives}</div>
+              </div>`}
+            ${r.remerciements && html`
+              <div class="panneau">
+                <div class="tete"><h3 style="font-size:17px">Remerciements</h3></div>
+                <div class="corps" style="white-space:pre-wrap;max-width:66ch">
+                  ${r.remerciements}</div>
+              </div>`}
+          </div>`}
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation({ p }){
   const [attente, setAttente] = useState([]);
@@ -10462,6 +10971,8 @@ function Espace({ session, sous }){
     case 'referentiel':vue = html`<${Referentiel} />`; break;
     case 'engagement': vue = acces('engagement') ? html`<${Engagement} p=${p} />` : refus; break;
     case 'comite':     vue = acces('comite') ? html`<${MonComite} p=${p} />` : refus; break;
+    case 'budget':     vue = acces('budget') ? html`<${Budget} p=${p} />` : refus; break;
+    case 'rapport':    vue = acces('rapport') ? html`<${Rapport} p=${p} />` : refus; break;
     case 'conformite': vue = html`<${Conformite} p=${p} />`; break;
     case 'parcours':   vue = acces('parcours')
                           ? html`<${ParcoursAdherent} p=${p} />` : refus; break;
