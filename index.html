@@ -1285,6 +1285,8 @@ function TableauDeBord({ p, apps, chemin, demandes, attentes }){
       <${FicheOuverture} compact=${true}
         titre="Ce qu\u2019il vous reste à faire pour être pleinement outillé" />
 
+      ${p.niveau >= 40 && html`<${VersLeCabinet} />`}
+
       <${Delegations} />
 
       <${MesVirements} />
@@ -13923,6 +13925,536 @@ function NommerLocal({ p, territoire, setMsg }){
     </div>`;
 }
 
+/* =====================================================================
+   LE CABINET DE LA PRÉSIDENCE
+   La présidence est nationale : ce cabinet est unique. Tout ce que le
+   réseau lui adresse arrive ici sans filtre de périmètre, et tout ce
+   qu'elle décide en repart sous forme d'acte.
+
+   La séparation qui structure l'écran est celle qui structure la base :
+   le cabinet rédige les projets, la présidence seule signe.
+   ===================================================================== */
+const NATURE_REMONTEE = { information:'Information', alerte:'Alerte',
+  proposition:'Proposition', arbitrage:'Demande d\u2019arbitrage', contact:'Contact' };
+const TYPE_ACTE = { nomination:'Nomination', delegation:'Délégation',
+  decision:'Décision', convocation:'Convocation', motion:'Motion',
+  note:'Note de service', abrogation:'Abrogation' };
+
+function Cabinet({ p }){
+  const [onglet, setOnglet] = useState('table');
+  const [tb, setTb] = useState(null);
+  const [remontees, setRemontees] = useState([]);
+  const [actes, setActes] = useState([]);
+  const [signataire, setSignataire] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a, b, c, s] = await Promise.all([
+      db.rpc('tableau_cabinet'),
+      db.rpc('remontees_du_cabinet', { p_filtre: 'ouvertes' }),
+      db.rpc('recueil_actes', { p_filtre: 'tous' }),
+      db.rpc('puis_je_signer_acte')
+    ]);
+    setTb(a.data); setRemontees(b.data || []); setActes(c.data || []);
+    setSignataire(!!s.data);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const appel = async (fn, args, ok) => {
+    setMsg('');
+    const { data, error } = await db.rpc(fn, args);
+    if (error){ setMsg('Erreur : ' + error.message); return false; }
+    if (data && data.ok === false){ setMsg('Erreur : ' + data.message); return false; }
+    setMsg(ok); charger(); return true;
+  };
+
+  if (!tb) return html`<div class="vide" style="padding:120px">Chargement…</div>`;
+
+  const projets = actes.filter(a => a.statut === 'projet');
+  const tabs = [['table','L\u2019état de la fédération'], ['remontees','Remontées'],
+                ['actes','Actes'], ['rapport','Rapport d\u2019activité']];
+
+  return html`
+    <div>
+      <div class="eyebrow">Cabinet de la présidence</div>
+      <h1 style="margin:6px 0 8px">Tout remonte ici, tout en repart</h1>
+      <p class="muted" style="max-width:62ch">
+        Le réseau adresse à la présidence ce qu\u2019il veut porter à sa
+        connaissance, à toute échelle et sans filtre. La présidence répond
+        par des actes : visas, considérants, articles. Un acte se signe, se
+        notifie, et reste au recueil, que tout adhérent peut lire.
+        ${signataire
+          ? ' Vous signez.'
+          : ' Vous préparez les projets ; la présidence les signe.'}
+      </p>
+
+      <div class="row" style="margin:28px 0 24px;gap:0;border-bottom:1px solid var(--filet);
+        flex-wrap:wrap">
+        ${tabs.map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--nuit)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>{setOnglet(k);setMsg('')}}>${t}${
+              k==='remontees' && tb.remontees_ouvertes ? ' ('+tb.remontees_ouvertes+')' : ''}${
+              k==='actes' && projets.length ? ' ('+projets.length+')' : ''}</button>`)}
+      </div>
+
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-bottom:20px">${msg}</div>`}
+
+      ${onglet === 'table' && html`<${CabinetEtat} tb=${tb} />`}
+      ${onglet === 'remontees' && html`<${CabinetRemontees}
+        remontees=${remontees} appel=${appel} />`}
+      ${onglet === 'actes' && html`<${CabinetActes} p=${p} actes=${actes}
+        projets=${projets} signataire=${signataire} appel=${appel} setMsg=${setMsg} />`}
+      ${onglet === 'rapport' && html`<${Rapport} p=${p} />`}
+    </div>`;
+}
+
+/* --- L'état de la fédération, vu d'en haut ------------------------------ */
+function CabinetEtat({ tb }){
+  const alerte = (cond, texte, lien) => cond && html`
+    <div class="ligne">
+      <div style="flex:1;min-width:240px">${texte}</div>
+      <a class="btn sm light" href=${lien}>Ouvrir</a>
+    </div>`;
+
+  return html`
+    <div>
+      <div class="chiffres" style="margin-bottom:28px">
+        <div><div class="n" style="font-size:30px">${tb.adherents}</div>
+          <div class="l">Adhérents actifs</div></div>
+        <div><div class="n" style="font-size:30px">${tb.encadrants}</div>
+          <div class="l">Encadrants</div></div>
+        <div><div class="n" style="font-size:30px">${tb.structures}</div>
+          <div class="l">Structures actives</div></div>
+        <div><div class="n" style="font-size:30px">${tb.actes_en_vigueur}</div>
+          <div class="l">Actes en vigueur</div></div>
+      </div>
+
+      <div class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">Ce qui appelle une décision</h3></div>
+        ${alerte(tb.alertes > 0,
+          tb.alertes + ' alerte(s) du réseau sans réponse.', '#/espace/cabinet')}
+        ${alerte(tb.arbitrages > 0,
+          tb.arbitrages + ' demande(s) d\u2019arbitrage en attente.', '#/espace/cabinet')}
+        ${alerte(tb.sans_president > 0,
+          tb.sans_president + ' structure(s) active(s) sans président. '
+          + 'Une structure sans président n\u2019a personne pour la représenter.',
+          '#/espace/pilotage')}
+        ${alerte(tb.sans_tresorier > 0,
+          tb.sans_tresorier + ' structure(s) sans trésorier : elles ne peuvent '
+          + 'ni engager ni justifier une dépense.', '#/espace/pilotage')}
+        ${alerte(tb.en_attente > 0,
+          tb.en_attente + ' inscription(s) en attente de vérification.',
+          '#/espace/validation')}
+        ${alerte(tb.actes_a_controler > 0,
+          tb.actes_a_controler + ' acte(s) sensible(s) à contrôler a posteriori.',
+          '#/espace/validation')}
+        ${alerte(tb.discipline_en_cours > 0,
+          tb.discipline_en_cours + ' dossier(s) disciplinaire(s) en cours. '
+          + 'Le cabinet en connaît le nombre, pas le contenu.', '#/espace/discipline')}
+        ${(tb.alertes + tb.arbitrages + tb.sans_president + tb.sans_tresorier
+           + tb.en_attente + tb.actes_a_controler + tb.discipline_en_cours) === 0
+          && html`<div class="corps muted">Rien n\u2019appelle de décision aujourd\u2019hui.</div>`}
+      </div>
+
+      <p class="small muted" style="max-width:60ch">
+        Le cabinet voit les nombres, pas les pièces. Les dossiers
+        disciplinaires suivent leur circuit propre et les bulletins de vote
+        n\u2019ont aucune politique de lecture : rien ici ne les ouvre.
+      </p>
+    </div>`;
+}
+
+/* --- Les remontées du réseau -------------------------------------------- */
+function CabinetRemontees({ remontees, appel }){
+  return html`
+    <div class="panneau">
+      <div class="tete"><h3 style="font-size:17px">Adressé à la présidence</h3>
+        <span class="tag">${remontees.length}</span></div>
+      ${remontees.length === 0
+        ? html`<div class="corps muted">
+            Rien en attente. Tout encadrant, à toute échelle, peut adresser au
+            cabinet une information, une alerte, une proposition ou une demande
+            d\u2019arbitrage depuis son tableau de bord.</div>`
+        : remontees.map(r => html`
+          <div class="ligne" key=${r.id} style="align-items:flex-start">
+            <div style="flex:1;min-width:260px">
+              <div class="row" style="gap:8px;flex-wrap:wrap">
+                <span style="font-weight:600">${r.objet}</span>
+                <span class=${'tag '+(r.nature==='alerte'?'rouge'
+                  :r.nature==='arbitrage'?'or':'')}>
+                  ${NATURE_REMONTEE[r.nature] || r.nature}</span>
+              </div>
+              <div class="small muted" style="margin-top:3px">
+                ${r.auteur} · ${r.auteur_fonction} · ${r.territoire} · ${jour(r.cree_le)}
+              </div>
+              <div class="small" style="margin-top:6px">${r.corps}</div>
+              ${r.lien && html`<div style="margin-top:6px">
+                <a class="small" href=${r.lien}>Ouvrir l\u2019écran concerné</a></div>`}
+            </div>
+            <div class="row" style="gap:6px">
+              <button class="btn sm" onClick=${()=>{
+                const t = prompt('Réponse ou décision (obligatoire)');
+                if (t) appel('traiter_remontee',
+                  { p_id:r.id, p_statut:'arbitree', p_reponse:t }, 'Arbitrage enregistré.');
+              }}>Arbitrer</button>
+              <button class="btn sm light" onClick=${()=>appel('traiter_remontee',
+                { p_id:r.id, p_statut:'classee', p_reponse:null }, 'Remontée classée.')}>
+                Classer</button>
+            </div>
+          </div>`)}
+    </div>`;
+}
+
+/* --- Préparer, signer, abroger ------------------------------------------ */
+function CabinetActes({ p, actes, projets, signataire, appel, setMsg }){
+  const vierge = { type:'decision', objet:'', visas:'', considerants:'',
+                   destinataire:'', poste:'', effet:'', territoire:'' };
+  const [f, setF] = useState(vierge);
+  const [articles, setArticles] = useState(['']);
+  const [gens, setGens] = useState([]);
+  const [postes, setPostes] = useState([]);
+  const [terr, setTerr] = useState([]);
+  const [ouvert, setOuvert] = useState(null);
+  const [texte, setTexte] = useState(null);
+  const maj = (k,v) => setF(o => ({...o, [k]: v}));
+
+  useEffect(() => {
+    db.from('v_annuaire').select('id,prenom,nom,fonction_nom,territoire_nom')
+      .eq('statut','actif').order('nom').then(({data}) => setGens(data||[]));
+    db.from('postes').select('code,nom,rang').eq('actif',true)
+      .order('rang',{ascending:false}).then(({data}) => setPostes(data||[]));
+    db.from('territoires').select('id,nom,echelle').order('nom')
+      .then(({data}) => setTerr(data||[]));
+  }, []);
+
+  async function enregistrer(e){
+    e.preventDefault();
+    const arts = articles.map(a => a.trim()).filter(Boolean);
+    if (arts.length === 0)
+      return setMsg('Erreur : un acte sans article ne décide rien.');
+    const ok = await appel('prendre_acte', {
+      p_type: f.type, p_objet: f.objet, p_visas: f.visas || null,
+      p_considerants: f.considerants || null, p_articles: arts,
+      p_destinataire: f.destinataire || null, p_poste: f.poste || null,
+      p_effet: f.effet || null, p_territoire: f.territoire || null
+    }, 'Projet d\u2019acte enregistré. Il ne produit effet qu\u2019à la signature.');
+    if (ok){ setF(vierge); setArticles(['']); }
+  }
+
+  async function lire(a){
+    if (ouvert === a.id){ setOuvert(null); setTexte(null); return; }
+    const { data } = await db.rpc('texte_acte', { p_id: a.id });
+    setOuvert(a.id); setTexte(data);
+  }
+
+  function telecharger(){
+    if (!texte) return;
+    const l = [];
+    l.push('FÉDÉRATION FRANÇAISE POUR LA CITOYENNETÉ ET L\u2019ÉGALITÉ DES CHANCES');
+    l.push('Présidence de la fédération');
+    l.push(''); l.push(texte.reference);
+    l.push((TYPE_ACTE[texte.type] || texte.type).toUpperCase());
+    l.push(''); l.push(texte.objet);
+    l.push('Portée : ' + texte.portee); l.push('');
+    if (texte.visas){ l.push(texte.visas); l.push(''); }
+    if (texte.considerants){ l.push(texte.considerants); l.push(''); }
+    (texte.articles||[]).forEach((a,i) => { l.push('Article '+(i+1)+' — '+a); l.push(''); });
+    l.push('Prend effet le ' + jour(texte.prend_effet_le)); l.push('');
+    l.push((texte.signataire || texte.auteur) + ', ' + texte.auteur_fonction);
+    l.push('Pour le secrétariat de la présidence.');
+    const url = URL.createObjectURL(new Blob([l.join('\n')],
+      { type:'text/plain;charset=utf-8' }));
+    const el = document.createElement('a');
+    el.href = url; el.download = texte.reference + '.txt'; el.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return html`
+    <div>
+      <form onSubmit=${enregistrer} class="panneau" style="margin-bottom:28px">
+        <div class="tete"><h3 style="font-size:17px">Nouveau projet d\u2019acte</h3></div>
+        <div class="corps stack">
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:170px;margin:0">
+              <label>Nature</label>
+              <select value=${f.type} onChange=${e=>maj('type', e.target.value)}>
+                ${Object.entries(TYPE_ACTE).filter(([k]) => k !== 'abrogation')
+                  .map(([k,v]) => html`<option value=${k}>${v}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:190px;margin:0">
+              <label>Portée</label>
+              <select value=${f.territoire} onChange=${e=>maj('territoire', e.target.value)}>
+                <option value="">Toute la fédération</option>
+                ${terr.map(t => html`<option value=${t.id}>${t.nom}</option>`)}
+              </select></div>
+            <div class="field" style="flex:0 0 160px;margin:0">
+              <label>Prend effet le</label>
+              <input type="date" value=${f.effet}
+                onInput=${e=>maj('effet', e.target.value)} /></div>
+          </div>
+
+          <div class="field"><label>Objet</label>
+            <input value=${f.objet}
+              placeholder="Nomination du référent départemental de la Haute-Garonne"
+              onInput=${e=>maj('objet', e.target.value)} /></div>
+
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:2;min-width:200px;margin:0">
+              <label>${f.type === 'nomination'
+                ? 'Personne nommée' : 'Destinataire (facultatif)'}</label>
+              <select value=${f.destinataire}
+                onChange=${e=>maj('destinataire', e.target.value)}>
+                <option value="">— Aucun —</option>
+                ${gens.map(g => html`<option value=${g.id}>
+                  ${nomComplet(g)} · ${g.fonction_nom}${
+                    g.territoire_nom ? ' · '+g.territoire_nom : ''}</option>`)}
+              </select></div>
+            ${f.type === 'nomination' && html`
+              <div class="field" style="flex:1;min-width:190px;margin:0">
+                <label>Poste conféré</label>
+                <select value=${f.poste} onChange=${e=>maj('poste', e.target.value)}>
+                  <option value="">— Choisir —</option>
+                  ${postes.map(x => html`<option value=${x.code}>${x.nom}</option>`)}
+                </select></div>`}
+          </div>
+
+          <div class="field"><label>Visas</label>
+            <textarea value=${f.visas} style="min-height:70px"
+              placeholder="Vu les statuts de la fédération, vu la délibération du bureau du…"
+              onInput=${e=>maj('visas', e.target.value)}></textarea></div>
+
+          <div class="field"><label>Considérants</label>
+            <textarea value=${f.considerants} style="min-height:70px"
+              placeholder="Considérant que…"
+              onInput=${e=>maj('considerants', e.target.value)}></textarea></div>
+
+          <div class="field">
+            <label>Articles</label>
+            ${articles.map((a,i) => html`
+              <div class="row" style="gap:10px;margin-bottom:8px;align-items:flex-start" key=${i}>
+                <span class="mono muted small" style="padding-top:11px;white-space:nowrap">
+                  Art. ${i+1}</span>
+                <textarea value=${a} style="min-height:60px"
+                  onInput=${e=>{const c=[...articles]; c[i]=e.target.value; setArticles(c)}}
+                ></textarea>
+                ${articles.length > 1 && html`
+                  <button type="button" class="btn sm light"
+                    onClick=${()=>setArticles(articles.filter((_,j)=>j!==i))}>—</button>`}
+              </div>`)}
+            <button type="button" class="btn sm light"
+              onClick=${()=>setArticles([...articles,''])}>Ajouter un article</button>
+          </div>
+
+          <div><button class="btn">Enregistrer le projet</button></div>
+        </div>
+      </form>
+
+      ${projets.length > 0 && html`
+        <h3 style="font-size:17px;margin-bottom:12px">
+          En attente de signature${signataire ? '' : ' de la présidence'}</h3>
+        <div class="panneau" style="margin-bottom:28px">
+          ${projets.map(a => html`
+            <div class="ligne" key=${a.id} style="align-items:flex-start">
+              <div style="flex:1;min-width:240px">
+                <div class="row" style="gap:8px;flex-wrap:wrap">
+                  <span class="mono muted small">${a.reference}</span>
+                  <span class="tag">${TYPE_ACTE[a.type] || a.type}</span>
+                  <span class="tag">${a.portee}</span>
+                </div>
+                <div style="margin-top:4px">${a.objet}</div>
+                ${a.destinataire && html`<div class="small muted" style="margin-top:3px">
+                  ${a.destinataire}${a.poste_nom ? ' · ' + a.poste_nom : ''}</div>`}
+                <div class="small muted" style="margin-top:3px">
+                  Préparé par ${a.auteur}</div>
+              </div>
+              <div class="row" style="gap:6px">
+                ${signataire && html`
+                  <button class="btn sm" onClick=${()=>appel('signer_acte', { p_id:a.id },
+                    'Acte signé. L\u2019intéressé en est informé par messagerie interne.')}>
+                    Signer</button>`}
+                <button class="btn sm light" onClick=${()=>{
+                  const m = prompt('Motif du retrait du projet');
+                  if (m) appel('abroger_acte', { p_id:a.id, p_motif:m }, 'Projet retiré.');
+                }}>Retirer</button>
+              </div>
+            </div>`)}
+        </div>`}
+
+      <h3 style="font-size:17px;margin-bottom:12px">Recueil</h3>
+      <${RecueilListe} actes=${actes.filter(a => a.statut !== 'projet')}
+        ouvert=${ouvert} texte=${texte} lire=${lire} telecharger=${telecharger}
+        abroger=${signataire ? (id) => {
+          const m = prompt('Motif de l\u2019abrogation (obligatoire)');
+          if (m) appel('abroger_acte', { p_id:id, p_motif:m },
+            'Acte abrogé par un acte d\u2019abrogation, versé au recueil.');
+        } : null} />
+    </div>`;
+}
+
+/* --- Le recueil : la même liste pour le cabinet et pour les adhérents --- */
+function RecueilListe({ actes, ouvert, texte, lire, telecharger, abroger }){
+  return html`
+    <div class="panneau">
+      <div class="tete"><h3 style="font-size:17px">Actes de la présidence</h3>
+        <span class="tag">${actes.length}</span></div>
+      ${actes.length === 0
+        ? html`<div class="corps muted">Le recueil est vide.</div>`
+        : actes.map(a => html`
+          <div key=${a.id}>
+            <div class="ligne" style="align-items:flex-start;cursor:pointer"
+              onClick=${()=>lire(a)}>
+              <div style="flex:1;min-width:240px">
+                <div class="row" style="gap:8px;flex-wrap:wrap">
+                  <span class="mono muted small">${a.reference}</span>
+                  <span class="tag">${TYPE_ACTE[a.type] || a.type}</span>
+                  ${a.abroge
+                    ? html`<span class="tag rouge">Abrogé</span>`
+                    : html`<span class="tag vert">En vigueur</span>`}
+                </div>
+                <div style="margin-top:4px">${a.objet}</div>
+                <div class="small muted" style="margin-top:3px">
+                  ${a.portee}${a.prend_effet_le ? ' · effet le ' + jour(a.prend_effet_le) : ''}
+                </div>
+              </div>
+              <span class="small muted">${ouvert === a.id ? 'Replier' : 'Lire'}</span>
+            </div>
+            ${ouvert === a.id && texte && html`
+              <div class="corps" style="background:var(--papier);border-bottom:1px solid var(--filet)">
+                <div class="spread" style="margin-bottom:16px">
+                  <span class="eyebrow">${TYPE_ACTE[texte.type] || texte.type}
+                    · ${texte.portee}</span>
+                  <div class="row" style="gap:6px">
+                    <button class="btn sm light" onClick=${telecharger}>Télécharger</button>
+                    ${abroger && !a.abroge && html`
+                      <button class="btn sm light"
+                        onClick=${()=>abroger(a.id)}>Abroger</button>`}
+                  </div>
+                </div>
+                ${texte.visas && html`<p style="font-style:italic;margin-bottom:12px">
+                  ${texte.visas}</p>`}
+                ${texte.considerants && html`<p style="margin-bottom:16px">
+                  ${texte.considerants}</p>`}
+                ${(texte.articles||[]).map((art,i) => html`
+                  <p style="margin-bottom:10px" key=${i}>
+                    <strong>Article ${i+1}</strong> — ${art}</p>`)}
+                ${texte.destinataire && html`<div class="small muted" style="margin-top:12px">
+                  Notifié à ${texte.destinataire}${texte.poste ? ' · ' + texte.poste : ''}</div>`}
+                ${texte.motif_abrogation && html`
+                  <div class="small" style="color:var(--rouge);margin-top:12px">
+                    Abrogé : ${texte.motif_abrogation}</div>`}
+                <div class="small muted" style="margin-top:16px">
+                  ${texte.signataire || texte.auteur}, ${texte.auteur_fonction}
+                  — pour le secrétariat de la présidence.
+                </div>
+              </div>`}
+          </div>`)}
+    </div>`;
+}
+
+/* --- Le recueil, application ouverte à tous ----------------------------- */
+function Recueil(){
+  const [actes, setActes] = useState([]);
+  const [ouvert, setOuvert] = useState(null);
+  const [texte, setTexte] = useState(null);
+
+  useEffect(() => {
+    db.rpc('recueil_actes', { p_filtre: 'en_vigueur' })
+      .then(({data}) => setActes(data || []));
+  }, []);
+
+  async function lire(a){
+    if (ouvert === a.id){ setOuvert(null); setTexte(null); return; }
+    const { data } = await db.rpc('texte_acte', { p_id: a.id });
+    setOuvert(a.id); setTexte(data);
+  }
+  function telecharger(){
+    if (!texte) return;
+    const l = ['FÉDÉRATION FRANÇAISE POUR LA CITOYENNETÉ ET L\u2019ÉGALITÉ DES CHANCES',
+      'Présidence de la fédération', '', texte.reference,
+      (TYPE_ACTE[texte.type] || texte.type).toUpperCase(), '', texte.objet,
+      'Portée : ' + texte.portee, ''];
+    if (texte.visas){ l.push(texte.visas); l.push(''); }
+    if (texte.considerants){ l.push(texte.considerants); l.push(''); }
+    (texte.articles||[]).forEach((a,i) => { l.push('Article '+(i+1)+' — '+a); l.push(''); });
+    l.push('Prend effet le ' + jour(texte.prend_effet_le)); l.push('');
+    l.push((texte.signataire || texte.auteur) + ', ' + texte.auteur_fonction);
+    const url = URL.createObjectURL(new Blob([l.join('\n')],
+      { type:'text/plain;charset=utf-8' }));
+    const el = document.createElement('a');
+    el.href = url; el.download = texte.reference + '.txt'; el.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return html`
+    <div>
+      <div class="eyebrow">Recueil des actes</div>
+      <h1 style="margin:6px 0 8px">Ce que la fédération a décidé</h1>
+      <p class="muted" style="max-width:62ch">
+        Les actes pris par la présidence, en vigueur ou abrogés. Chacun
+        indique sa portée, sa date d\u2019effet et son signataire. Un acte
+        abrogé reste ici : on doit pouvoir savoir ce qui s\u2019appliquait hier.
+      </p>
+      <div style="margin-top:24px">
+        <${RecueilListe} actes=${actes} ouvert=${ouvert} texte=${texte}
+          lire=${lire} telecharger=${telecharger} abroger=${null} />
+      </div>
+    </div>`;
+}
+
+/* --- Porter au cabinet, depuis n'importe où ----------------------------- */
+function VersLeCabinet(){
+  const [ouvert, setOuvert] = useState(false);
+  const [f, setF] = useState({ nature:'information', objet:'', corps:'' });
+  const [msg, setMsg] = useState('');
+
+  async function envoyer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('flecher_vers_cabinet', {
+      p_nature: f.nature, p_objet: f.objet, p_corps: f.corps,
+      p_lien: location.hash || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({ nature:'information', objet:'', corps:'' });
+    setMsg('Transmis au cabinet de la présidence.');
+    setOuvert(false);
+  }
+
+  return html`
+    <div class="panneau">
+      <div class="tete spread">
+        <h3 style="font-size:17px">Porter à la présidence</h3>
+        <button class="btn sm light" onClick=${()=>setOuvert(!ouvert)}>
+          ${ouvert ? 'Fermer' : 'Écrire'}</button>
+      </div>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin:16px 20px 0">${msg}</div>`}
+      ${ouvert
+        ? html`<form onSubmit=${envoyer} class="corps stack">
+            <div class="field"><label>Nature</label>
+              <select value=${f.nature}
+                onChange=${e=>setF(o=>({...o,nature:e.target.value}))}>
+                ${Object.entries(NATURE_REMONTEE).map(([k,v]) =>
+                  html`<option value=${k}>${v}</option>`)}
+              </select></div>
+            <div class="field"><label>Objet</label>
+              <input value=${f.objet}
+                onInput=${e=>setF(o=>({...o,objet:e.target.value}))} /></div>
+            <div class="field"><label>Ce que vous voulez porter à sa connaissance</label>
+              <textarea value=${f.corps}
+                onInput=${e=>setF(o=>({...o,corps:e.target.value}))}></textarea></div>
+            <div><button class="btn">Transmettre</button></div>
+          </form>`
+        : html`<div class="corps small muted">
+            Une information, une alerte, une proposition ou une demande
+            d\u2019arbitrage. Elle arrive directement au cabinet, quelle que soit
+            votre échelle, et y reste jusqu\u2019à ce qu\u2019on l\u2019ait traitée
+            \u2014 elle ne se perd pas en conversation.</div>`}
+    </div>`;
+}
+
 function Espace({ session, sous }){
   const [p, setP] = useState(null);
   const [apps, setApps] = useState([]);
@@ -14023,6 +14555,8 @@ function Espace({ session, sous }){
     case '':           vue = html`<${TableauDeBord} p=${p} apps=${apps} chemin=${chemin}
                          demandes=${demandes} attentes=${attentes} />`; break;
     case 'mandats':    vue = html`<${MesMandats} p=${p} recharger=${charger} />`; break;
+    case 'cabinet':    vue = acces('cabinet') ? html`<${Cabinet} p=${p} />` : refus; break;
+    case 'recueil':    vue = html`<${Recueil} />`; break;
     case 'compte':     vue = html`<${MonCompte} p=${p} recharger=${charger} />`; break;
     case 'mon-dossier':vue = html`<${MonDossier} p=${p} entier=${true} />`; break;
     case 'referentiel':vue = html`<${Referentiel} />`; break;
