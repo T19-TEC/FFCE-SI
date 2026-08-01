@@ -2981,6 +2981,7 @@ const EURO = n => (Number(n)||0).toLocaleString('fr-FR',
 const ETAT_NOTE = {
   brouillon: ['Brouillon', ''],
   deposee:   ['Déposée', 'bleu'],
+  a_completer:['À compléter', 'or'],
   instruite: ['Avis favorable', 'bleu'],
   ordonnancee:['Ordonnancée', 'vert'],
   payee:     ['Payée', 'vert'],
@@ -3122,7 +3123,17 @@ function NoteFrais({ p, id, param, fermer }){
   useEffect(() => { charger(); }, [charger]);
 
   if (!note) return html`<div class="vide">Note introuvable.</div>`;
+  // À compléter : seules les lignes que l'instructeur a marquées sont
+  // reprises. Le reste est acquis et ne se retouche plus.
   const modifiable = note.statut === 'brouillon';
+  const aCompleter = note.statut === 'a_completer';
+
+  async function renvoyerNote(){
+    const { data, error } = await db.rpc('completer_note', { p_note: id });
+    if (error) return setMsg(error.message);
+    if (!data.ok) return setMsg(data.message);
+    setMsg(''); charger();
+  }
 
   const montantDe = l => l.categorie === 'kilometres'
     ? (Number(l.kilometres||0) * (param.taux_km||0))
@@ -3203,6 +3214,24 @@ function NoteFrais({ p, id, param, fermer }){
         ${etatNote(note.statut)}
       </div>
 
+      ${aCompleter && html`
+        <div class="alerte" style="margin-top:16px;border-left:3px solid var(--laiton)">
+          <strong>Complément demandé</strong> — ${note.demande_precisions}
+          <div class="small" style="margin-top:8px">
+            Corrigez les lignes marquées « à préciser », puis renvoyez la note.
+            Ce qui a déjà été retenu n\u2019est pas remis en cause.
+          </div>
+          <div style="margin-top:12px">
+            <button class="btn sm" onClick=${renvoyerNote}>Renvoyer la note</button>
+          </div>
+        </div>`}
+
+      ${Number(note.ecarte) > 0 && html`
+        <div class="alerte" style="margin-top:16px">
+          ${EURO(note.ecarte)} écarté${note.statut === 'payee' ? '' : ' du remboursement'}.
+          Le détail figure au regard de chaque dépense.
+        </div>`}
+
       ${note.avis && html`<div class="alerte" style="margin-top:16px">
         Avis de l\u2019encadrement : ${note.avis}</div>`}
       ${note.motif_refus && html`<div class="alerte err" style="margin-top:16px">
@@ -3215,6 +3244,8 @@ function NoteFrais({ p, id, param, fermer }){
       ${note.statut === 'ordonnancee' && html`<div class="alerte" style="margin-top:16px">
         Dépense ordonnancée. Le paiement sera exécuté par la direction financière.</div>`}
       ${msg && html`<div class="alerte err" style="margin-top:16px">${msg}</div>`}
+
+      ${note.statut !== 'brouillon' && html`<${SuiviNote} id=${id} />`}
 
       <div class="panneau" style="margin-top:24px">
         <div class="tete">
@@ -3446,6 +3477,20 @@ function Finances({ p, role }){
       </div>
       ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
         style="margin-top:16px">${msg}</div>`}
+
+      ${['deposee','a_completer'].includes(detail.statut)
+        && (onglet === 'instruire' || onglet === 'avis') && html`
+        <${InstruireLignes} note=${detail} lignes=${lignes}
+          param=${Object.fromEntries(param.map(x => [x.cle, Number(x.valeur)]))}
+          recharger=${async ()=>{
+            await charger();
+            const { data } = await db.from('nf_lignes').select('*')
+              .eq('note_id', detail.id).order('date_depense');
+            setLignes(data || []);
+            const { data: ns } = await db.rpc('v_notes', { p_filtre: 'toutes' });
+            const maj = (ns||[]).find(x => x.id === detail.id);
+            if (maj) setDetail(maj);
+          }} setMsg=${setMsg} />`}
 
       <div class="panneau" style="margin-top:24px">
         <div class="tete"><h3 style="font-size:17px">Suivi</h3></div>
@@ -6151,6 +6196,8 @@ function Engagement({ p }){
       </p>
       ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
         style="margin-top:16px">${msg}</div>`}
+
+      <${BilanAnnee} e=${e} />
 
       <div style="margin-top:24px"><${CurseurEngagement} /></div>
 
@@ -14925,6 +14972,236 @@ function EquipesLocales({ p, apps, territoire, setMsg }){
               projet local : documents partagés, tâches, échanges. Si vous
               présidez la structure, votre proposition vaut décision ; sinon
               elle est soumise à la présidence.</div>`}
+      </div>
+    </div>`;
+}
+
+/* =====================================================================
+   LE SUIVI D'UNE NOTE
+   Le déposant ne voyait qu'un mot. Il voit maintenant les quatre
+   étapes, laquelle est franchie, par qui, et ce qui reste. Un dossier
+   arrêté s'arrête visiblement plutôt que de rester en suspens.
+   ===================================================================== */
+function SuiviNote({ id }){
+  const [e, setE] = useState([]);
+  useEffect(() => {
+    db.rpc('suivi_note', { p_note: id }).then(({data}) => setE(data||[]));
+  }, [id]);
+  if (e.length === 0) return null;
+
+  const couleur = { fait:'var(--vert)', en_cours:'var(--action)',
+                    suspendu:'var(--laiton)', arrete:'var(--rouge)',
+                    a_venir:'var(--filet)' };
+  const mot = { fait:'Fait', en_cours:'En cours', suspendu:'En attente de vous',
+                arrete:'Arrêté', a_venir:'' };
+
+  return html`
+    <div class="panneau" style="margin-top:24px">
+      <div class="tete"><h3 style="font-size:17px">Où en est votre note</h3></div>
+      <div class="corps">
+        <div class="row" style="gap:0;margin-bottom:22px;align-items:center">
+          ${e.map((x,i) => html`
+            <div key=${x.rang} style="flex:1;display:flex;align-items:center">
+              <div style=${'width:12px;height:12px;border-radius:50%;flex:0 0 12px;'
+                + 'background:' + couleur[x.etat]}></div>
+              ${i < e.length - 1 && html`<div style=${'flex:1;height:2px;background:'
+                + (x.etat === 'fait' ? 'var(--vert)' : 'var(--filet)')}></div>`}
+            </div>`)}
+        </div>
+        ${e.map(x => html`
+          <div class="ligne" key=${x.rang} style="align-items:flex-start;padding-left:0;
+            padding-right:0;border:0">
+            <div style="flex:1;min-width:220px">
+              <div class="row" style="gap:8px;flex-wrap:wrap">
+                <span style=${x.etat === 'a_venir' ? 'color:var(--gris)' : 'font-weight:600'}>
+                  ${x.etape}</span>
+                ${mot[x.etat] && html`<span class=${'tag ' + (
+                  x.etat==='fait' ? 'vert' : x.etat==='arrete' ? 'rouge'
+                  : x.etat==='suspendu' ? 'or' : 'bleu')}>${mot[x.etat]}</span>`}
+              </div>
+              <div class="small muted" style="margin-top:3px">${x.detail}</div>
+            </div>
+            <div class="small muted" style="text-align:right;min-width:130px">
+              ${x.quand ? jour(x.quand) : ''}${x.par ? html`<div>${x.par}</div>` : ''}
+            </div>
+          </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- Instruire ligne à ligne --------------------------------------------
+   L'instructeur avait un doute sur une ligne et refusait la note
+   entière. Il marque désormais chaque ligne, et peut renvoyer la note
+   pour complément sans faire perdre ce qui était acquis.
+   --------------------------------------------------------------------- */
+function InstruireLignes({ note, lignes, param, recharger, setMsg }){
+  const [msgLocal, setMsgLocal] = useState('');
+
+  const montantDe = l => l.categorie === 'kilometres'
+    ? (Number(l.kilometres||0) * (param.taux_km||0))
+    : Number(l.montant||0);
+
+  async function marquer(l, etat){
+    const obs = ['ecartee','a_preciser'].includes(etat)
+      ? prompt(etat === 'ecartee'
+          ? 'Pourquoi cette dépense est-elle écartée ?'
+          : 'Que faut-il préciser ou corriger ?')
+      : null;
+    if (['ecartee','a_preciser'].includes(etat) && !obs) return;
+    const { data, error } = await db.rpc('observer_ligne',
+      { p_ligne: l.id, p_etat: etat, p_observation: obs });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    recharger();
+  }
+
+  async function renvoyer(){
+    const m = prompt('Ce que vous attendez du déposant (obligatoire)');
+    if (!m) return;
+    const { data, error } = await db.rpc('demander_precisions',
+      { p_note: note.id, p_message: m });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Note renvoyée pour complément. Ce qui est acquis le reste.');
+    recharger();
+  }
+
+  const retenu = lignes.filter(l => l.etat !== 'ecartee')
+                       .reduce((t,l) => t + montantDe(l), 0);
+  const ecarte = lignes.filter(l => l.etat === 'ecartee')
+                       .reduce((t,l) => t + montantDe(l), 0);
+  const aPreciser = lignes.filter(l => l.etat === 'a_preciser').length;
+
+  return html`
+    <div class="panneau" style="margin-top:24px;border-color:var(--brun)">
+      <div class="tete spread" style="border-bottom-color:var(--brun)">
+        <h3 style="font-size:17px">Examen ligne à ligne</h3>
+        <span class="mono">${EURO(retenu)} retenu${
+          ecarte > 0 ? ' · ' + EURO(ecarte) + ' écarté' : ''}</span>
+      </div>
+      ${lignes.map(l => html`
+        <div class="ligne" key=${l.id} style="align-items:flex-start">
+          <div style="flex:1;min-width:240px">
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <span style=${l.etat === 'ecartee' ? 'text-decoration:line-through' : ''}>
+                ${l.description}</span>
+              ${l.etat === 'ecartee' && html`<span class="tag rouge">Écartée</span>`}
+              ${l.etat === 'a_preciser' && html`<span class="tag or">À préciser</span>`}
+              ${l.etat === 'retenue' && html`<span class="tag vert">Retenue</span>`}
+            </div>
+            <div class="small muted" style="margin-top:3px">
+              ${CATEGORIES[l.categorie]} · ${jour(l.date_depense)} · ${EURO(montantDe(l))}
+            </div>
+            ${l.observation && html`<div class="small" style="margin-top:4px;
+              color:var(--laiton)">${l.observation}</div>`}
+          </div>
+          <div class="row" style="gap:6px">
+            <button class="btn sm light" onClick=${()=>marquer(l,'retenue')}>Retenir</button>
+            <button class="btn sm light" onClick=${()=>marquer(l,'a_preciser')}>Préciser</button>
+            <button class="btn sm light" onClick=${()=>marquer(l,'ecartee')}>Écarter</button>
+          </div>
+        </div>`)}
+      <div class="corps">
+        <p class="small muted" style="margin:0 0 14px">
+          Écarter, c\u2019est retirer la dépense du montant remboursé. Demander une
+          précision, c\u2019est rendre la note à son auteur sans lui faire tout
+          recommencer : ce qui est retenu le reste.
+        </p>
+        <button class="btn light" disabled=${aPreciser === 0} onClick=${renvoyer}>
+          Renvoyer pour complément${aPreciser ? ' (' + aPreciser + ' ligne(s))' : ''}
+        </button>
+      </div>
+    </div>`;
+}
+
+/* =====================================================================
+   LE BILAN DE L'ANNÉE
+   « Mon engagement » listait sans totaliser. Il dit maintenant ce que
+   l'année cumule, d'où viennent les heures — déclarées ou attestées par
+   un bilan de mission — et ce qui sépare de l'échelon suivant.
+
+   Rien n'est stocké : la chancellerie calcule déjà tout cela pour ses
+   promotions. On ne recalcule pas, on cite.
+   ===================================================================== */
+function BilanAnnee({ e }){
+  if (!e || !e.annee) return null;
+  const a = e.annee, pr = e.progression || {};
+  const total = Number(pr.total || 0);
+  const palier = pr.prochain ? Number(pr.prochain.points || 0) : null;
+  const depart = Number(pr.palier_actuel || 0);
+  const pct = palier && palier > depart
+    ? Math.max(0, Math.min(100, Math.round((total - depart) * 100 / (palier - depart))))
+    : 100;
+
+  const declarees = Number(a.heures || 0);
+  const attestees = Number(a.heures_attestees || 0);
+
+  return html`
+    <div style="margin-top:24px">
+      <div class="chiffres" style="margin-bottom:24px">
+        <div><div class="n" style="font-size:30px">${declarees}</div>
+          <div class="l">Heures déclarées cette année</div></div>
+        <div><div class="n" style="font-size:30px">${attestees}</div>
+          <div class="l">Dont attestées par un bilan</div></div>
+        <div><div class="n" style="font-size:30px">${a.missions}</div>
+          <div class="l">Missions accomplies</div></div>
+        <div><div class="n" style="font-size:30px">${a.taches_faites}</div>
+          <div class="l">Tâches achevées</div></div>
+      </div>
+
+      ${attestees > declarees && html`
+        <div class="alerte" style="margin-bottom:24px">
+          Vos bilans de mission attestent ${attestees} heures, plus que les
+          ${declarees} que vous avez déclarées. Les heures attestées font foi :
+          ce sont elles que la chancellerie retient.
+        </div>`}
+
+      ${e.bilans_a_rediger > 0 && html`
+        <div class="alerte" style="margin-bottom:24px;border-left:3px solid var(--laiton)">
+          ${e.bilans_a_rediger} bilan(s) de mission à rédiger. Tant qu\u2019ils ne le
+          sont pas, ces heures ne comptent pour personne.
+          <a href="#/espace/parcours">Les rédiger</a>
+        </div>`}
+
+      <div class="panneau">
+        <div class="tete spread">
+          <h3 style="font-size:17px">Ma progression</h3>
+          <span class="small muted">${pr.echelon_nom || ''}</span>
+        </div>
+        <div class="corps">
+          ${pr.prochain
+            ? html`
+              <div class="spread" style="margin-bottom:10px">
+                <span class="muted">Vers ${pr.prochain.nom}</span>
+                <span class="mono">${total} / ${palier} points</span>
+              </div>
+              <div class="jauge"><i style=${'width:'+pct+'%'}></i></div>
+              <div class="small muted" style="margin-top:8px">
+                ${total >= palier
+                  ? 'Vous remplissez les conditions du palier suivant. La promotion '
+                    + 'reste une décision de la chancellerie : elle se motive et ne '
+                    + 's\u2019obtient pas automatiquement.'
+                  : (palier - total) + ' point(s) vous en séparent.'}
+                ${pr.prochain.ouvre ? ' Cet échelon ouvre : ' + pr.prochain.ouvre + '.' : ''}
+              </div>`
+            : html`<div class="muted">Vous êtes au dernier échelon.</div>`}
+
+          ${pr.detail && html`
+            <div style="margin-top:20px">
+              <div class="small muted" style="margin-bottom:8px">D\u2019où viennent vos points</div>
+              <div class="row" style="gap:8px;flex-wrap:wrap">
+                ${Object.entries(pr.detail).filter(([,v]) => Number(v) > 0)
+                  .sort((a,b) => Number(b[1]) - Number(a[1]))
+                  .map(([k,v]) => html`<span class="tag" key=${k}>${k} · ${v}</span>`)}
+              </div>
+            </div>`}
+
+          <p class="small muted" style="margin-top:18px;margin-bottom:0">
+            Ces points se recalculent à chaque lecture, à partir de vos
+            formations, missions, responsabilités, tâches, heures et
+            ancienneté. Rien n\u2019est figé : rien n\u2019est perdu non plus.
+          </p>
+        </div>
       </div>
     </div>`;
 }
