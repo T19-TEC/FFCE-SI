@@ -6440,7 +6440,8 @@ function Communication({ p }){
 
       <div class="row" style="margin:0 0 24px;gap:0;border-bottom:1px solid var(--filet)">
         ${[['calendrier','Calendrier'],['valider','À valider'],
-           ['campagnes','Campagnes'],['modeles','Modèles'],['charte','La charte']]
+           ['suggestions','Suggestions au réseau'],['campagnes','Campagnes'],
+           ['modeles','Modèles'],['charte','La charte']]
           .map(([k,t]) => html`
           <button class="btn light" style=${'border:0;border-bottom:2px solid '+
             (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
@@ -6460,6 +6461,8 @@ function Communication({ p }){
             ? html`<div class="vide">Rien à valider.</div>`
             : aValider.map(lignePub)}
         </div>`}
+
+      ${onglet === 'suggestions' && html`<${SuggestionsAdmin} setMsg=${setMsg} />`}
 
       ${onglet === 'campagnes' && html`<${Campagnes} valide=${valide}
         campagnes=${campagnes} recharger=${charger} setMsg=${setMsg} />`}
@@ -8467,82 +8470,175 @@ const ETAT_TICKET = { ouvert:['Reçu',''], pris_en_compte:['Pris en compte','ble
 function Assistance({ p }){
   const [ouvert, setOuvert] = useState(false);
   const [miens, setMiens] = useState([]);
-  const [f, setF] = useState({nature:'probleme', titre:'', description:'', importance:'normale'});
+  const [nature, setNature] = useState(null);
+  const [f, setF] = useState({titre:'', description:'', urgent:false});
+  const [fil, setFil] = useState(null);
   const [msg, setMsg] = useState('');
 
   const charger = useCallback(() =>
     db.rpc('liste_tickets', { p_filtre: 'miens' }).then(({data}) => setMiens(data||[])), []);
   useEffect(() => { charger(); }, [charger]);
 
+  // Quatre portes d'entrée, pas un formulaire : on choisit d'abord de
+  // quoi on parle, le reste s'adapte.
+  const PORTES = [
+    ['probleme',    'Quelque chose ne marche pas',
+     'Un bouton sans effet, une page en erreur, une lenteur.'],
+    ['amelioration','J\u2019ai une idée',
+     'Quelque chose qui vous ferait gagner du temps.'],
+    ['donnee',      'Une information est fausse',
+     'Un nom, un chiffre, un rattachement erroné.'],
+    ['question',    'Je ne comprends pas',
+     'Un écran, une règle, un mot que vous ne saisissez pas.']
+  ];
+
   async function envoyer(e){
     e.preventDefault();
     const { data, error } = await db.rpc('ouvrir_ticket', {
-      p_nature: f.nature, p_titre: f.titre, p_description: f.description,
-      p_page: location.hash, p_importance: f.importance
+      p_nature: nature, p_titre: f.titre, p_description: f.description || f.titre,
+      p_page: location.hash, p_importance: f.urgent ? 'haute' : 'normale',
+      p_urgent: f.urgent,
+      p_contexte: { navigateur: navigator.userAgent.slice(0,120),
+                    largeur: window.innerWidth }
     });
     if (error) return setMsg('Erreur : ' + error.message);
     if (!data.ok) return setMsg('Erreur : ' + data.message);
-    setF({nature:'probleme', titre:'', description:'', importance:'normale'});
-    setOuvert(false); setMsg('Merci. Votre signalement est transmis.');
+    setF({titre:'', description:'', urgent:false}); setNature(null); setOuvert(false);
+    setMsg('Merci. Signalement ' + data.reference + ' transmis.');
     charger();
   }
+
+  async function ouvrirFil(t){
+    const { data } = await db.rpc('fil_ticket', { p_id: t.id });
+    setFil(data);
+  }
+
+  async function repondre(){
+    const texte = prompt('Votre message');
+    if (!texte) return;
+    await db.rpc('repondre_ticket', { p_id: fil.ticket.id, p_contenu: texte });
+    ouvrirFil({ id: fil.ticket.id });
+  }
+
+  if (fil) return html`
+    <div class="panneau" style="margin-top:24px">
+      <div class="tete">
+        <div>
+          <h3 style="font-size:17px">${fil.ticket.titre}</h3>
+          <div class="small muted"><span class="mono">${fil.ticket.reference}</span>
+            · ${jour(fil.ticket.cree_le)}</div>
+        </div>
+        <button class="btn sm light" onClick=${()=>setFil(null)}>Fermer</button>
+      </div>
+      <div class="corps">
+        <div class="small" style="white-space:pre-wrap">${fil.ticket.description}</div>
+        ${fil.ticket.reponse && html`
+          <div class="alerte ok" style="margin-top:16px">${fil.ticket.reponse}</div>`}
+        ${(fil.messages||[]).map(m => html`
+          <div style=${'margin-top:14px;padding:10px 12px;border-radius:2px;background:'+
+            (m.moi?'var(--action-clair)':'var(--papier)')}>
+            <div class="small muted">${m.moi ? 'Vous' : m.auteur} ·
+              ${new Date(m.cree_le).toLocaleString('fr-FR',
+                {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+            <div class="small" style="margin-top:4px;white-space:pre-wrap">${m.contenu}</div>
+          </div>`)}
+        <div class="row" style="margin-top:16px">
+          <button class="btn sm light" onClick=${repondre}>Ajouter un message</button>
+          <span class=${'tag '+(ETAT_TICKET[fil.ticket.statut]||['',''])[1]}>
+            ${(ETAT_TICKET[fil.ticket.statut]||[fil.ticket.statut,''])[0]}</span>
+        </div>
+      </div>
+    </div>`;
 
   return html`
     <div class="panneau" style="margin-top:24px">
       <div class="tete">
         <div class="row" style="gap:8px">
-          <h3 style="font-size:17px">Signaler ou proposer</h3>
-          <${Info} texte="Un bug, une lenteur, une idée d'amélioration, une donnée fausse : dites-le. C'est lu, et vous verrez la réponse ici." />
+          <h3 style="font-size:17px">Un souci, une idée ?</h3>
+          <${Info} texte="Tout est lu. Vous verrez la réponse ici même, et vous pourrez échanger sur votre signalement." />
         </div>
-        <button class="btn sm light" onClick=${()=>setOuvert(o=>!o)}>
-          ${ouvert ? 'Annuler' : 'Nouveau signalement'}</button>
+        ${!ouvert && html`<button class="btn sm" onClick=${()=>setOuvert(true)}>
+          Nous en parler</button>`}
       </div>
       ${msg && html`<div class="corps"><div class=${'alerte '+
         (msg.startsWith('Erreur')?'err':'ok')}>${msg}</div></div>`}
 
-      ${ouvert && html`
-        <form onSubmit=${envoyer} class="corps stack">
-          <div class="row" style="gap:16px;align-items:flex-start">
-            <div class="field" style="flex:1;min-width:170px;margin:0"><label>Nature</label>
-              <select value=${f.nature} onChange=${e=>setF(o=>({...o,nature:e.target.value}))}>
-                ${Object.entries(NATURES_TICKET).map(([k,v]) =>
-                  html`<option value=${k}>${v}</option>`)}
-              </select></div>
-            <div class="field" style="flex:1;min-width:150px;margin:0"><label>Importance</label>
-              <select value=${f.importance}
-                onChange=${e=>setF(o=>({...o,importance:e.target.value}))}>
-                <option value="basse">Peut attendre</option>
-                <option value="normale">Normale</option>
-                <option value="haute">Gênant au quotidien</option>
-              </select></div>
+      ${ouvert && !nature && html`
+        <div class="corps">
+          <p class="small muted" style="margin:0 0 14px">De quoi s\u2019agit-il ?</p>
+          <div class="tuiles" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
+            ${PORTES.map(([k, titre, aide]) => html`
+              <button class="tuile" style="text-align:left;border:0;min-height:auto"
+                onClick=${()=>setNature(k)}>
+                <h3 style="font-size:15px">${titre}</h3>
+                <p style="margin-top:6px">${aide}</p>
+              </button>`)}
           </div>
-          <div class="field"><label>En une ligne</label>
-            <input required value=${f.titre}
-              onInput=${e=>setF(o=>({...o,titre:e.target.value}))} /></div>
-          <div class="field"><label>Ce qui s\u2019est passé, ou ce que vous proposez</label>
-            <textarea required value=${f.description} style="min-height:110px"
-              onInput=${e=>setF(o=>({...o,description:e.target.value}))}
-              placeholder="Si c\u2019est un problème : ce que vous faisiez, ce qui devait arriver, ce qui est arrivé." /></div>
-          <div><button class="btn">Transmettre</button></div>
-          <p class="small muted">La page où vous vous trouvez est jointe automatiquement.</p>
+          <button class="lien-discret" style="margin-top:14px"
+            onClick=${()=>setOuvert(false)}>Annuler</button>
+        </div>`}
+
+      ${ouvert && nature && html`
+        <form onSubmit=${envoyer} class="corps stack">
+          <div class="row" style="gap:8px">
+            <span class="tag bleu">${(PORTES.find(x=>x[0]===nature)||[])[1]}</span>
+            <button type="button" class="lien-discret"
+              onClick=${()=>setNature(null)}>Changer</button>
+          </div>
+          <div class="field">
+            <label>${nature === 'amelioration' ? 'Votre idée, en une ligne'
+              : nature === 'question' ? 'Votre question'
+              : 'En une ligne'}</label>
+            <input required autofocus value=${f.titre}
+              onInput=${e=>setF(o=>({...o,titre:e.target.value}))} />
+          </div>
+          <div class="field">
+            <label>${nature === 'probleme'
+              ? 'Ce que vous faisiez, et ce qui est arrivé'
+              : 'Précisions (facultatif)'}</label>
+            <textarea value=${f.description} style="min-height:90px"
+              onInput=${e=>setF(o=>({...o,description:e.target.value}))} />
+          </div>
+          <label class="row" style="text-transform:none;letter-spacing:0;
+              font-size:14px;color:var(--nuit);margin:0;cursor:pointer">
+            <input type="checkbox" style="width:auto" checked=${f.urgent}
+              onChange=${e=>setF(o=>({...o,urgent:e.target.checked}))} />
+            <span>C\u2019est urgent — cela m\u2019empêche de travailler</span>
+          </label>
+          <div class="row">
+            <button class="btn">Envoyer</button>
+            <button type="button" class="btn light"
+              onClick=${()=>{setOuvert(false);setNature(null)}}>Annuler</button>
+          </div>
+          <p class="small muted">
+            La page où vous êtes et votre navigateur sont joints automatiquement :
+            cela nous évite de vous les demander.
+          </p>
         </form>`}
 
-      ${miens.length > 0 && html`
+      ${!ouvert && miens.length > 0 && html`
         <div>
-          ${miens.slice(0,8).map(t => html`
-            <div class="ligne">
+          ${miens.slice(0,6).map(t => html`
+            <div class="ligne" style="cursor:pointer" onClick=${()=>ouvrirFil(t)}>
               <div style="flex:1;min-width:200px">
-                <div>${t.titre}</div>
+                <div class="row" style="gap:8px">
+                  <span>${t.titre}</span>
+                  ${t.urgent && html`<span class="tag rouge">Urgent</span>`}
+                </div>
                 <div class="small muted">
                   <span class="mono">${t.reference}</span> · ${jour(t.cree_le)}
-                  ${t.assigne ? ' · suivi par ' + t.assigne : ''}
+                  ${t.assigne ? ' · ' + t.assigne + ' s\u2019en occupe' : ''}
+                  ${t.messages > 0 ? ' · ' + t.messages + ' message(s)' : ''}
                 </div>
-                ${t.reponse && html`<div class="small" style="margin-top:6px;
-                  padding:8px;background:var(--papier);border-radius:2px">${t.reponse}</div>`}
               </div>
               <span class=${'tag '+(ETAT_TICKET[t.statut]||['',''])[1]}>
                 ${(ETAT_TICKET[t.statut]||[t.statut,''])[0]}</span>
             </div>`)}
+        </div>`}
+      ${!ouvert && miens.length === 0 && html`
+        <div class="corps small muted">
+          Vous n\u2019avez rien signalé. Si quelque chose vous gêne, dites-le :
+          c\u2019est ainsi que la plateforme s\u2019améliore.
         </div>`}
     </div>`;
 }
@@ -8596,7 +8692,10 @@ function AssistanceAdmin({ setMsg }){
                 ${liste.map(t => html`
                   <tr>
                     <td style="max-width:280px">
-                      <div>${t.titre}</div>
+                      <div class="row" style="gap:6px">
+                        <span>${t.titre}</span>
+                        ${t.urgent && html`<span class="tag rouge">Urgent</span>`}
+                      </div>
                       <div class="small muted">${NATURES_TICKET[t.nature]||t.nature}
                         · <span class="mono">${t.reference}</span>
                         ${t.page ? ' · ' + t.page : ''}</div>
@@ -10136,6 +10235,373 @@ function Rapport({ p }){
     </div>`;
 }
 
+
+/* =====================================================================
+   PUBLIER LOCALEMENT
+   Le national prépare, le local adapte et publie. Les [crochets] sont
+   délibérés : une publication identique partout sonne faux, une
+   publication entièrement libre dérive.
+   ===================================================================== */
+
+const RESEAUX = {
+  instagram:['Instagram','https://www.instagram.com/'],
+  facebook:['Facebook','https://www.facebook.com/'],
+  linkedin:['LinkedIn','https://www.linkedin.com/'],
+  x:['X','https://x.com/compose/post'],
+  presse:['Presse',''], newsletter:['Infolettre','']
+};
+
+function Publier({ p }){
+  const [liste, setListe] = useState([]);
+  const [outils, setOutils] = useState([]);
+  const [ouverte, setOuverte] = useState(null);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a,b] = await Promise.all([
+      db.rpc('suggestions_disponibles'),
+      db.from('outils_com').select('*').eq('actif',true).order('ordre')
+    ]);
+    setListe(a.data||[]); setOutils(b.data||[]);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  if (ouverte) return html`<${Suggestion} s=${ouverte} outils=${outils}
+    fermer=${()=>{ setOuverte(null); charger(); }} />`;
+
+  const urgentes = liste.filter(x => x.priorite === 'urgente');
+  const cats = [...new Set(outils.map(o => o.categorie))];
+  const nomCat = { creation:'Créer', ressources:'Ressources', juridique:'Cadre juridique' };
+
+  return html`
+    <div>
+      <div class="eyebrow">Publier localement</div>
+      <h1 style="margin:6px 0 8px">Faire connaître nos actions</h1>
+      <p class="muted" style="max-width:60ch">
+        La direction de la communication prépare des publications prêtes à
+        adapter. Remplissez les <span class="mono">[crochets]</span> avec ce qui
+        s\u2019est passé chez vous, et publiez sur vos réseaux.
+      </p>
+      ${msg && html`<div class="alerte ok" style="margin-top:16px">${msg}</div>`}
+
+      ${urgentes.length > 0 && html`
+        <div class="alerte" style="margin-top:24px;border-left-color:var(--bordeaux)">
+          ${urgentes.length} publication${urgentes.length>1?'s':''} à relayer sans délai.
+        </div>`}
+
+      <div class="tuiles" style="margin-top:24px">
+        ${liste.length === 0
+          ? html`<div class="tuile"><div class="vide">
+              Aucune publication proposée pour l\u2019instant.</div></div>`
+          : liste.map(x => html`
+            <div class="tuile" style=${'min-height:auto;cursor:pointer;border-top:3px solid '+
+                (x.priorite==='urgente'?'var(--bordeaux)':
+                 x.priorite==='importante'?'var(--brun)':'var(--framboise)')}
+              onClick=${()=>setOuverte(x)}>
+              ${x.visuel && html`<img src=${urlPublique(x.visuel)} alt=""
+                style="width:100%;height:120px;object-fit:cover;margin-bottom:12px;
+                       border:1px solid var(--filet)" />`}
+              <h3>${x.titre}</h3>
+              ${x.contexte && html`<p style="margin-top:6px">${x.contexte}</p>`}
+              <div class="row" style="margin-top:12px;gap:6px">
+                ${(x.canaux||[]).map(c => html`
+                  <span class="tag">${(RESEAUX[c]||[c])[0]}</span>`)}
+              </div>
+              <div class="small muted" style="margin-top:10px">
+                ${x.a_publier_le ? 'À publier vers le ' + jour(x.a_publier_le) : ''}
+                ${x.reprises > 0 ? ' · repris ' + x.reprises + ' fois' : ''}
+              </div>
+              ${x.je_lai_reprise && html`<div style="margin-top:8px">
+                <span class="tag vert">Vous l\u2019avez publiée</span></div>`}
+            </div>`)}
+      </div>
+
+      <h2 style="font-size:22px;margin:40px 0 16px">Vos outils</h2>
+      ${cats.map(cat => html`
+        <div class="panneau" style="margin-bottom:16px">
+          <div class="tete"><h3 style="font-size:17px">${nomCat[cat]||cat}</h3></div>
+          ${outils.filter(o => o.categorie === cat).map(o => html`
+            <a class="ligne" href=${o.url}
+              target=${o.url.startsWith('#') ? null : '_blank'} rel="noopener"
+              style="color:var(--nuit)">
+              <div>
+                <div>${o.nom}${o.url.startsWith('#') ? '' : ' ↗'}</div>
+                <div class="small muted">${o.description||''}</div>
+              </div>
+            </a>`)}
+        </div>`)}
+    </div>`;
+}
+
+function Suggestion({ s, outils, fermer }){
+  const [texte, setTexte] = useState(s.texte);
+  const [msg, setMsg] = useState('');
+  const [copie, setCopie] = useState(false);
+
+  // Les crochets restants : ce qui n'a pas encore été personnalisé.
+  const restants = (texte.match(/\[[^\]]+\]/g) || []);
+
+  function copier(){
+    navigator.clipboard.writeText(
+      texte + (s.hashtags ? '\n\n' + s.hashtags : ''));
+    setCopie(true);
+    setTimeout(() => setCopie(false), 2500);
+  }
+
+  async function publier(canal){
+    copier();
+    const url = (RESEAUX[canal]||[])[1];
+    if (url) window.open(url, '_blank', 'noopener');
+    const { error } = await db.rpc('declarer_reprise', {
+      p_suggestion: s.id, p_canal: canal, p_lien: null, p_observation: null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setMsg('Texte copié et publication enregistrée. Collez-le sur ' +
+           (RESEAUX[canal]||[canal])[0] + '.');
+  }
+
+  const canva = s.lien_canva || (outils.find(o => o.nom.includes('Canva'))||{}).url;
+
+  return html`
+    <div>
+      <button class="lien-discret" onClick=${fermer}>← Toutes les publications</button>
+      <div class="spread" style="margin-top:12px">
+        <div>
+          <h1 style="font-size:28px">${s.titre}</h1>
+          <div class="small muted" style="margin-top:4px">
+            <span class="mono">${s.reference}</span>
+            ${s.auteur ? ' · ' + s.auteur : ''}
+            ${s.a_publier_le ? ' · à publier vers le ' + jour(s.a_publier_le) : ''}
+            ${s.reprises > 0 ? ' · repris ' + s.reprises + ' fois' : ''}
+          </div>
+        </div>
+        ${s.priorite !== 'normale' && html`
+          <span class=${'tag '+(s.priorite==='urgente'?'rouge':'or')}>
+            ${s.priorite === 'urgente' ? 'Sans délai' : 'Important'}</span>`}
+      </div>
+
+      ${s.contexte && html`<div class="alerte" style="margin-top:20px">${s.contexte}</div>`}
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      ${s.visuel && html`
+        <div class="panneau" style="margin-top:24px">
+          <div class="tete"><h3 style="font-size:17px">Le visuel</h3>
+            <a class="btn sm light" href=${urlPublique(s.visuel)}
+              download target="_blank" rel="noopener">Télécharger</a></div>
+          <div class="corps">
+            <img src=${urlPublique(s.visuel)} alt=""
+              style="max-width:100%;border:1px solid var(--filet)" />
+          </div>
+        </div>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete">
+          <div class="row" style="gap:8px">
+            <h3 style="font-size:17px">Le texte, à adapter</h3>
+            <${Info} texte="Remplacez chaque [crochet] par ce qui s'est passé chez vous. Une publication identique partout sonne faux ; celle qui parle de votre territoire touche vos voisins." />
+          </div>
+          ${restants.length > 0
+            ? html`<span class="tag or">${restants.length} à remplir</span>`
+            : html`<span class="tag vert">Prêt</span>`}
+        </div>
+        <div class="corps">
+          <textarea value=${texte} style="min-height:230px;font-size:15px"
+            onInput=${e=>setTexte(e.target.value)} />
+          <div class="spread" style="margin-top:10px">
+            <span class="small muted">
+              ${texte.length} signes
+              ${restants.length > 0
+                ? ' · reste : ' + restants.slice(0,3).join(' ') +
+                  (restants.length > 3 ? '…' : '')
+                : ''}
+            </span>
+            <button class="btn sm light" onClick=${copier}>
+              ${copie ? 'Copié' : 'Copier le texte'}</button>
+          </div>
+          ${s.hashtags && html`
+            <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--filet)">
+              <div class="eyebrow" style="margin-bottom:6px">Mots-clics</div>
+              <div class="small mono">${s.hashtags}</div>
+            </div>`}
+        </div>
+      </div>
+
+      ${s.consignes && html`
+        <div class="panneau" style="margin-top:24px;border-left:3px solid var(--bordeaux)">
+          <div class="tete"><h3 style="font-size:17px">À ne pas oublier</h3></div>
+          <div class="corps" style="white-space:pre-wrap">${s.consignes}</div>
+        </div>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="tete"><h3 style="font-size:17px">Publier</h3></div>
+        <div class="corps">
+          ${restants.length > 0 && html`
+            <div class="alerte" style="margin-bottom:16px">
+              Il reste ${restants.length} passage${restants.length>1?'s':''} entre
+              crochets. Complétez-les avant de publier.
+            </div>`}
+          <div class="row" style="gap:10px">
+            ${(s.canaux||[]).map(c => html`
+              <button class="btn" onClick=${()=>publier(c)}>
+                ${(RESEAUX[c]||[c])[0]}</button>`)}
+          </div>
+          <p class="small muted" style="margin:14px 0 0">
+            Le texte est copié dans votre presse-papiers et le réseau s\u2019ouvre :
+            il ne reste qu\u2019à coller. Votre publication est comptée, ce qui permet
+            à la direction de savoir ce qui vit.
+          </p>
+          ${canva && html`
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--filet)">
+              <a class="btn light" href=${canva} target="_blank" rel="noopener">
+                Créer un visuel sur Canva ↗</a>
+            </div>`}
+        </div>
+      </div>
+    </div>`;
+}
+
+/* --- Suggestions, côté direction -------------------------------------- */
+function SuggestionsAdmin({ setMsg }){
+  const [liste, setListe] = useState([]);
+  const [ouvert, setOuvert] = useState(false);
+  const [f, setF] = useState({titre:'', contexte:'', texte:'', hashtags:'',
+    consignes:'', priorite:'normale', publier_le:'', expire_le:'',
+    canaux:['instagram','facebook','linkedin'], canva:''});
+  const [fichier, setFichier] = useState(null);
+
+  const charger = useCallback(() =>
+    db.rpc('suivi_suggestions').then(({data}) => setListe(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  function basculerCanal(c){
+    setF(o => ({...o, canaux: o.canaux.includes(c)
+      ? o.canaux.filter(x => x !== c) : [...o.canaux, c]}));
+  }
+
+  async function creer(e){
+    e.preventDefault();
+    let visuel = null;
+    try { if (fichier) visuel = await deposerImage(fichier, 'suggestions'); }
+    catch (err){ return setMsg('Erreur : ' + err.message); }
+    const { data, error } = await db.rpc('creer_suggestion', {
+      p_titre: f.titre, p_contexte: f.contexte || null, p_texte: f.texte,
+      p_canaux: f.canaux, p_visuel: visuel, p_canva: f.canva || null,
+      p_hashtags: f.hashtags || null,
+      p_publier_le: f.publier_le || null, p_expire_le: f.expire_le || null,
+      p_consignes: f.consignes || null, p_priorite: f.priorite, p_territoire: null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({titre:'', contexte:'', texte:'', hashtags:'', consignes:'',
+      priorite:'normale', publier_le:'', expire_le:'',
+      canaux:['instagram','facebook','linkedin'], canva:''});
+    setFichier(null); setOuvert(false);
+    setMsg('Suggestion publiée auprès des équipes locales.'); charger();
+  }
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:16px">
+        <p class="small muted" style="margin:0;max-width:46ch">
+          Préparez une publication ; chaque équipe locale l\u2019adaptera à son
+          territoire. Écrivez entre <span class="mono">[crochets]</span> ce
+          qu\u2019elle devra compléter.
+        </p>
+        <button class="btn" onClick=${()=>setOuvert(o=>!o)}>
+          ${ouvert ? 'Annuler' : 'Nouvelle suggestion'}</button>
+      </div>
+
+      ${ouvert && html`
+        <form onSubmit=${creer} class="panneau" style="margin-bottom:24px">
+          <div class="corps stack">
+            <div class="field"><label>Titre</label>
+              <input required value=${f.titre}
+                onInput=${e=>setF(o=>({...o,titre:e.target.value}))}
+                placeholder="Journée nationale de la laïcité" /></div>
+            <div class="field"><label>Pourquoi maintenant</label>
+              <input value=${f.contexte}
+                onInput=${e=>setF(o=>({...o,contexte:e.target.value}))}
+                placeholder="Une ligne pour situer l\u2019enjeu." /></div>
+            <div class="field"><label>Le texte</label>
+              <textarea required value=${f.texte} style="min-height:180px"
+                onInput=${e=>setF(o=>({...o,texte:e.target.value}))}
+                placeholder=${'Le [date], la FFCE [territoire] était à [lieu]...'} /></div>
+            <div class="field"><label>Mots-clics</label>
+              <input value=${f.hashtags}
+                onInput=${e=>setF(o=>({...o,hashtags:e.target.value}))}
+                placeholder="#FFCE #Citoyenneté #ÉgalitéDesChances" /></div>
+            <div class="field"><label>Canaux</label>
+              <div class="row" style="gap:8px">
+                ${Object.entries(RESEAUX).map(([k,v]) => html`
+                  <button type="button"
+                    class=${'btn sm '+(f.canaux.includes(k)?'':'light')}
+                    onClick=${()=>basculerCanal(k)}>${v[0]}</button>`)}
+              </div></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:150px;margin:0">
+                <label>À publier vers le</label>
+                <input type="date" value=${f.publier_le}
+                  onInput=${e=>setF(o=>({...o,publier_le:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:150px;margin:0">
+                <label>Ne plus proposer après</label>
+                <input type="date" value=${f.expire_le}
+                  onInput=${e=>setF(o=>({...o,expire_le:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:140px;margin:0">
+                <label>Priorité</label>
+                <select value=${f.priorite}
+                  onChange=${e=>setF(o=>({...o,priorite:e.target.value}))}>
+                  <option value="normale">Normale</option>
+                  <option value="importante">Importante</option>
+                  <option value="urgente">Sans délai</option>
+                </select></div>
+            </div>
+            <div class="field"><label>Modèle Canva</label>
+              <input type="url" value=${f.canva}
+                onInput=${e=>setF(o=>({...o,canva:e.target.value}))}
+                placeholder="https://www.canva.com/design/…" /></div>
+            <div class="field"><label>Visuel</label>
+              <input type="file" accept="image/*"
+                onChange=${e=>setFichier(e.target.files[0]||null)} /></div>
+            <div class="field"><label>À ne pas oublier</label>
+              <textarea value=${f.consignes}
+                onInput=${e=>setF(o=>({...o,consignes:e.target.value}))}
+                placeholder="Aucun visage de mineur sans autorisation écrite. Ne pas modifier le logo." /></div>
+            <div><button class="btn">Publier auprès des équipes</button></div>
+          </div>
+        </form>`}
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">Ce qui circule</h3>
+          <span class="tag">${liste.length}</span></div>
+        ${liste.length === 0
+          ? html`<div class="vide">Aucune suggestion.</div>`
+          : liste.map(x => html`
+            <div class="ligne">
+              <div style="flex:1;min-width:220px">
+                <div class="row" style="gap:8px">
+                  <span>${x.titre}</span>
+                  ${x.priorite !== 'normale' && html`
+                    <span class=${'tag '+(x.priorite==='urgente'?'rouge':'or')}>
+                      ${x.priorite}</span>`}
+                </div>
+                <div class="small muted">
+                  <span class="mono">${x.reference}</span> · ${jour(x.cree_le)}
+                  ${x.a_publier_le ? ' · pour le ' + jour(x.a_publier_le) : ''}
+                </div>
+                ${x.territoires && html`<div class="small muted" style="margin-top:4px">
+                  Repris par : ${x.territoires}
+                  ${x.canaux_utilises ? ' — ' + x.canaux_utilises : ''}</div>`}
+              </div>
+              <div class="row">
+                <span class=${'tag '+(x.reprises>0?'vert':'')}>
+                  ${x.reprises} reprise${x.reprises>1?'s':''}</span>
+                <span class="tag">${x.statut}</span>
+              </div>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation({ p }){
   const [attente, setAttente] = useState([]);
@@ -10972,6 +11438,7 @@ function Espace({ session, sous }){
     case 'engagement': vue = acces('engagement') ? html`<${Engagement} p=${p} />` : refus; break;
     case 'comite':     vue = acces('comite') ? html`<${MonComite} p=${p} />` : refus; break;
     case 'budget':     vue = acces('budget') ? html`<${Budget} p=${p} />` : refus; break;
+    case 'publier':    vue = acces('publier') ? html`<${Publier} p=${p} />` : refus; break;
     case 'rapport':    vue = acces('rapport') ? html`<${Rapport} p=${p} />` : refus; break;
     case 'conformite': vue = html`<${Conformite} p=${p} />`; break;
     case 'parcours':   vue = acces('parcours')
