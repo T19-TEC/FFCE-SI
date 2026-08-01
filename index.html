@@ -285,6 +285,19 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
   color:var(--bleu);font-weight:700}
 .flanc .groupe{padding:22px 20px 6px;font-family:var(--titre);font-weight:700;
   font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--gris-bleu)}
+
+/* Une direction se distingue d'un simple groupe : filet de couleur à
+   gauche, comme une cote de dossier. */
+.flanc .groupe.direction{padding-left:17px;border-left:3px solid var(--gris-bleu);
+  margin-top:18px;color:var(--nuit)}
+.flanc .groupe.direction.bleu{border-left-color:var(--bleu)}
+.flanc .groupe.direction.nuit{border-left-color:var(--nuit)}
+.flanc .groupe.direction.brun{border-left-color:var(--brun)}
+.flanc .groupe.direction.framboise{border-left-color:var(--framboise)}
+.flanc .groupe.direction.action{border-left-color:var(--action)}
+.flanc .groupe.direction.or{border-left-color:var(--brun)}
+.flanc .mandat{padding:0 20px 6px;font-size:11px;color:var(--gris);
+  font-style:italic;line-height:1.35}
 .contenu{padding:44px;max-width:920px}
 @media(max-width:600px){.contenu{padding:24px 16px}}
 
@@ -952,8 +965,14 @@ function Portrait({ chemin, nom, taille = 40 }){
    j'administre. Le guichet et le référentiel ne sont plus des onglets
    permanents — on y accède au moment où on en a besoin.
    --------------------------------------------------------------------- */
-function Flanc({ p, apps, page }){
-  const dispo = c => apps.find(a => a.code === c && a.ouvert);
+/* --- Menu latéral ------------------------------------------------------
+   Le menu suit l'organigramme, pas la liste des tables. Trois strates :
+   qui je suis, mon activité de membre, puis les directions dont je
+   relève — chacune avec ses outils. C'est ainsi que s'organisent les
+   grandes fédérations : on n'appartient pas à « des responsabilités »
+   en vrac, on appartient à une direction.
+   --------------------------------------------------------------------- */
+function Flanc({ p, apps, page, directions }){
   const item = (r, t, marque, pivot) => html`
     <a href=${'#/espace/'+r}
        class=${(pivot?'pivot ':'') + (page===r?'on':'')}>
@@ -963,8 +982,13 @@ function Flanc({ p, apps, page }){
       </span>
     </a>`;
 
-  const admin = p.niveau >= 90;
-  const pilote = admin || (p.postes||[]).length > 0;
+  const ouvertes = (apps||[]).filter(a => a.ouvert);
+  const perso = ouvertes.filter(a => a.personnelle);
+  const dirs = (directions||[]).map(d => ({
+    ...d, apps: ouvertes.filter(a => a.direction === d.code)
+  })).filter(d => d.apps.length > 0);
+
+  const nom = a => a.nom_court || a.nom;
 
   return html`
     <aside class="flanc">
@@ -982,36 +1006,15 @@ function Flanc({ p, apps, page }){
 
       <nav>
         ${item('', 'Table de contrôle', 0, true)}
+
         <div class="groupe">Mon activité</div>
-        ${dispo('engagement') && item('engagement','Mon engagement')}
-        ${dispo('groupes') && item('groupes','Groupes et missions')}
-        ${dispo('assemblees') && item('assemblees','Assemblées')}
-        ${dispo('formations') && item('formations','Formations')}
-        ${dispo('messagerie') && item('messagerie','Messagerie')}
-        ${dispo('notes_frais') && item('notes_frais','Mes notes de frais')}
+        ${perso.map(a => item(a.code, nom(a)))}
 
-        ${(dispo('annuaire') || dispo('tresorerie') || dispo('ordonnancement')
-           || dispo('pilotage') || dispo('parcours')
-           || dispo('discipline') || dispo('communication')
-           || dispo('chancellerie')) && html`
-          <div class="groupe">Mes responsabilités</div>
-          ${dispo('pilotage') && item('pilotage','Pilotage du réseau')}
-          ${(p.postes||[]).some(x => x.nom.includes('conformité')
-            || x.nom.includes('affaires juridiques'))
-            && item('conformite','Conformité des élections')}
-          ${dispo('parcours') && item('parcours','Parcours adhérent')}
-          ${dispo('annuaire') && item('annuaire','Annuaire fédéral')}
-          ${dispo('ordonnancement') && item('ordonnancement','Ordonnancement')}
-          ${dispo('tresorerie') && item('tresorerie','Direction financière')}
-          ${dispo('chancellerie') && item('chancellerie','Chancellerie')}
-          ${dispo('communication') && item('communication','Communication')}
-          ${dispo('discipline') && item('discipline','Discipline et recours')}`}
-
-        ${pilote && html`
-          <div class="groupe">Pilotage</div>
-          ${admin && item('validation','Vérifications')}
-          ${admin && item('habilitations','Réseau et habilitations')}
-          ${admin && item('vitrine','Site public')}`}
+        ${dirs.map(d => html`
+          <div class=${'groupe direction '+d.couleur}>${d.nom_court || d.nom}</div>
+          ${d.par_poste && d.postes.length > 0 && html`
+            <div class="mandat">${d.postes.join(' · ')}</div>`}
+          ${d.apps.map(a => item(a.code, nom(a)))}`)}
 
         <div class="groupe">Ailleurs</div>
         <a href=${EXTERNE.drive} target="_blank" rel="noopener">Drive ↗</a>
@@ -7587,7 +7590,7 @@ function ParcoursAdherent({ p }){
 
   const charger = useCallback(async () => {
     const [a,b,c,d] = await Promise.all([
-      db.rpc('nouveaux_a_accueillir', { p_territoire: null }),
+      db.rpc('nouveaux_a_accueillir_maj', { p_territoire: null }),
       db.rpc('tunnel_benevole', { p_territoire: null, p_mois: 6 }),
       db.from('creneaux').select('*').eq('hote_id', p.id).is('annule_le', null)
         .gte('debut', new Date().toISOString()).order('debut'),
@@ -7597,14 +7600,6 @@ function ParcoursAdherent({ p }){
     setCreneaux(c.data||[]); setRdv(d.data||[]);
   }, [p.id]);
   useEffect(() => { charger(); }, [charger]);
-
-  async function noter(x, champ, notes){
-    const { data, error } = await db.rpc('noter_parcours',
-      { p_profil: x.profil_id, p_champ: champ, p_notes: notes || null });
-    if (error) return setMsg('Erreur : ' + error.message);
-    if (!data.ok) return setMsg('Erreur : ' + data.message);
-    setMsg('Enregistré.'); charger();
-  }
 
   const enRetard = liste.filter(x => x.jours > 14);
 
@@ -7641,49 +7636,8 @@ function ParcoursAdherent({ p }){
             onClick=${()=>setOnglet(k)}>${t}</button>`)}
       </div>
 
-      ${onglet === 'accueillir' && html`
-        <div class="panneau">
-          ${liste.length === 0
-            ? html`<div class="vide">Personne n\u2019attend. C\u2019est bon signe.</div>`
-            : liste.map(x => html`
-              <div class="ligne" style="align-items:flex-start">
-                <div style="flex:1;min-width:250px">
-                  <div class="row" style="gap:8px">
-                    <strong>${x.membre}</strong>
-                    <span class="tag">${x.etape}</span>
-                    ${x.jours > 14 && html`<span class="tag rouge">${x.jours} jours</span>`}
-                  </div>
-                  <div class="small muted" style="margin-top:4px">
-                    <span class="mono">${x.matricule}</span> · ${x.email}
-                    ${x.territoire ? ' · ' + x.territoire : ''}
-                    · inscrit le ${jour(x.inscrit_le)}
-                  </div>
-                  ${x.prochaine_action && html`
-                    <div class="small" style="margin-top:6px;color:var(--action)">
-                      → ${x.prochaine_action}</div>`}
-                  ${x.rdv_le && html`<div class="small muted" style="margin-top:4px">
-                    Rendez-vous le ${new Date(x.rdv_le).toLocaleString('fr-FR',
-                      {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>`}
-                  ${x.referent && html`<div class="small muted">Suivi par ${x.referent}</div>`}
-                  ${x.notes && html`<div class="small" style="margin-top:6px;
-                    padding:8px;background:var(--papier);border-radius:2px">${x.notes}</div>`}
-                </div>
-                <div class="row">
-                  ${!x.referent && html`<button class="btn sm light"
-                    onClick=${()=>noter(x,'referent')}>Je m\u2019en charge</button>`}
-                  <button class="btn sm light" onClick=${()=>noter(x,'contacte')}>
-                    Contacté</button>
-                  <button class="btn sm light" onClick=${()=>{
-                    const n = prompt('Note de suivi', x.notes||'');
-                    if (n !== null) noter(x,'notes',n);
-                  }}>Noter</button>
-                  <button class="btn sm light" onClick=${()=>{
-                    const m = prompt('Pourquoi le parcours s\u2019arrête (obligatoire)');
-                    if (m) noter(x,'abandon',m);
-                  }}>Clore</button>
-                </div>
-              </div>`)}
-        </div>`}
+      ${onglet === 'accueillir' && html`<${FileAccueil} liste=${liste}
+        recharger=${charger} setMsg=${setMsg} />`}
 
       ${onglet === 'rdv' && html`
         <div class="panneau">
@@ -7718,6 +7672,173 @@ function ParcoursAdherent({ p }){
         recharger=${charger} setMsg=${setMsg} />`}
 
       ${onglet === 'tunnel' && tunnel && html`<${Tunnel} t=${tunnel} />`}
+    </div>`;
+}
+
+
+/* --- La file d'accueil -------------------------------------------------
+   Une ligne, une action évidente. Ce qui n'a pas eu de nouvelles depuis
+   une semaine remonte en tête, et on peut agir sur plusieurs personnes
+   d'un coup : le suivi ne doit pas coûter plus cher que le geste qu'il
+   enregistre.
+   --------------------------------------------------------------------- */
+function FileAccueil({ liste, recharger, setMsg }){
+  const [choisis, setChoisis] = useState([]);
+  const [ouvert, setOuvert] = useState(null);
+
+  const basculer = id => setChoisis(c =>
+    c.includes(id) ? c.filter(x => x !== id) : [...c, id]);
+
+  async function agir(id, action, texte){
+    const { data, error } = await db.rpc('agir_parcours',
+      { p_profil: id, p_action: action, p_texte: texte || null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Enregistré.'); recharger();
+  }
+
+  async function agirGroupe(action, texte){
+    if (choisis.length === 0) return;
+    const { data, error } = await db.rpc('agir_parcours_groupe',
+      { p_profils: choisis, p_action: action, p_texte: texte || null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setMsg(data.traites + ' membre(s) traité(s)' +
+           (data.echecs ? ', ' + data.echecs + ' hors périmètre' : '') + '.');
+    setChoisis([]); recharger();
+  }
+
+  const urgents = liste.filter(x => x.sans_nouvelles);
+
+  return html`
+    <div>
+      ${urgents.length > 0 && html`
+        <div class="alerte" style="margin-bottom:16px;border-left-color:var(--bordeaux)">
+          ${urgents.length} personne${urgents.length>1?'s':''} sans nouvelles depuis
+          plus d\u2019une semaine.
+        </div>`}
+
+      ${choisis.length > 0 && html`
+        <div class="panneau" style="margin-bottom:16px;border-color:var(--action)">
+          <div class="corps row" style="gap:10px">
+            <span class="small"><strong>${choisis.length}</strong> sélectionné${choisis.length>1?'s':''}</span>
+            <button class="btn sm" onClick=${()=>agirGroupe('prendre_en_charge')}>
+              Je m\u2019en charge</button>
+            <button class="btn sm light" onClick=${()=>{
+              const t = prompt('Note commune (facultatif)');
+              if (t !== null) agirGroupe('contact', t);
+            }}>Marquer contactés</button>
+            <button class="btn sm light" onClick=${()=>{
+              const t = prompt('Objet de la relance (facultatif)');
+              if (t !== null) agirGroupe('relancer', t);
+            }}>Relancer</button>
+            <button class="btn sm light" onClick=${()=>setChoisis([])}>Désélectionner</button>
+          </div>
+        </div>`}
+
+      <div class="panneau">
+        <div class="tete">
+          <label class="row" style="text-transform:none;letter-spacing:0;margin:0;
+              font-size:13px;color:var(--gris);cursor:pointer">
+            <input type="checkbox" style="width:auto"
+              checked=${choisis.length === liste.length && liste.length > 0}
+              onChange=${e=>setChoisis(e.target.checked ? liste.map(x=>x.profil_id) : [])} />
+            <span>Tout sélectionner</span>
+          </label>
+          <span class="tag">${liste.length}</span>
+        </div>
+
+        ${liste.length === 0
+          ? html`<div class="vide">Personne n\u2019attend. C\u2019est bon signe.</div>`
+          : liste.map(x => html`
+            <div style=${'border-bottom:1px solid var(--filet);'+
+                 (x.sans_nouvelles ? 'border-left:3px solid var(--bordeaux)' : '')}>
+              <div class="ligne" style="border:0;align-items:flex-start">
+                <input type="checkbox" style="width:auto;margin-top:4px"
+                  checked=${choisis.includes(x.profil_id)}
+                  onChange=${()=>basculer(x.profil_id)} />
+
+                <div style="flex:1;min-width:230px;cursor:pointer"
+                  onClick=${()=>setOuvert(ouvert===x.profil_id?null:x.profil_id)}>
+                  <div class="row" style="gap:8px">
+                    <strong>${x.membre}</strong>
+                    <span class="tag">${x.etape_rang}/6 · ${x.etape}</span>
+                    ${x.sans_nouvelles && html`
+                      <span class="tag rouge">${x.jours} j sans contact</span>`}
+                  </div>
+                  <div class="small muted" style="margin-top:4px">
+                    ${x.territoire || 'sans territoire'} · inscrit le ${jour(x.inscrit_le)}
+                    ${x.referent ? ' · suivi par ' + x.referent : ''}
+                  </div>
+                  <div style="display:flex;gap:3px;margin-top:8px;max-width:220px">
+                    ${[1,2,3,4,5,6].map(n => html`
+                      <div style=${'height:4px;flex:1;background:'+
+                        (n <= x.etape_rang ? 'var(--bleu)' : 'var(--filet)')}></div>`)}
+                  </div>
+                  ${x.prochaine_action && html`
+                    <div class="small" style="margin-top:8px;color:var(--action)">
+                      → ${x.prochaine_action}</div>`}
+                </div>
+
+                <div class="row" style="gap:6px">
+                  ${x.email && html`<a class="btn sm light"
+                    href=${'mailto:'+x.email+'?subject='+encodeURIComponent(
+                      'Bienvenue à la FFCE')}
+                    onClick=${()=>agir(x.profil_id,'contact','courriel envoyé')}>
+                    Écrire</a>`}
+                  ${x.telephone && html`<a class="btn sm light"
+                    href=${'tel:'+x.telephone.replace(/\s/g,'')}
+                    onClick=${()=>agir(x.profil_id,'contact','appel téléphonique')}>
+                    Appeler</a>`}
+                  ${x.etape_rang === 2 && html`<button class="btn sm"
+                    onClick=${()=>agir(x.profil_id,'valider')}>Valider l\u2019adhésion</button>`}
+                  ${!x.referent && html`<button class="btn sm light"
+                    onClick=${()=>agir(x.profil_id,'prendre_en_charge')}>
+                    Je m\u2019en charge</button>`}
+                </div>
+              </div>
+
+              ${ouvert === x.profil_id && html`
+                <div class="corps" style="background:var(--papier);padding-top:0">
+                  <div class="row" style="gap:24px;align-items:flex-start;
+                       padding-top:16px;border-top:1px solid var(--filet)">
+                    <div style="flex:1;min-width:200px">
+                      <div class="eyebrow" style="margin-bottom:8px">Coordonnées</div>
+                      <div class="small"><span class="mono">${x.matricule}</span></div>
+                      <div class="small">${x.email}</div>
+                      ${x.telephone && html`<div class="small">${x.telephone}</div>`}
+                    </div>
+                    <div style="flex:1;min-width:200px">
+                      <div class="eyebrow" style="margin-bottom:8px">Dossier</div>
+                      <div class="jauge" style="margin:0;height:5px">
+                        <i style=${'width:'+x.completude+'%;background:'+
+                          (x.completude===100?'var(--valide)':'var(--brun)')}></i></div>
+                      <div class="small muted" style="margin-top:6px">
+                        ${x.completude} %${x.manques ? ' — manque ' + x.manques : ' — complet'}
+                      </div>
+                    </div>
+                  </div>
+                  ${x.rdv_le && html`<p class="small" style="margin:14px 0 0">
+                    Rendez-vous le ${new Date(x.rdv_le).toLocaleString('fr-FR',
+                      {weekday:'long',day:'numeric',month:'long',
+                       hour:'2-digit',minute:'2-digit'})}</p>`}
+                  ${x.notes && html`
+                    <div style="margin-top:14px">
+                      <div class="eyebrow" style="margin-bottom:6px">Suivi</div>
+                      <div class="small" style="white-space:pre-wrap">${x.notes}</div>
+                    </div>`}
+                  <div class="row" style="margin-top:16px;gap:8px">
+                    <button class="btn sm light" onClick=${()=>{
+                      const t = prompt('Ajouter au suivi');
+                      if (t) agir(x.profil_id,'contact',t);
+                    }}>Ajouter une note</button>
+                    <button class="btn sm light" onClick=${()=>{
+                      const t = prompt('Pourquoi le parcours s\u2019arrête (obligatoire)');
+                      if (t) agir(x.profil_id,'clore',t);
+                    }}>Clore le parcours</button>
+                  </div>
+                </div>`}
+            </div>`)}
+      </div>
     </div>`;
 }
 
@@ -8412,7 +8533,7 @@ function Assistance({ p }){
 }
 
 /* --- Assistance, côté pilotage ---------------------------------------- */
-function AssistanceAdmin({ p, setMsg }){
+function AssistanceAdmin({ setMsg }){
   const [liste, setListe] = useState([]);
   const [filtre, setFiltre] = useState('ouverts');
   const [gens, setGens] = useState([]);
@@ -8704,7 +8825,7 @@ function ArchivesElectorales({ archives }){
 }
 
 /* --- Direction générale : vérifications ------------------------------ */
-function Validation(){
+function Validation({ p }){
   const [attente, setAttente] = useState([]);
   const [demandes, setDemandes] = useState([]);
   const [signalements, setSignalements] = useState([]);
@@ -8874,7 +8995,7 @@ function Validation(){
       <div style="height:32px"></div>
       ${msg && html`<div class="alerte ok" style="margin-bottom:24px">${msg}</div>`}
 
-      <${AssistanceAdmin} p=${p} setMsg=${setMsg} />
+      <${AssistanceAdmin} setMsg=${setMsg} />
 
       ${actes.length > 0 && html`
         <div class="panneau" style="margin-bottom:24px;border-color:var(--brun)">
@@ -9453,6 +9574,7 @@ function Espace({ session, sous }){
   const [demandes, setDemandes] = useState([]);
   const [chemin, setChemin] = useState('');
   const [blocage, setBlocage] = useState(null);
+  const [directions, setDirections] = useState([]);
   const [pret, setPret] = useState(false);
 
   const charger = useCallback(async () => {
@@ -9463,12 +9585,14 @@ function Espace({ session, sous }){
 
     // La matrice décide de ce qui s'affiche, de ce qui est grisé, et de
     // ce qui n'apparaît pas du tout. Elle se règle dans Habilitations.
-    const [{ data: liste }, { data: mesDem }] = await Promise.all([
+    const [{ data: liste }, { data: mesDem }, { data: dirs }] = await Promise.all([
       db.rpc('mes_applications'),
       db.from('demandes').select('*').eq('profil_id', session.user.id)
-        .order('cree_le',{ascending:false})
+        .order('cree_le',{ascending:false}),
+      db.rpc('mes_directions')
     ]);
     setApps((liste||[]).map(a => ({ ...a, actif: true })));
+    setDirections(dirs || []);
     setDemandes(mesDem || []);
 
     // Les postes occupés : ils ouvrent des droits que la fonction ne
@@ -9497,7 +9621,7 @@ function Espace({ session, sous }){
   if (p.statut === 'suspendu') return html`<${EspaceSuspendu} p=${p} />`;
   if (blocage && sous !== 'compte') return html`
     <div class="app">
-      <${Flanc} p=${p} apps=${apps} page="compte" />
+      <${Flanc} p=${p} apps=${apps} directions=${directions} page="compte" />
       <main class="contenu"><${DossierIncomplet} p=${p} manques=${blocage} /></main>
     </div>`;
   if (p.statut !== 'actif') return html`<${EnAttente} p=${p} />`;
@@ -9512,7 +9636,7 @@ function Espace({ session, sous }){
     const idG = sous.slice('groupe/'.length);
     return html`
       <div class="app">
-        <${Flanc} p=${p} apps=${apps} page="groupes" />
+        <${Flanc} p=${p} apps=${apps} directions=${directions} page="groupes" />
         <main class="contenu">
           ${acces('groupes') ? html`<${Groupe} p=${p} id=${idG} />` : refus}
         </main>
@@ -9522,7 +9646,7 @@ function Espace({ session, sous }){
     const idF = sous.slice('formation/'.length);
     return html`
       <div class="app">
-        <${Flanc} p=${p} apps=${apps} page="formations" />
+        <${Flanc} p=${p} apps=${apps} directions=${directions} page="formations" />
         <main class="contenu">
           ${acces('formations') ? html`<${Formation} p=${p} id=${idF} />` : refus}
         </main>
@@ -9548,7 +9672,7 @@ function Espace({ session, sous }){
     case 'discipline': vue = acces('discipline') ? html`<${Discipline} p=${p} />` : refus; break;
     case 'demandes':   vue = html`<${MesDemandes} p=${p} apps=${apps} demandes=${demandes} recharger=${charger} />`; break;
     case 'annuaire':   vue = acces('annuaire') ? html`<${Annuaire} p=${p} />` : refus; break;
-    case 'validation': vue = admin ? html`<${Validation} />` : refus; break;
+    case 'validation': vue = admin ? html`<${Validation} p=${p} />` : refus; break;
     case 'reseau':     vue = admin ? html`<${Habilitations} p=${p} />` : refus; break;
     case 'vitrine':    vue = admin ? html`<${VitrineAdmin} />` : refus; break;
     case 'habilitations': vue = (admin || p.droits?.includes('habilitations.gerer'))
@@ -9566,7 +9690,7 @@ function Espace({ session, sous }){
 
   return html`
     <div class="app">
-      <${Flanc} p=${p} apps=${apps} page=${sous} />
+      <${Flanc} p=${p} apps=${apps} directions=${directions} page=${sous} />
       <main class="contenu">${vue}</main>
     </div>`;
 }
