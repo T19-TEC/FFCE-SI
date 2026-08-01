@@ -42,6 +42,17 @@ alter table messages drop constraint if exists messages_contenu_check;
 alter table messages add constraint messages_contenu_check
   check (length(trim(contenu)) > 0 or piece is not null);
 
+-- La garde de conversion : une valeur qui n'a pas la forme d'un
+-- identifiant renvoie null au lieu de lever une erreur. Dans une
+-- politique de sécurité, c'est la différence entre un refus et une panne.
+create or replace function uuid_valide(p_texte text)
+returns uuid language sql immutable as $$
+  select case
+    when p_texte ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    then p_texte::uuid else null end;
+$$;
+grant execute on function uuid_valide(text) to anon, authenticated;
+
 insert into storage.buckets (id, name, public, file_size_limit)
 values ('pieces', 'pieces', false, 10485760)
 on conflict (id) do update set public = false, file_size_limit = 10485760;
@@ -52,12 +63,12 @@ on conflict (id) do update set public = false, file_size_limit = 10485760;
 drop policy if exists depot_pieces on storage.objects;
 create policy depot_pieces on storage.objects for insert to authenticated
   with check (bucket_id = 'pieces'
-              and est_participant(((storage.foldername(name))[1])::uuid));
+              and est_participant(uuid_valide((storage.foldername(name))[1])));
 
 drop policy if exists lecture_pieces on storage.objects;
 create policy lecture_pieces on storage.objects for select to authenticated
   using (bucket_id = 'pieces'
-         and accede_conversation(((storage.foldername(name))[1])::uuid));
+         and accede_conversation(uuid_valide((storage.foldername(name))[1])));
 
 drop policy if exists suppr_pieces on storage.objects;
 create policy suppr_pieces on storage.objects for delete to authenticated
