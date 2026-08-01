@@ -783,10 +783,18 @@ function Actions(){
 
 function Reseau(){
   const [terr, setTerr] = useState([]);
+  const [publics, setPublics] = useState([]);
   useEffect(() => {
     db.from('territoires').select('id,nom,echelle,code,parent_id')
       .in('echelle',['region','departement']).order('nom')
       .then(({data}) => setTerr(data || []));
+    // La case « afficher mon nom sur le site public » aboutit ici. Sans
+    // cet endroit, elle promettait une publication qui n'existait pas.
+    db.from('v_annuaire')
+      .select('id,prenom,nom,photo_url,bio,fonction_nom,territoire_nom,niveau')
+      .eq('visible_public', true).eq('statut','actif')
+      .order('niveau', { ascending:false }).limit(60)
+      .then(({data}) => setPublics(data || []));
   }, []);
   const regions = terr.filter(t => t.echelle === 'region');
   return html`
@@ -813,6 +821,27 @@ function Reseau(){
         <div class="row">
           ${regions.map(r => html`<span class="tag">${r.nom}</span>`)}
         </div>
+
+        ${publics.length > 0 && html`
+          <hr class="hr" />
+          <div class="eyebrow" style="margin-bottom:16px">Celles et ceux qui l\u2019animent</div>
+          <p class="intro" style="margin-bottom:24px">
+            Les membres qui ont choisi de se présenter publiquement.
+          </p>
+          <div class="tuiles" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
+            ${publics.map(m => html`
+              <div class="carte" key=${m.id}>
+                <div class="row" style="gap:14px;align-items:flex-start">
+                  <${Portrait} chemin=${m.photo_url} nom=${nomComplet(m)} taille=${52} />
+                  <div style="min-width:0">
+                    <div class="nom" style="font-size:18px">${nomComplet(m)}</div>
+                    <div class="poste" style="font-size:14px">${m.fonction_nom}</div>
+                    <div class="lieu">${m.territoire_nom || 'National'}</div>
+                  </div>
+                </div>
+                ${m.bio && html`<div class="small" style="margin-top:12px">${m.bio}</div>`}
+              </div>`)}
+          </div>`}
       </div>
     </section>`;
 }
@@ -1081,7 +1110,7 @@ function Portrait({ chemin, nom, taille = 40 }){
    grandes fédérations : on n'appartient pas à « des responsabilités »
    en vrac, on appartient à une direction.
    --------------------------------------------------------------------- */
-function Flanc({ p, apps, page, directions, ouvert, fermer }){
+function Flanc({ p, apps, page, directions, ouvert, fermer, attentes }){
   const item = (r, t, marque, pivot) => html`
     <a href=${'#/espace/'+r} onClick=${()=>fermer && fermer()}
        class=${(pivot?'pivot ':'') + (page===r?'on':'')}>
@@ -1091,11 +1120,26 @@ function Flanc({ p, apps, page, directions, ouvert, fermer }){
       </span>
     </a>`;
 
+  // Une pastille devant une application veut dire : quelque chose vous y
+  // attend. Le compte vient de la file de travail, donc de la base — pas
+  // d'un second calcul qui pourrait diverger.
+  const marques = {};
+  (attentes||[]).forEach(x => {
+    const c = (x.lien||'').replace('#/espace/','');
+    marques[c] = (marques[c] || 0) + Number(x.nombre || 0);
+  });
   const ouvertes = (apps||[]).filter(a => a.ouvert);
-  const perso = ouvertes.filter(a => a.personnelle);
-  const dirs = (directions||[]).map(d => ({
+
+  // Une direction qui n'ouvre qu'une seule application ne forme pas un
+  // bloc : elle laisse un titre pour une ligne. Ces solitaires
+  // rejoignent « Mon activité ». La règle vaut pour tous, plutôt que
+  // d'aller corriger chaque cas à la main.
+  const groupes = (directions||[]).map(d => ({
     ...d, apps: ouvertes.filter(a => a.direction === d.code)
-  })).filter(d => d.apps.length > 0);
+  }));
+  const dirs = groupes.filter(d => d.apps.length > 1);
+  const solitaires = groupes.filter(d => d.apps.length === 1).flatMap(d => d.apps);
+  const perso = ouvertes.filter(a => a.personnelle).concat(solitaires);
 
   const nom = a => a.nom_court || a.nom;
 
@@ -1118,13 +1162,14 @@ function Flanc({ p, apps, page, directions, ouvert, fermer }){
         ${item('', 'Table de contrôle', 0, true)}
 
         <div class="groupe">Mon activité</div>
-        ${perso.map(a => item(a.code, nom(a)))}
+        ${item('mandats', 'Mes mandats', marques['mandats'])}
+        ${perso.map(a => item(a.code, nom(a), marques[a.code]))}
 
         ${dirs.map(d => html`
           <div class=${'groupe direction '+d.couleur}>${d.nom_court || d.nom}</div>
           ${d.par_poste && d.postes.length > 0 && html`
             <div class="mandat">${d.postes.join(' · ')}</div>`}
-          ${d.apps.map(a => item(a.code, nom(a)))}`)}
+          ${d.apps.map(a => item(a.code, nom(a), marques[a.code]))}`)}
 
         <div class="groupe">Ailleurs</div>
         <a href=${EXTERNE.drive} target="_blank" rel="noopener">Drive ↗</a>
@@ -1193,12 +1238,8 @@ function Progression(){
    Les alertes se perdaient au fond des onglets. Elles remontent ici,
    en tête du tableau de bord, triées par urgence.
    --------------------------------------------------------------------- */
-function CeQuiAttend(){
-  const [items, setItems] = useState([]);
-  useEffect(() => {
-    db.rpc('ce_qui_attend').then(({data}) => setItems(data || []));
-  }, []);
-  if (items.length === 0) return null;
+function CeQuiAttend({ items }){
+  if (!items || items.length === 0) return null;
 
   const urgents = items.filter(x => x.urgence === 'haute');
   const normaux = items.filter(x => x.urgence !== 'haute');
@@ -1227,7 +1268,7 @@ function CeQuiAttend(){
     </div>`;
 }
 
-function TableauDeBord({ p, apps, chemin, demandes }){
+function TableauDeBord({ p, apps, chemin, demandes, attentes }){
   const ouvertes = demandes.filter(d => d.statut === 'ouverte' || d.statut === 'en_cours');
   return html`
     <div class="stack" style="gap:32px;display:flex;flex-direction:column">
@@ -1252,7 +1293,7 @@ function TableauDeBord({ p, apps, chemin, demandes }){
         <${Progression} />
       </div>
 
-      <${CeQuiAttend} />
+      <${CeQuiAttend} items=${attentes} />
 
       <div class="spread" style="align-items:stretch;gap:24px;flex-wrap:wrap">
         <div style="flex:1;min-width:280px"><${CarteFederale} p=${p} chemin=${chemin} /></div>
@@ -1448,7 +1489,7 @@ function MonCompte({ p, recharger }){
           <label class="row" style="text-transform:none;letter-spacing:0;font-size:14px;color:var(--encre)">
             <input type="checkbox" style="width:auto" checked=${f.visible_public}
               onChange=${e=>maj('visible_public',e.target.checked)} />
-            <span>Afficher mon nom et ma présentation sur le site public</span>
+            <span>Afficher mon nom et ma présentation sur la page publique « Le réseau »</span>
           </label>
           ${msg && html`<div class=${'alerte '+(msg.startsWith('Modif')?'ok':'err')}>${msg}</div>`}
           <div><button class="btn">Enregistrer</button></div>
@@ -4067,13 +4108,18 @@ function PostesEtDroits({ setMsg }){
 /* --- Identité des applications ---------------------------------------- */
 function IdentiteApplications({ setMsg }){
   const [apps, setApps] = useState([]);
+  const [dirs, setDirs] = useState([]);
   const [ouvert, setOuvert] = useState(null);
   const [f, setF] = useState({});
   const [fichier, setFichier] = useState(null);
 
-  const charger = useCallback(() =>
-    db.from('applications').select('*').eq('actif',true).order('ordre')
-      .then(({data}) => setApps(data||[])), []);
+  const charger = useCallback(async () => {
+    const [a, d] = await Promise.all([
+      db.from('applications').select('*').eq('actif',true).order('ordre'),
+      db.rpc('liste_directions')
+    ]);
+    setApps(a.data||[]); setDirs(d.data||[]);
+  }, []);
   useEffect(() => { charger(); }, [charger]);
 
   const TEINTES = { bleu:'Bleu profond', bordeaux:'Rouge bordeaux', nuit:'Bleu nuit',
@@ -4084,7 +4130,9 @@ function IdentiteApplications({ setMsg }){
   function editer(a){
     setOuvert(a.code);
     setF({nom:a.nom, nom_court:a.nom_court||'', description:a.description||'',
-          accroche:a.accroche||'', couleur:a.couleur||'bleu', logo:a.logo||''});
+          accroche:a.accroche||'', couleur:a.couleur||'bleu', logo:a.logo||'',
+          direction:a.direction||'', direction_locale:a.direction_locale||'',
+          ordre:a.ordre});
     setFichier(null);
   }
 
@@ -4096,7 +4144,9 @@ function IdentiteApplications({ setMsg }){
     const { data, error } = await db.rpc('regler_application', {
       p_code: code, p_nom: f.nom, p_nom_court: f.nom_court,
       p_description: f.description, p_accroche: f.accroche,
-      p_couleur: f.couleur, p_logo: logo
+      p_couleur: f.couleur, p_logo: logo,
+      p_direction: f.direction, p_direction_locale: f.direction_locale,
+      p_ordre: Number(f.ordre) || 100
     });
     if (error) return setMsg('Erreur : ' + error.message);
     if (!data.ok) return setMsg('Erreur : ' + data.message);
@@ -4106,9 +4156,11 @@ function IdentiteApplications({ setMsg }){
   return html`
     <div>
       <p class="small muted" style="margin-bottom:20px;max-width:62ch">
-        Chaque outil porte le nom que la fédération lui donne. Un nom court pour
-        la tuile, une accroche d\u2019une ligne, une couleur de la charte et, si
-        vous le souhaitez, un pictogramme.
+        Chaque outil porte le nom que la fédération lui donne, se range sous la
+        direction qu\u2019elle décide et dans l\u2019ordre qu\u2019elle choisit. Le second
+        rangement, dit territorial, ne vaut que pour les échelons locaux :
+        c\u2019est ainsi que le Pilotage se lit sous la Direction générale au
+        national et sous Ma structure sur le terrain.
       </p>
       ${apps.map(a => html`
         <div class="panneau" style="margin-bottom:16px">
@@ -4146,6 +4198,26 @@ function IdentiteApplications({ setMsg }){
                 <select value=${f.couleur} onChange=${e=>setF(o=>({...o,couleur:e.target.value}))}>
                   ${Object.entries(TEINTES).map(([k,v]) => html`<option value=${k}>${v}</option>`)}
                 </select></div>
+              <div class="row" style="gap:16px;align-items:flex-start">
+                <div class="field" style="flex:1;min-width:170px;margin:0">
+                  <label>Direction (vue fédérale)</label>
+                  <select value=${f.direction}
+                    onChange=${e=>setF(o=>({...o,direction:e.target.value}))}>
+                    <option value="">Mon activité — aucune direction</option>
+                    ${dirs.map(d => html`<option value=${d.code}>${d.nom_court || d.nom}</option>`)}
+                  </select></div>
+                <div class="field" style="flex:1;min-width:170px;margin:0">
+                  <label>Direction (vue territoriale)</label>
+                  <select value=${f.direction_locale}
+                    onChange=${e=>setF(o=>({...o,direction_locale:e.target.value}))}>
+                    <option value="">Le même rangement pour tous</option>
+                    ${dirs.map(d => html`<option value=${d.code}>${d.nom_court || d.nom}</option>`)}
+                  </select></div>
+                <div class="field" style="flex:0 0 110px;margin:0">
+                  <label>Ordre</label>
+                  <input type="number" min="1" value=${f.ordre}
+                    onInput=${e=>setF(o=>({...o,ordre:e.target.value}))} /></div>
+              </div>
               <div class="field"><label>Pictogramme</label>
                 ${f.logo && html`<img src=${urlPublique(f.logo)} alt=""
                   style="width:44px;height:44px;object-fit:contain;display:block;margin-bottom:8px" />`}
@@ -7729,6 +7801,10 @@ function ParcoursAdherent({ p }){
   const [msg, setMsg] = useState('');
 
   const charger = useCallback(async () => {
+    // On rafraîchit les jalons avant de lire : une étape constatable —
+    // dossier complet, adhésion validée, formation acquise — ne doit pas
+    // être périmée au moment où quelqu'un la regarde.
+    await db.rpc('rafraichir_jalons');
     const [a,b,c,d] = await Promise.all([
       db.rpc('nouveaux_a_accueillir_maj', { p_territoire: null }),
       db.rpc('tunnel_benevole', { p_territoire: null, p_mois: 6 }),
@@ -9482,7 +9558,7 @@ const STATUT_PROP = {
   nationale:['Reprise au national','or'], ecartee:['Écartée','rouge']
 };
 
-function MonComite({ p }){
+function MonComite({ p, apps }){
   const [c, setC] = useState(null);
   const [onglet, setOnglet] = useState('vie');
   const [msg, setMsg] = useState('');
@@ -9495,6 +9571,9 @@ function MonComite({ p }){
 
   if (!c) return html`<div class="vide">Chargement…</div>`;
   const t = c.territoire || {};
+  // Les publications à relayer se lisent là où l'équipe locale regarde
+  // déjà, plutôt que sous une direction dont elle ne voit rien d'autre.
+  const peutRelayer = (apps||[]).some(a => a.code === 'publier' && a.ouvert);
 
   return html`
     <div>
@@ -9518,13 +9597,16 @@ function MonComite({ p }){
 
       <div class="row" style="margin:0 0 24px;gap:0;border-bottom:1px solid var(--filet)">
         ${[['vie','La vie du comité'],['projets','Projets'],
-           ['propositions','Propositions'],['equipe','Qui anime']]
+           ['propositions','Propositions'],['equipe','Qui anime'],
+           ...(peutRelayer ? [['relayer','À relayer']] : [])]
           .map(([k,lab]) => html`
           <button class="btn light" style=${'border:0;border-bottom:2px solid '+
             (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
             onClick=${()=>setOnglet(k)}>${lab}${k==='propositions'&&(c.propositions||[]).length
               ? ' ('+c.propositions.length+')' : ''}</button>`)}
       </div>
+
+      ${onglet === 'relayer' && html`<${Publier} p=${p} />`}
 
       ${onglet === 'vie' && html`
         <div>
@@ -11556,6 +11638,7 @@ function RepartirNouveaux({ setMsg }){
   const [liste, setListe] = useState([]);
   const [gens, setGens] = useState([]);
   const charger = useCallback(async () => {
+    await db.rpc('rafraichir_jalons');
     const [a,b] = await Promise.all([
       db.rpc('nouveaux_a_repartir'),
       db.from('v_annuaire').select('id,prenom,nom,fonction_nom,territoire_nom')
@@ -12407,6 +12490,1209 @@ function EnAttente({ p }){
     </section>`;
 }
 
+/* =====================================================================
+   RESSOURCES ET MATÉRIEL
+   Le pendant d'interface de la migration 28. Six volets, qui suivent le
+   trajet réel d'un objet : on le choisit au catalogue, on le commande
+   avec des points, on le reçoit, il entre à l'inventaire. Ce que le
+   catalogue ne propose pas se demande en investissement, et passe alors
+   par l'ordonnateur comme toute dépense.
+
+   Aucun droit n'est vérifié ici : les fonctions de la base refusent
+   elles-mêmes ce qui n'est pas permis, avec leurs propres mots. Les
+   volets d'administration ne sont masqués que pour ne pas encombrer.
+   ===================================================================== */
+
+const ETAT_INV = { neuf:'Neuf', bon:'Bon état', usage:'Usagé',
+                   a_remplacer:'À remplacer', hors_service:'Hors service' };
+const ORIGINE_INV = { catalogue:'Catalogue fédéral', achat_local:'Achat local',
+                      don:'Don', investissement:'Investissement' };
+
+/* Les états d'une commande et d'un investissement, avec leur couleur. */
+const etatCmd = s => {
+  const t = { brouillon:['Panier',''], deposee:['Déposée','bleu'],
+              validee:['Validée','bleu'], expediee:['Expédiée','or'],
+              recue:['Reçue','vert'], refusee:['Refusée','rouge'],
+              annulee:['Annulée','rouge'] }[s] || [s, ''];
+  return html`<span class=${'tag '+t[1]}>${t[0]}</span>`;
+};
+const etatInv = s => {
+  const t = { deposee:['Déposée','bleu'], instruite:['Instruite','or'],
+              ordonnancee:['Ordonnancée','or'], engagee:['Engagée','or'],
+              recue:['Reçue','vert'], refusee:['Refusée','rouge'],
+              ajournee:['Ajournée','rouge'] }[s] || [s, ''];
+  return html`<span class=${'tag '+t[1]}>${t[0]}</span>`;
+};
+
+function Ressources({ p }){
+  const [onglet, setOnglet]   = useState('catalogue');
+  const [solde, setSolde]     = useState(null);
+  const [cats, setCats]       = useState([]);
+  const [articles, setArt]    = useState([]);
+  const [commandes, setCmd]   = useState([]);
+  const [panier, setPanier]   = useState(null);
+  const [lignes, setLignes]   = useState([]);
+  const [invent, setInvent]   = useState([]);
+  const [inv, setInv]         = useState({ miennes:[], a_instruire:[], a_ordonnancer:[] });
+  const [regles, setRegles]   = useState([]);
+  const [dotations, setDot]   = useState([]);
+  const [msg, setMsg]         = useState('');
+  const [pret, setPret]       = useState(false);
+
+  const charger = useCallback(async () => {
+    const annee = new Date().getFullYear();
+    const [s, c, a, cmd, ivt, rg, dt, i1, i2, i3] = await Promise.all([
+      db.rpc('solde_points', {}),
+      db.from('categories_ressource').select('*').order('ordre'),
+      db.from('articles_catalogue').select('*').order('ordre'),
+      db.from('commandes').select('*, territoires(nom)')
+        .order('cree_le', { ascending:false }),
+      db.from('inventaire').select('*, articles_catalogue(nom,reference,unite)')
+        .order('maj_le', { ascending:false }),
+      db.from('regles_dotation').select('*').order('ordre'),
+      db.from('dotations').select('*, territoires(nom)').eq('annee', annee),
+      db.rpc('investissements_a_traiter', { p_filtre:'miennes' }),
+      db.rpc('investissements_a_traiter', { p_filtre:'a_instruire' }),
+      db.rpc('investissements_a_traiter', { p_filtre:'a_ordonnancer' })
+    ]);
+    setSolde(s.data || null);
+    setCats(c.data || []);
+    setArt(a.data || []);
+    setCmd(cmd.data || []);
+    setInvent(ivt.data || []);
+    setRegles(rg.data || []);
+    setDot(dt.data || []);
+    setInv({ miennes:i1.data || [], a_instruire:i2.data || [],
+             a_ordonnancer:i3.data || [] });
+
+    // Le panier : la commande en brouillon que j'ai ouverte.
+    const br = (cmd.data || []).find(x => x.statut === 'brouillon' && x.demandeur_id === p.id);
+    setPanier(br || null);
+    if (br){
+      const { data } = await db.from('commande_lignes')
+        .select('*, articles_catalogue(nom,reference,unite,cout_points)')
+        .eq('commande_id', br.id);
+      setLignes(data || []);
+    } else setLignes([]);
+    setPret(true);
+  }, [p.id]);
+  useEffect(() => { charger(); }, [charger]);
+
+  /* Un seul chemin pour tous les appels : la base répond, on affiche. */
+  const appel = async (fn, args, ok) => {
+    setMsg('');
+    const { data, error } = await db.rpc(fn, args);
+    if (error){ setMsg('Erreur : ' + error.message); return false; }
+    if (data && data.ok === false){ setMsg('Erreur : ' + data.message); return false; }
+    setMsg(ok); charger(); return true;
+  };
+
+  if (!pret) return html`<div class="vide" style="padding:120px">Chargement…</div>`;
+
+  // Les droits viennent de `mes_droits()` : l'étiquette affichée et la
+  // réalité lisent la même source.
+  const droits  = p.droits || [];
+  const admin   = p.niveau >= 90;
+  const peutLog = admin || droits.includes('stock.national');
+  const peutDot = admin || droits.includes('stock.dotation');
+
+  const mesCmd    = commandes.filter(c => c.demandeur_id === p.id && c.statut !== 'brouillon');
+  const cmdReseau = commandes.filter(c => c.demandeur_id !== p.id);
+  const aTraiter  = cmdReseau.filter(c => ['deposee','validee'].includes(c.statut));
+
+  const tabs = [['catalogue','Catalogue'], ['commandes','Commandes'],
+                ['inventaire','Inventaire'], ['investissements','Investissements']];
+  if (peutLog) tabs.push(['logistique','Logistique']);
+  if (peutDot) tabs.push(['dotations','Dotations']);
+
+  return html`
+    <div>
+      <div class="eyebrow">Ressources et matériel</div>
+      <h1 style="margin:6px 0 8px">Ce que nous avons, ce qu\u2019il nous faut</h1>
+      <p class="muted" style="max-width:62ch">
+        Le catalogue fédéral s\u2019obtient en points : une dotation annuelle,
+        calculée sur l\u2019effectif et l\u2019activité de la structure. Ce que le
+        catalogue ne propose pas se demande en investissement, et suit alors
+        le circuit ordinaire de la dépense.
+      </p>
+
+      <${ResSolde} solde=${solde} />
+
+      <div class="row" style="margin:28px 0 24px;gap:0;border-bottom:1px solid var(--filet);
+        flex-wrap:wrap">
+        ${tabs.map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--brun)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>{setOnglet(k);setMsg('')}}>${t}${
+              k==='commandes' && lignes.length ? ' ('+lignes.length+')' : ''}${
+              k==='logistique' && aTraiter.length ? ' ('+aTraiter.length+')' : ''}${
+              k==='investissements' && (inv.a_instruire.length+inv.a_ordonnancer.length)
+                ? ' ('+(inv.a_instruire.length+inv.a_ordonnancer.length)+')' : ''}</button>`)}
+      </div>
+
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-bottom:20px">${msg}</div>`}
+
+      ${onglet === 'catalogue' && html`<${ResCatalogue} cats=${cats} articles=${articles}
+        lignes=${lignes} appel=${appel} aller=${()=>setOnglet('commandes')} />`}
+      ${onglet === 'commandes' && html`<${ResCommandes} p=${p} panier=${panier}
+        lignes=${lignes} mesCmd=${mesCmd} cmdReseau=${cmdReseau} solde=${solde}
+        appel=${appel} />`}
+      ${onglet === 'inventaire' && html`<${ResInventaire} invent=${invent}
+        articles=${articles} peutLog=${peutLog} appel=${appel} setMsg=${setMsg} />`}
+      ${onglet === 'investissements' && html`<${ResInvestissements} inv=${inv}
+        appel=${appel} />`}
+      ${onglet === 'logistique' && html`<${ResLogistique} aTraiter=${aTraiter}
+        articles=${articles} cats=${cats} appel=${appel} recharger=${charger}
+        setMsg=${setMsg} />`}
+      ${onglet === 'dotations' && html`<${ResDotations} regles=${regles}
+        dotations=${dotations} p=${p} appel=${appel} setMsg=${setMsg} />`}
+    </div>`;
+}
+
+/* --- Le solde de points, en tête de tous les volets ------------------- */
+function ResSolde({ solde }){
+  if (!solde) return null;
+  if (!solde.dotee) return html`
+    <div class="alerte" style="margin-top:24px;border-left:3px solid var(--brun)">
+      Votre structure n\u2019a pas encore reçu sa dotation ${solde.annee}.
+      Les commandes au catalogue seront possibles dès son attribution par la
+      direction financière.
+    </div>`;
+  const total = Number(solde.total) || 0;
+  const dep   = Number(solde.depenses) || 0;
+  const pct   = total ? Math.min(100, Math.round(dep * 100 / total)) : 0;
+  return html`
+    <div class="panneau" style="margin-top:24px">
+      <div class="tete spread">
+        <h3 style="font-size:17px">Dotation ${solde.annee} — ${solde.territoire || ''}</h3>
+        <span class="mono" style="font-size:15px">${solde.disponible} points disponibles</span>
+      </div>
+      <div class="corps">
+        <div class="row" style="gap:28px;flex-wrap:wrap">
+          <div><div class="small muted">Alloués</div>
+            <div class="mono" style="font-size:19px">${solde.alloues}</div></div>
+          <div><div class="small muted">Reportés</div>
+            <div class="mono" style="font-size:19px">${solde.reportes}</div></div>
+          ${Number(solde.bonus) > 0 && html`<div><div class="small muted">Bonus</div>
+            <div class="mono" style="font-size:19px">${solde.bonus}</div></div>`}
+          <div><div class="small muted">Dépensés</div>
+            <div class="mono" style="font-size:19px">${solde.depenses}</div></div>
+          <div><div class="small muted">Engagés (en cours)</div>
+            <div class="mono" style="font-size:19px">${solde.engages}</div></div>
+        </div>
+        <div class="jauge"><i style=${'width:'+pct+'%'}></i></div>
+        <div class="small muted" style="margin-top:6px">
+          ${pct} % de la dotation consommée. Les points non dépensés sont
+          reportables en partie sur l\u2019exercice suivant.
+        </div>
+      </div>
+    </div>`;
+}
+
+/* --- Le catalogue ---------------------------------------------------- */
+function ResCatalogue({ cats, articles, lignes, appel, aller }){
+  const [qte, setQte] = useState({});
+  const actifs = articles.filter(a => a.actif);
+
+  async function ajouter(a){
+    const n = Number(qte[a.id] || 1);
+    if (!(n > 0)) return;
+    const ok = await appel('ajouter_au_panier', { p_article:a.id, p_quantite:n },
+      n + ' × ' + a.nom + ' ajouté au panier.');
+    if (ok) setQte({ ...qte, [a.id]: '' });
+  }
+
+  return html`
+    <div>
+      ${lignes.length > 0 && html`
+        <div class="alerte" style="margin-bottom:20px">
+          ${lignes.length} article(s) dans votre panier.
+          <a href="#" onClick=${e=>{e.preventDefault();aller()}}>Voir et déposer la commande</a>
+        </div>`}
+
+      ${cats.map(c => {
+        const liste = actifs.filter(a => a.categorie === c.code);
+        if (liste.length === 0) return null;
+        return html`
+          <div class="panneau" style="margin-bottom:24px">
+            <div class="tete"><h3 style="font-size:17px">${c.nom}</h3></div>
+            ${liste.map(a => {
+              const rupture = a.stock_national !== null && a.stock_national <= 0;
+              const bas = a.stock_national !== null && !rupture
+                          && a.stock_national <= (a.seuil_alerte || 0);
+              return html`
+                <div class="ligne" style="align-items:flex-start">
+                  <div style="flex:1;min-width:260px">
+                    <div class="row" style="gap:8px;flex-wrap:wrap">
+                      <span style="font-weight:600">${a.nom}</span>
+                      <span class="mono muted small">${a.reference}</span>
+                      ${rupture && html`<span class="tag rouge">Rupture</span>`}
+                      ${bas && html`<span class="tag or">Stock bas</span>`}
+                    </div>
+                    ${a.description && html`
+                      <div class="small muted" style="margin-top:3px">${a.description}</div>`}
+                    <div class="small muted" style="margin-top:4px">
+                      ${a.unite}${a.stock_national === null
+                        ? ' · à la demande'
+                        : ' · ' + a.stock_national + ' en stock national'}${
+                        a.plafond_annuel ? ' · plafond de ' + a.plafond_annuel
+                                           + ' par an et par structure' : ''}
+                    </div>
+                  </div>
+                  <div class="row" style="gap:8px">
+                    <span class="mono" style="font-size:15px">${a.cout_points} pts</span>
+                    <input type="number" min="1" value=${qte[a.id] || ''} placeholder="1"
+                      style="width:74px;padding:6px 8px;font-size:14px"
+                      onInput=${e=>setQte({ ...qte, [a.id]: e.target.value })} />
+                    <button class="btn sm" disabled=${rupture}
+                      onClick=${()=>ajouter(a)}>Ajouter</button>
+                  </div>
+                </div>`;
+            })}
+          </div>`;
+      })}
+      ${actifs.length === 0 && html`<div class="vide">Le catalogue est vide.</div>`}
+    </div>`;
+}
+
+/* --- Le panier et les commandes -------------------------------------- */
+function ResCommandes({ p, panier, lignes, mesCmd, cmdReseau, solde, appel }){
+  const [motif, setMotif] = useState('');
+  const total = lignes.reduce((s,l) => s + Number(l.points||0), 0);
+  const dispo = solde ? Number(solde.disponible) || 0 : 0;
+
+  // Le total n'est jamais recalculé ici : la base s'en charge, sans quoi
+  // l'affichage et le montant débité pourraient diverger.
+  const regler = (l, n) => appel('regler_ligne_panier',
+    { p_ligne: l.id, p_quantite: n },
+    n > 0 ? 'Quantité corrigée.' : 'Article retiré du panier.');
+
+  return html`
+    <div>
+      <div class="panneau" style="margin-bottom:28px">
+        <div class="tete spread">
+          <h3 style="font-size:17px">Panier</h3>
+          ${panier && html`<span class="mono small muted">${panier.reference}</span>`}
+        </div>
+        ${lignes.length === 0
+          ? html`<div class="corps muted">
+              Votre panier est vide. Choisissez au catalogue.</div>`
+          : html`
+            ${lignes.map(l => html`
+              <div class="ligne">
+                <div style="flex:1;min-width:220px">
+                  <div>${l.articles_catalogue?.nom || 'Article'}</div>
+                  <div class="small muted">
+                    <span class="mono">${l.articles_catalogue?.reference || ''}</span>
+                    · ${l.quantite} ${l.articles_catalogue?.unite || 'unité'}
+                  </div>
+                </div>
+                <div class="row" style="gap:10px">
+                  <input type="number" min="1" defaultValue=${l.quantite}
+                    style="width:70px;padding:6px 8px;font-size:14px;text-align:right"
+                    onBlur=${e=>{
+                      const n = Number(e.target.value);
+                      if (n !== l.quantite) regler(l, n);
+                    }} />
+                  <span class="mono">${l.points} pts</span>
+                  <button class="btn sm light" onClick=${()=>regler(l, 0)}>Retirer</button>
+                </div>
+              </div>`)}
+            <div class="corps">
+              <div class="spread" style="margin-bottom:14px">
+                <span class="muted">Total de la commande</span>
+                <span class="mono" style="font-size:17px">${total} points</span>
+              </div>
+              ${total > dispo && html`
+                <div class="alerte err" style="margin-bottom:14px">
+                  Solde insuffisant : ${dispo} points disponibles pour ${total} demandés.
+                </div>`}
+              <div class="field">
+                <label>Motif de la commande</label>
+                <textarea value=${motif} style="min-height:70px"
+                  placeholder="À quoi ce matériel va-t-il servir ?"
+                  onInput=${e=>setMotif(e.target.value)}></textarea>
+              </div>
+              <div style="margin-top:14px">
+                <button class="btn" disabled=${total > dispo}
+                  onClick=${()=>appel('deposer_commande',
+                    { p_id: panier.id, p_motif: motif },
+                    'Commande déposée. La logistique fédérale l\u2019examine.')}>
+                  Déposer la commande</button>
+              </div>
+            </div>`}
+      </div>
+
+      <h3 style="font-size:17px;margin-bottom:12px">Mes commandes</h3>
+      <div class="panneau" style="margin-bottom:28px">
+        ${mesCmd.length === 0
+          ? html`<div class="corps muted">Aucune commande déposée.</div>`
+          : mesCmd.map(c => html`
+            <div class="ligne" style="align-items:flex-start">
+              <div style="flex:1;min-width:240px">
+                <div class="row" style="gap:8px">
+                  <span class="mono">${c.reference}</span>
+                  <span class="mono muted small">${c.points_debites} pts</span>
+                </div>
+                <div class="small muted" style="margin-top:3px">
+                  Déposée le ${jour(c.cree_le)}${c.motif ? ' · ' + c.motif : ''}
+                </div>
+                ${c.motif_refus && html`
+                  <div class="small" style="color:var(--rouge);margin-top:4px">
+                    Refus : ${c.motif_refus}</div>`}
+                ${c.expediee_le && html`
+                  <div class="small muted" style="margin-top:4px">
+                    Expédiée le ${jour(c.expediee_le)}${
+                      c.transporteur ? ' par ' + c.transporteur : ''}${
+                      c.suivi ? ' · suivi ' + c.suivi : ''}</div>`}
+              </div>
+              <div class="row" style="gap:10px">
+                ${etatCmd(c.statut)}
+                ${c.statut === 'expediee' && html`
+                  <button class="btn sm" onClick=${()=>appel('traiter_commande',
+                    { p_id:c.id, p_statut:'recue', p_motif:null,
+                      p_transporteur:null, p_suivi:null },
+                    'Réception enregistrée. Le matériel entre à votre inventaire.')}>
+                    Signaler la réception</button>`}
+              </div>
+            </div>`)}
+      </div>
+
+      ${cmdReseau.length > 0 && html`
+        <h3 style="font-size:17px;margin-bottom:12px">Commandes du réseau</h3>
+        <div class="panneau">
+          ${cmdReseau.slice(0,25).map(c => html`
+            <div class="ligne">
+              <div style="flex:1;min-width:220px">
+                <span class="mono">${c.reference}</span>
+                <div class="small muted">${c.territoires?.nom || ''} ·
+                  ${c.points_debites} pts · ${jour(c.cree_le)}</div>
+              </div>
+              ${etatCmd(c.statut)}
+            </div>`)}
+        </div>`}
+    </div>`;
+}
+
+/* --- L'inventaire ---------------------------------------------------- */
+function ResInventaire({ invent, articles, peutLog, appel, setMsg }){
+  const vierge = { id:null, article_id:'', libelle_libre:'', quantite:1,
+                   etat:'bon', emplacement:'', origine:'achat_local',
+                   valeur_euros:'', observation:'' };
+  const [f, setF] = useState(vierge);
+  const [ouvert, setOuvert] = useState(false);
+  const [reseau, setReseau] = useState(null);
+  const maj = (k,v) => setF({ ...f, [k]: v });
+
+  function editer(i){
+    setF({ id:i.id, article_id:i.article_id || '', libelle_libre:i.libelle_libre || '',
+           quantite:i.quantite, etat:i.etat, emplacement:i.emplacement || '',
+           origine:i.origine, valeur_euros:i.valeur_euros || '',
+           observation:i.observation || '' });
+    setOuvert(true);
+  }
+
+  async function enregistrer(){
+    if (!f.article_id && !String(f.libelle_libre).trim())
+      return setMsg('Erreur : choisissez un article du catalogue ou donnez un libellé.');
+    const ok = await appel('enregistrer_inventaire', {
+      p_id: f.id, p_article: f.article_id || null,
+      p_libelle: f.libelle_libre || null, p_quantite: Number(f.quantite) || 0,
+      p_etat: f.etat, p_emplacement: f.emplacement || null,
+      p_origine: f.origine,
+      p_valeur: f.valeur_euros === '' ? null : Number(f.valeur_euros),
+      p_observation: f.observation || null
+    }, 'Inventaire mis à jour.');
+    if (ok){ setF(vierge); setOuvert(false); }
+  }
+
+  async function voirReseau(){
+    const { data, error } = await db.rpc('etat_ressources', { p_territoire: null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setReseau(data || []);
+  }
+
+  function exporter(){
+    if (!reseau || reseau.length === 0) return setMsg('Rien à exporter.');
+    const cols = Object.keys(reseau[0]);
+    const ech = v => {
+      if (v === null || v === undefined) return '';
+      const t = String(v).replace(/"/g,'""');
+      return /[";\n]/.test(t) ? '"'+t+'"' : t;
+    };
+    const csv = '\ufeff' + cols.join(';') + '\n' +
+      reseau.map(l => cols.map(c => ech(l[c])).join(';')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'FFCE-inventaire.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <p class="muted" style="max-width:56ch;margin:0">
+          Ce que la structure détient, quel qu\u2019en soit l\u2019origine : commandé au
+          catalogue, acheté sur place, reçu en don ou financé par un
+          investissement. Ce qui arrive par commande s\u2019y inscrit tout seul.
+        </p>
+        <div class="row" style="gap:8px">
+          ${peutLog && html`<button class="btn light sm" onClick=${voirReseau}>
+            Vue du réseau</button>`}
+          <button class="btn sm" onClick=${()=>{setF(vierge);setOuvert(!ouvert)}}>
+            ${ouvert ? 'Fermer' : 'Ajouter une entrée'}</button>
+        </div>
+      </div>
+
+      ${ouvert && html`
+        <div class="panneau" style="margin-bottom:24px">
+          <div class="tete"><h3 style="font-size:17px">
+            ${f.id ? 'Modifier l\u2019entrée' : 'Nouvelle entrée'}</h3></div>
+          <div class="corps">
+            <div class="field">
+              <label>Article du catalogue</label>
+              <select value=${f.article_id} disabled=${!!f.id}
+                onInput=${e=>maj('article_id', e.target.value)}>
+                <option value="">— Hors catalogue (libellé libre) —</option>
+                ${articles.map(a => html`
+                  <option value=${a.id}>${a.reference} · ${a.nom}</option>`)}
+              </select>
+            </div>
+            ${!f.article_id && html`
+              <div class="field">
+                <label>Libellé</label>
+                <input value=${f.libelle_libre} placeholder="Ordinateur portable, tables…"
+                  onInput=${e=>maj('libelle_libre', e.target.value)} />
+              </div>`}
+            <div class="row" style="gap:16px;margin-top:16px;align-items:flex-end">
+              <div style="flex:1;min-width:110px">
+                <label>Quantité</label>
+                <input type="number" min="0" value=${f.quantite}
+                  onInput=${e=>maj('quantite', e.target.value)} /></div>
+              <div style="flex:1;min-width:150px">
+                <label>État</label>
+                <select value=${f.etat} onInput=${e=>maj('etat', e.target.value)}>
+                  ${Object.entries(ETAT_INV).map(([k,v]) => html`
+                    <option value=${k}>${v}</option>`)}
+                </select></div>
+              <div style="flex:1;min-width:150px">
+                <label>Origine</label>
+                <select value=${f.origine} disabled=${!!f.id}
+                  onInput=${e=>maj('origine', e.target.value)}>
+                  ${Object.entries(ORIGINE_INV).map(([k,v]) => html`
+                    <option value=${k}>${v}</option>`)}
+                </select></div>
+            </div>
+            <div class="row" style="gap:16px;margin-top:16px;align-items:flex-end">
+              <div style="flex:1;min-width:160px">
+                <label>Emplacement</label>
+                <input value=${f.emplacement} placeholder="Local, armoire, chez qui…"
+                  onInput=${e=>maj('emplacement', e.target.value)} /></div>
+              <div style="flex:1;min-width:130px">
+                <label>Valeur (€)</label>
+                <input type="number" step="0.01" min="0" value=${f.valeur_euros}
+                  onInput=${e=>maj('valeur_euros', e.target.value)} /></div>
+            </div>
+            <div class="field" style="margin-top:16px">
+              <label>Observation</label>
+              <input value=${f.observation} placeholder="Facultatif"
+                onInput=${e=>maj('observation', e.target.value)} />
+            </div>
+            <div style="margin-top:18px">
+              <button class="btn" onClick=${enregistrer}>Enregistrer</button>
+            </div>
+          </div>
+        </div>`}
+
+      ${reseau && html`
+        <div class="panneau" style="margin-bottom:24px">
+          <div class="tete spread">
+            <h3 style="font-size:17px">Inventaire consolidé — ${reseau.length} ligne(s)</h3>
+            <div class="row" style="gap:8px">
+              <button class="btn sm light" onClick=${exporter}>Exporter en CSV</button>
+              <button class="btn sm light" onClick=${()=>setReseau(null)}>Fermer</button>
+            </div>
+          </div>
+          <div style="overflow-x:auto">
+            <table>
+              <thead><tr><th>Structure</th><th>Article</th><th>Catégorie</th>
+                <th style="text-align:right">Qté</th><th>État</th>
+                <th style="text-align:right">Valeur</th></tr></thead>
+              <tbody>
+                ${reseau.slice(0,300).map((l,i) => html`
+                  <tr key=${i}>
+                    <td>${l.territoire}</td>
+                    <td>${l.article}${l.reference
+                      ? html` <span class="mono muted small">${l.reference}</span>` : ''}</td>
+                    <td class="small muted">${l.categorie || '—'}</td>
+                    <td style="text-align:right" class="mono">${l.quantite}</td>
+                    <td class="small">${ETAT_INV[l.etat] || l.etat}</td>
+                    <td style="text-align:right" class="mono">
+                      ${l.valeur ? EURO(l.valeur) : '—'}</td>
+                  </tr>`)}
+              </tbody>
+            </table>
+          </div>
+        </div>`}
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">Inventaire de la structure</h3></div>
+        ${invent.length === 0
+          ? html`<div class="corps muted">Rien d\u2019inscrit pour l\u2019instant.</div>`
+          : invent.map(i => html`
+            <div class="ligne" style="align-items:flex-start">
+              <div style="flex:1;min-width:240px">
+                <div class="row" style="gap:8px;flex-wrap:wrap">
+                  <span>${i.articles_catalogue?.nom || i.libelle_libre || 'Sans libellé'}</span>
+                  ${i.articles_catalogue?.reference && html`
+                    <span class="mono muted small">${i.articles_catalogue.reference}</span>`}
+                  ${['a_remplacer','hors_service'].includes(i.etat) && html`
+                    <span class="tag rouge">${ETAT_INV[i.etat]}</span>`}
+                </div>
+                <div class="small muted" style="margin-top:3px">
+                  ${i.quantite} ${i.articles_catalogue?.unite || 'unité'}
+                  · ${ETAT_INV[i.etat] || i.etat}
+                  · ${ORIGINE_INV[i.origine] || i.origine}
+                  ${i.emplacement ? ' · ' + i.emplacement : ''}
+                  ${i.valeur_euros ? ' · ' + EURO(i.valeur_euros) : ''}
+                </div>
+                ${i.observation && html`
+                  <div class="small muted" style="margin-top:3px">${i.observation}</div>`}
+              </div>
+              <button class="btn sm light" onClick=${()=>editer(i)}>Modifier</button>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- Les investissements --------------------------------------------- */
+function ResInvestissements({ inv, appel }){
+  const vierge = { intitule:'', justification:'', usage:'', montant:'',
+                   fournisseur:'', beneficiaires:'' };
+  const [f, setF] = useState(vierge);
+  const [ouvert, setOuvert] = useState(false);
+  const maj = (k,v) => setF({ ...f, [k]: v });
+
+  async function demander(){
+    const ok = await appel('demander_investissement', {
+      p_intitule: f.intitule, p_justification: f.justification,
+      p_usage: f.usage || null, p_montant: Number(f.montant) || 0,
+      p_fournisseur: f.fournisseur || null, p_devis: null,
+      p_beneficiaires: f.beneficiaires === '' ? null : Number(f.beneficiaires),
+      p_mission: null, p_projet: null
+    }, 'Demande déposée. Elle sera instruite, puis ordonnancée.');
+    if (ok){ setF(vierge); setOuvert(false); }
+  }
+
+  const fiche = (i, actions) => html`
+    <div class="ligne" style="align-items:flex-start">
+      <div style="flex:1;min-width:260px">
+        <div class="row" style="gap:8px;flex-wrap:wrap">
+          <span style="font-weight:600">${i.intitule}</span>
+          <span class="mono muted small">${i.reference}</span>
+        </div>
+        <div class="small muted" style="margin-top:3px">
+          ${i.demandeur}${i.territoire ? ' · ' + i.territoire : ''} · ${jour(i.cree_le)}
+          ${i.beneficiaires ? ' · ' + i.beneficiaires + ' bénéficiaires' : ''}
+          ${i.fournisseur ? ' · ' + i.fournisseur : ''}
+          ${i.mission ? ' · mission ' + i.mission : ''}
+          ${i.projet ? ' · projet ' + i.projet : ''}
+        </div>
+        <div class="small" style="margin-top:6px">${i.justification}</div>
+        ${i.usage_prevu && html`
+          <div class="small muted" style="margin-top:3px">Usage prévu : ${i.usage_prevu}</div>`}
+        ${i.avis_logistique && html`
+          <div class="small muted" style="margin-top:3px">Avis : ${i.avis_logistique}</div>`}
+        ${i.poste_budget && html`
+          <div class="small muted" style="margin-top:3px">Imputation : ${i.poste_budget}</div>`}
+      </div>
+      <div class="row" style="gap:10px;align-items:flex-start">
+        <span class="mono" style="font-size:15px">${EURO(i.montant)}</span>
+        ${etatInv(i.statut)}
+        ${actions}
+      </div>
+    </div>`;
+
+  async function instruire(i, favorable){
+    const t = prompt(favorable
+      ? 'Avis favorable — motivez-le (obligatoire)'
+      : 'Motif du rejet (obligatoire)');
+    if (!t) return;
+    const poste = favorable ? (prompt('Poste comptable (facultatif)') || null) : null;
+    appel('instruire_investissement',
+      { p_id:i.id, p_favorable:favorable, p_avis:t, p_poste:poste, p_exercice:null },
+      favorable ? 'Avis enregistré. La demande passe à l\u2019ordonnateur.'
+                : 'Demande rejetée.');
+  }
+  async function ordonnancer(i, ok){
+    const t = ok ? null : prompt('Motif du refus (obligatoire)');
+    if (!ok && !t) return;
+    appel('ordonnancer_investissement', { p_id:i.id, p_ok:ok, p_motif:t },
+      ok ? 'Investissement ordonnancé.' : 'Investissement refusé.');
+  }
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <p class="muted" style="max-width:56ch;margin:0">
+          Un investissement n\u2019est pas une note de frais : c\u2019est une décision
+          d\u2019équipement. Elle se motive, elle est instruite, puis ordonnancée
+          par quelqu\u2019un d\u2019autre que son demandeur.
+        </p>
+        <button class="btn sm" onClick=${()=>setOuvert(!ouvert)}>
+          ${ouvert ? 'Fermer' : 'Demander un investissement'}</button>
+      </div>
+
+      ${ouvert && html`
+        <div class="panneau" style="margin-bottom:24px">
+          <div class="tete"><h3 style="font-size:17px">Nouvelle demande</h3></div>
+          <div class="corps">
+            <div class="field">
+              <label>Intitulé</label>
+              <input value=${f.intitule} placeholder="Vidéoprojecteur pour les ateliers"
+                onInput=${e=>maj('intitule', e.target.value)} />
+            </div>
+            <div class="field">
+              <label>Pourquoi est-ce nécessaire ?</label>
+              <textarea value=${f.justification}
+                placeholder="C\u2019est ce qui sera examiné : soyez précis."
+                onInput=${e=>maj('justification', e.target.value)}></textarea>
+            </div>
+            <div class="field">
+              <label>Ce que cela permettra de faire</label>
+              <textarea value=${f.usage} style="min-height:70px"
+                onInput=${e=>maj('usage', e.target.value)}></textarea>
+            </div>
+            <div class="row" style="gap:16px;margin-top:16px;align-items:flex-end">
+              <div style="flex:1;min-width:130px">
+                <label>Montant estimé (€)</label>
+                <input type="number" step="0.01" min="0" value=${f.montant}
+                  onInput=${e=>maj('montant', e.target.value)} /></div>
+              <div style="flex:1;min-width:150px">
+                <label>Fournisseur envisagé</label>
+                <input value=${f.fournisseur}
+                  onInput=${e=>maj('fournisseur', e.target.value)} /></div>
+              <div style="flex:1;min-width:120px">
+                <label>Bénéficiaires</label>
+                <input type="number" min="0" value=${f.beneficiaires}
+                  onInput=${e=>maj('beneficiaires', e.target.value)} /></div>
+            </div>
+            <div style="margin-top:18px">
+              <button class="btn" onClick=${demander}>Déposer la demande</button>
+            </div>
+          </div>
+        </div>`}
+
+      ${inv.a_instruire.length > 0 && html`
+        <h3 style="font-size:17px;margin-bottom:12px">À instruire</h3>
+        <div class="panneau" style="margin-bottom:28px">
+          ${inv.a_instruire.map(i => fiche(i, html`
+            <div class="row" style="gap:6px">
+              <button class="btn sm" onClick=${()=>instruire(i, true)}>Avis favorable</button>
+              <button class="btn sm danger" onClick=${()=>instruire(i, false)}>Rejeter</button>
+            </div>`))}
+        </div>`}
+
+      ${inv.a_ordonnancer.length > 0 && html`
+        <h3 style="font-size:17px;margin-bottom:12px">À ordonnancer</h3>
+        <div class="panneau" style="margin-bottom:28px">
+          ${inv.a_ordonnancer.map(i => fiche(i, html`
+            <div class="row" style="gap:6px">
+              <button class="btn sm" onClick=${()=>ordonnancer(i, true)}>Ordonnancer</button>
+              <button class="btn sm danger" onClick=${()=>ordonnancer(i, false)}>Refuser</button>
+            </div>`))}
+        </div>`}
+
+      <h3 style="font-size:17px;margin-bottom:12px">Demandes de ma structure</h3>
+      <div class="panneau">
+        ${inv.miennes.length === 0
+          ? html`<div class="corps muted">Aucune demande d\u2019investissement.</div>`
+          : inv.miennes.map(i => fiche(i,
+              ['ordonnancee','engagee'].includes(i.statut) ? html`
+                <button class="btn sm" onClick=${()=>{
+                  const fac = prompt('Référence de la facture (facultatif)') || '';
+                  appel('receptionner_investissement', { p_id:i.id, p_facture:fac },
+                    'Réception enregistrée. Le bien entre à votre inventaire.');
+                }}>Signaler la réception</button>` : null))}
+      </div>
+    </div>`;
+}
+
+/* --- La logistique fédérale ------------------------------------------ */
+function ResLogistique({ aTraiter, articles, cats, appel, recharger, setMsg }){
+  const [vue, setVue] = useState('commandes');
+  const vierge = { reference:'', nom:'', description:'', categorie:'communication',
+                   cout_points:0, valeur_euros:'', unite:'unité',
+                   stock_national:'', seuil_alerte:10, plafond_annuel:'' };
+  const [f, setF] = useState(vierge);
+  const [ouvert, setOuvert] = useState(false);
+  const maj = (k,v) => setF({ ...f, [k]: v });
+
+  async function traiter(c, statut){
+    if (statut === 'refusee'){
+      const m = prompt('Motif du refus (obligatoire)');
+      if (!m) return;
+      return appel('traiter_commande', { p_id:c.id, p_statut:'refusee', p_motif:m,
+        p_transporteur:null, p_suivi:null }, 'Commande refusée.');
+    }
+    if (statut === 'expediee'){
+      const tr = prompt('Transporteur (facultatif)') || null;
+      const su = prompt('Numéro de suivi (facultatif)') || null;
+      return appel('traiter_commande', { p_id:c.id, p_statut:'expediee', p_motif:null,
+        p_transporteur:tr, p_suivi:su }, 'Expédition enregistrée.');
+    }
+    appel('traiter_commande', { p_id:c.id, p_statut:statut, p_motif:null,
+      p_transporteur:null, p_suivi:null }, 'Commande validée.');
+  }
+
+  async function majArticle(a, champ, valeur){
+    const v = valeur === '' ? null : (champ === 'actif' ? valeur : Number(valeur));
+    const { error } = await db.from('articles_catalogue')
+      .update({ [champ]: v }).eq('id', a.id);
+    if (error) return setMsg('Erreur : ' + error.message);
+    setMsg('Catalogue mis à jour.'); recharger();
+  }
+
+  async function creer(){
+    if (!f.reference.trim() || !f.nom.trim())
+      return setMsg('Erreur : la référence et le nom sont obligatoires.');
+    const { error } = await db.from('articles_catalogue').insert({
+      reference: f.reference.trim(), nom: f.nom.trim(),
+      description: f.description || null, categorie: f.categorie,
+      cout_points: Number(f.cout_points) || 0,
+      valeur_euros: f.valeur_euros === '' ? null : Number(f.valeur_euros),
+      unite: f.unite || 'unité',
+      stock_national: f.stock_national === '' ? null : Number(f.stock_national),
+      seuil_alerte: Number(f.seuil_alerte) || 0,
+      plafond_annuel: f.plafond_annuel === '' ? null : Number(f.plafond_annuel)
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setF(vierge); setOuvert(false); setMsg('Article ajouté au catalogue.'); recharger();
+  }
+
+  return html`
+    <div>
+      <div class="row" style="gap:8px;margin-bottom:20px">
+        ${[['commandes','Commandes à traiter'],['catalogue','Tenue du catalogue']]
+          .map(([k,t]) => html`
+            <button class=${'btn sm '+(vue===k?'':'light')}
+              onClick=${()=>setVue(k)}>${t}</button>`)}
+      </div>
+
+      ${vue === 'commandes' && html`
+        <div class="panneau">
+          ${aTraiter.length === 0
+            ? html`<div class="corps muted">Aucune commande en attente.</div>`
+            : aTraiter.map(c => html`
+              <div class="ligne" style="align-items:flex-start">
+                <div style="flex:1;min-width:240px">
+                  <div class="row" style="gap:8px">
+                    <span class="mono">${c.reference}</span>
+                    <span class="mono muted small">${c.points_debites} pts</span>
+                  </div>
+                  <div class="small muted" style="margin-top:3px">
+                    ${c.territoires?.nom || ''} · déposée le ${jour(c.cree_le)}
+                  </div>
+                  ${c.motif && html`
+                    <div class="small" style="margin-top:4px">${c.motif}</div>`}
+                </div>
+                <div class="row" style="gap:6px">
+                  ${etatCmd(c.statut)}
+                  ${c.statut === 'deposee' && html`
+                    <button class="btn sm" onClick=${()=>traiter(c,'validee')}>Valider</button>
+                    <button class="btn sm danger"
+                      onClick=${()=>traiter(c,'refusee')}>Refuser</button>`}
+                  ${c.statut === 'validee' && html`
+                    <button class="btn sm"
+                      onClick=${()=>traiter(c,'expediee')}>Expédier</button>`}
+                </div>
+              </div>`)}
+        </div>`}
+
+      ${vue === 'catalogue' && html`
+        <div>
+          <div class="spread" style="margin-bottom:16px">
+            <p class="muted" style="max-width:52ch;margin:0">
+              Le stock national se décrémente à l\u2019expédition, pas à la commande.
+              Un article sans stock indiqué est produit à la demande.
+            </p>
+            <button class="btn sm" onClick=${()=>setOuvert(!ouvert)}>
+              ${ouvert ? 'Fermer' : 'Ajouter un article'}</button>
+          </div>
+
+          ${ouvert && html`
+            <div class="panneau" style="margin-bottom:24px">
+              <div class="tete"><h3 style="font-size:17px">Nouvel article</h3></div>
+              <div class="corps">
+                <div class="row" style="gap:16px;align-items:flex-end">
+                  <div style="flex:1;min-width:130px">
+                    <label>Référence</label>
+                    <input value=${f.reference} placeholder="COM-005"
+                      onInput=${e=>maj('reference', e.target.value)} /></div>
+                  <div style="flex:2;min-width:200px">
+                    <label>Nom</label>
+                    <input value=${f.nom}
+                      onInput=${e=>maj('nom', e.target.value)} /></div>
+                  <div style="flex:1;min-width:170px">
+                    <label>Catégorie</label>
+                    <select value=${f.categorie}
+                      onInput=${e=>maj('categorie', e.target.value)}>
+                      ${cats.map(c => html`<option value=${c.code}>${c.nom}</option>`)}
+                    </select></div>
+                </div>
+                <div class="field" style="margin-top:16px">
+                  <label>Description</label>
+                  <input value=${f.description}
+                    onInput=${e=>maj('description', e.target.value)} />
+                </div>
+                <div class="row" style="gap:16px;margin-top:16px;align-items:flex-end">
+                  <div style="flex:1;min-width:100px"><label>Coût (points)</label>
+                    <input type="number" min="0" value=${f.cout_points}
+                      onInput=${e=>maj('cout_points', e.target.value)} /></div>
+                  <div style="flex:1;min-width:100px"><label>Valeur (€)</label>
+                    <input type="number" step="0.01" min="0" value=${f.valeur_euros}
+                      onInput=${e=>maj('valeur_euros', e.target.value)} /></div>
+                  <div style="flex:1;min-width:110px"><label>Unité</label>
+                    <input value=${f.unite}
+                      onInput=${e=>maj('unite', e.target.value)} /></div>
+                </div>
+                <div class="row" style="gap:16px;margin-top:16px;align-items:flex-end">
+                  <div style="flex:1;min-width:120px"><label>Stock national</label>
+                    <input type="number" min="0" value=${f.stock_national}
+                      placeholder="vide = illimité"
+                      onInput=${e=>maj('stock_national', e.target.value)} /></div>
+                  <div style="flex:1;min-width:110px"><label>Seuil d\u2019alerte</label>
+                    <input type="number" min="0" value=${f.seuil_alerte}
+                      onInput=${e=>maj('seuil_alerte', e.target.value)} /></div>
+                  <div style="flex:1;min-width:130px"><label>Plafond annuel</label>
+                    <input type="number" min="0" value=${f.plafond_annuel}
+                      placeholder="par structure"
+                      onInput=${e=>maj('plafond_annuel', e.target.value)} /></div>
+                </div>
+                <div style="margin-top:18px">
+                  <button class="btn" onClick=${creer}>Ajouter au catalogue</button>
+                </div>
+              </div>
+            </div>`}
+
+          <div class="panneau">
+            <div style="overflow-x:auto">
+              <table>
+                <thead><tr>
+                  <th style="min-width:200px">Article</th>
+                  <th>Catégorie</th>
+                  <th style="text-align:right">Points</th>
+                  <th style="text-align:right">Stock</th>
+                  <th></th>
+                </tr></thead>
+                <tbody>
+                  ${articles.map(a => html`
+                    <tr key=${a.id}>
+                      <td>
+                        <div>${a.nom}</div>
+                        <div class="mono muted small">${a.reference}</div>
+                      </td>
+                      <td class="small muted">
+                        ${(cats.find(c => c.code === a.categorie) || {}).nom || a.categorie}</td>
+                      <td style="text-align:right">
+                        <input type="number" min="0" defaultValue=${a.cout_points}
+                          style="width:80px;padding:5px 8px;font-size:13px;text-align:right"
+                          onBlur=${e=>majArticle(a,'cout_points',e.target.value)} /></td>
+                      <td style="text-align:right">
+                        <input type="number" min="0"
+                          defaultValue=${a.stock_national === null ? '' : a.stock_national}
+                          placeholder="∞"
+                          style="width:80px;padding:5px 8px;font-size:13px;text-align:right"
+                          onBlur=${e=>majArticle(a,'stock_national',e.target.value)} /></td>
+                      <td style="text-align:right">
+                        <button class="btn sm light"
+                          onClick=${()=>majArticle(a,'actif',!a.actif)}>
+                          ${a.actif ? 'Retirer' : 'Remettre'}</button></td>
+                    </tr>`)}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>`}
+    </div>`;
+}
+
+/* --- Les dotations en points ----------------------------------------- */
+function ResDotations({ regles, dotations, p, appel, setMsg }){
+  const [simul, setSimul] = useState(null);
+  const annee = new Date().getFullYear();
+
+  async function simuler(){
+    if (!p.territoire_id) return setMsg('Erreur : votre profil n\u2019a pas de territoire.');
+    const { data, error } = await db.rpc('calculer_dotation',
+      { p_territoire: p.territoire_id, p_annee: annee });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setSimul(data);
+  }
+
+  async function attribuer(){
+    const a = prompt('Année d\u2019attribution', String(annee));
+    if (!a) return;
+    appel('attribuer_dotations', { p_annee: Number(a) },
+      'Dotations attribuées pour ' + a + '.');
+  }
+
+  const totalPts = dotations.reduce((s,d) =>
+    s + Number(d.points_alloues||0) + Number(d.points_reportes||0)
+      + Number(d.points_bonus||0), 0);
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <p class="muted" style="max-width:56ch;margin:0">
+          Les points sont une monnaie annuelle. Le barème et les règles de
+          report se règlent ici, jamais dans le code. L\u2019attribution recalcule
+          la dotation de chaque structure locale et départementale.
+        </p>
+        <div class="row" style="gap:8px">
+          <button class="btn sm light" onClick=${simuler}>Simuler pour ma structure</button>
+          <button class="btn sm" onClick=${attribuer}>Attribuer les dotations</button>
+        </div>
+      </div>
+
+      ${simul && html`
+        <div class="panneau" style="margin-bottom:24px">
+          <div class="tete spread">
+            <h3 style="font-size:17px">Simulation ${annee}</h3>
+            <button class="btn sm light" onClick=${()=>setSimul(null)}>Fermer</button>
+          </div>
+          <div class="ligne"><span class="muted">Base par structure</span>
+            <span class="mono">${simul.base} pts</span></div>
+          <div class="ligne"><span class="muted">Effectif actif</span>
+            <span class="mono">${simul.effectif} · ${simul.points_effectif} pts</span></div>
+          <div class="ligne"><span class="muted">Missions de l\u2019an passé</span>
+            <span class="mono">${simul.missions} · ${simul.points_missions} pts</span></div>
+          <div class="ligne"><span class="muted">Reliquat reportable</span>
+            <span class="mono">${simul.reliquat} → ${simul.report} pts</span></div>
+          <div class="ligne"><span style="font-weight:600">Total</span>
+            <span class="mono" style="font-size:17px">${simul.total} pts</span></div>
+        </div>`}
+
+      <div class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">Barème</h3></div>
+        ${regles.map(r => html`
+          <div class="ligne" key=${r.cle}>
+            <div style="flex:1;min-width:220px">
+              <div>${r.libelle}</div>
+              <div class="mono muted small">${r.cle}</div>
+            </div>
+            <div class="row" style="gap:8px">
+              <input type="number" step="0.01" defaultValue=${r.valeur}
+                style="width:100px;padding:6px 9px;font-size:14px;text-align:right"
+                onBlur=${e=>appel('regler_dotation',
+                  { p_cle:r.cle, p_valeur:Number(e.target.value) },
+                  'Barème mis à jour.')} />
+              <span class="small muted" style="min-width:48px">${r.unite}</span>
+            </div>
+          </div>`)}
+      </div>
+
+      <div class="panneau">
+        <div class="tete spread">
+          <h3 style="font-size:17px">Dotations ${annee}</h3>
+          <span class="mono small muted">${dotations.length} structure(s) ·
+            ${totalPts} points</span>
+        </div>
+        ${dotations.length === 0
+          ? html`<div class="corps muted">
+              Aucune dotation attribuée pour ${annee}.</div>`
+          : dotations.map(d => html`
+            <div class="ligne" key=${d.id}>
+              <div style="flex:1;min-width:200px">
+                <div>${d.territoires?.nom || '—'}</div>
+                <div class="small muted">Attribuée le ${jour(d.attribuee_le)}</div>
+              </div>
+              <span class="mono">${Number(d.points_alloues) + Number(d.points_reportes)
+                + Number(d.points_bonus)} pts</span>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* =====================================================================
+   MES MANDATS
+   Ce qu'on me demande à moi se répond ici, jamais depuis l'application
+   concernée. Un intérim proposé à quelqu'un qui n'a pas Habilitations
+   restait sans réponse possible : la file de travail renvoyait vers une
+   porte fermée. Cet écran est ouvert à tout membre actif, sans droit.
+   ===================================================================== */
+function MesMandats({ p, recharger }){
+  const [interims, setInterims] = useState([]);
+  const [invits, setInvits] = useState([]);
+  const [droits, setDroits] = useState([]);
+  const [msg, setMsg] = useState('');
+  const [pret, setPret] = useState(false);
+
+  const charger = useCallback(async () => {
+    const [a, b, c] = await Promise.all([
+      db.rpc('mes_interims'),
+      db.rpc('mes_invitations_groupe'),
+      db.rpc('mes_droits')
+    ]);
+    setInterims(a.data || []); setInvits(b.data || []); setDroits(c.data || []);
+    setPret(true);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const appel = async (fn, args, ok) => {
+    setMsg('');
+    const { data, error } = await db.rpc(fn, args);
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (data && data.ok === false) return setMsg('Erreur : ' + data.message);
+    setMsg(ok); charger(); if (recharger) recharger();
+  };
+
+  if (!pret) return html`<div class="vide" style="padding:120px">Chargement…</div>`;
+
+  const proposes = interims.filter(i => i.statut === 'propose' && i.je_suis_interimaire);
+  const miens    = interims.filter(i => i.je_suis_interimaire && i.statut !== 'propose');
+  const confies  = interims.filter(i => !i.je_suis_interimaire);
+  const parCat   = [...new Set(droits.map(d => d.categorie))];
+
+  const etatInterim = s => {
+    const t = { propose:['Proposé','bleu'], a_venir:['À venir','or'],
+                en_cours:['En cours','vert'], echu:['Échu',''],
+                clos:['Clos',''], refuse:['Refusé','rouge'] }[s] || [s,''];
+    return html`<span class=${'tag '+t[1]}>${t[0]}</span>`;
+  };
+
+  return html`
+    <div>
+      <div class="eyebrow">Mes mandats</div>
+      <h1 style="margin:6px 0 8px">Ce que je porte, ce qu\u2019on me propose</h1>
+      <p class="muted" style="max-width:62ch">
+        Les postes que j\u2019occupe, les intérims qu\u2019on me confie ou que je
+        confie, les invitations qui m\u2019attendent, et la liste exacte des
+        droits qui en découlent. Cet écran ne demande aucun accès : ce
+        qu\u2019on vous demande, vous devez pouvoir y répondre.
+      </p>
+
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin:20px 0">${msg}</div>`}
+
+      ${proposes.length > 0 && html`
+        <h3 style="font-size:17px;margin:28px 0 12px">On vous propose un intérim</h3>
+        <div class="panneau" style="margin-bottom:28px">
+          ${proposes.map(i => html`
+            <div class="ligne" style="align-items:flex-start">
+              <div style="flex:1;min-width:240px">
+                <div style="font-weight:600">${i.poste_nom}</div>
+                <div class="small muted" style="margin-top:3px">
+                  Au nom de ${i.titulaire} · du ${jour(i.debut)} au ${jour(i.fin)}
+                </div>
+                ${i.motif && html`<div class="small" style="margin-top:4px">${i.motif}</div>`}
+              </div>
+              <div class="row" style="gap:6px">
+                <button class="btn sm" onClick=${()=>appel('repondre_interim',
+                  { p_id:i.id, p_accepte:true },
+                  'Intérim accepté. Les droits du poste vous sont ouverts.')}>
+                  Accepter</button>
+                <button class="btn sm light" onClick=${()=>appel('repondre_interim',
+                  { p_id:i.id, p_accepte:false }, 'Intérim refusé.')}>
+                  Refuser</button>
+              </div>
+            </div>`)}
+        </div>`}
+
+      ${invits.length > 0 && html`
+        <h3 style="font-size:17px;margin:28px 0 12px">On vous invite à un groupe de travail</h3>
+        <div class="panneau" style="margin-bottom:28px">
+          ${invits.map(g => html`
+            <div class="ligne" style="align-items:flex-start">
+              <div style="flex:1;min-width:240px">
+                <div style="font-weight:600">${g.titre}</div>
+                <div class="small muted" style="margin-top:3px">
+                  Invité par ${g.invite_par || '—'}
+                  ${g.responsable ? ' · animé par ' + g.responsable : ''}
+                  ${g.territoire ? ' · ' + g.territoire : ''}
+                </div>
+                ${g.objet && html`<div class="small" style="margin-top:4px">${g.objet}</div>`}
+              </div>
+              <div class="row" style="gap:6px">
+                <button class="btn sm" onClick=${()=>appel('repondre_invitation',
+                  { p_groupe:g.groupe_id, p_accepte:true },
+                  'Invitation acceptée. Le groupe apparaît dans vos applications.')}>
+                  Rejoindre</button>
+                <button class="btn sm light" onClick=${()=>appel('repondre_invitation',
+                  { p_groupe:g.groupe_id, p_accepte:false }, 'Invitation déclinée.')}>
+                  Décliner</button>
+              </div>
+            </div>`)}
+        </div>`}
+
+      <h3 style="font-size:17px;margin:28px 0 12px">Mes postes</h3>
+      <div class="panneau" style="margin-bottom:28px">
+        ${(p.postes||[]).length === 0
+          ? html`<div class="corps muted">
+              Vous n\u2019occupez aucun poste. Vos accès découlent de votre fonction.</div>`
+          : (p.postes||[]).map((x,i) => html`
+            <div class="ligne" key=${i}>
+              <div style="flex:1;min-width:200px">
+                <div>${x.nom}</div>
+                <div class="small muted">${x.territoire_nom || 'National'}</div>
+              </div>
+              ${x.fin
+                ? html`<span class="small muted">jusqu\u2019au ${jour(x.fin)}</span>`
+                : html`<span class="tag vert">Sans terme</span>`}
+            </div>`)}
+      </div>
+
+      ${(miens.length > 0 || confies.length > 0) && html`
+        <h3 style="font-size:17px;margin:28px 0 12px">Intérims</h3>
+        <div class="panneau" style="margin-bottom:28px">
+          ${miens.map(i => html`
+            <div class="ligne" key=${i.id}>
+              <div style="flex:1;min-width:220px">
+                <div>${i.poste_nom}</div>
+                <div class="small muted">Au nom de ${i.titulaire}
+                  · ${jour(i.debut)} → ${jour(i.fin)}</div>
+              </div>
+              <div class="row" style="gap:10px">
+                ${i.statut === 'en_cours' && i.jours_restants >= 0 && html`
+                  <span class="small muted">${i.jours_restants} jour(s)</span>`}
+                ${etatInterim(i.statut)}
+              </div>
+            </div>`)}
+          ${confies.map(i => html`
+            <div class="ligne" key=${i.id}>
+              <div style="flex:1;min-width:220px">
+                <div>${i.poste_nom}</div>
+                <div class="small muted">Confié à ${i.interimaire}
+                  · ${jour(i.debut)} → ${jour(i.fin)}</div>
+              </div>
+              <div class="row" style="gap:8px">
+                ${etatInterim(i.statut)}
+                ${['en_cours','a_venir','propose'].includes(i.statut) && html`
+                  <button class="btn sm light" onClick=${()=>appel('clore_interim',
+                    { p_id:i.id }, 'Intérim clos.')}>Clore</button>`}
+              </div>
+            </div>`)}
+        </div>`}
+
+      <h3 style="font-size:17px;margin:28px 0 12px">Les droits qui en découlent</h3>
+      <div class="panneau">
+        ${droits.length === 0
+          ? html`<div class="corps muted">
+              Aucun droit atomique. Vos accès viennent de votre fonction.
+              <a href="#/espace/referentiel">Comprendre mes droits</a></div>`
+          : parCat.map(cat => html`
+            <div class="ligne" key=${cat} style="align-items:flex-start">
+              <div class="small muted" style="min-width:150px">${cat}</div>
+              <div class="row" style="gap:6px;flex-wrap:wrap;flex:1;justify-content:flex-end">
+                ${droits.filter(d => d.categorie === cat).map(d => html`
+                  <span class=${'tag '+(d.sensible?'rouge':'')} title=${d.code}>${d.nom}</span>`)}
+              </div>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
 function Espace({ session, sous }){
   const [p, setP] = useState(null);
   const [apps, setApps] = useState([]);
@@ -12414,6 +13700,7 @@ function Espace({ session, sous }){
   const [chemin, setChemin] = useState('');
   const [blocage, setBlocage] = useState(null);
   const [directions, setDirections] = useState([]);
+  const [attentes, setAttentes] = useState([]);
   const [menu, setMenu] = useState(false);
   const [pret, setPret] = useState(false);
 
@@ -12425,15 +13712,22 @@ function Espace({ session, sous }){
 
     // La matrice décide de ce qui s'affiche, de ce qui est grisé, et de
     // ce qui n'apparaît pas du tout. Elle se règle dans Habilitations.
-    const [{ data: liste }, { data: mesDem }, { data: dirs }] = await Promise.all([
+    const [{ data: liste }, { data: mesDem }, { data: dirs },
+           { data: mesDroits }, { data: file }] = await Promise.all([
       db.rpc('mes_applications'),
       db.from('demandes').select('*').eq('profil_id', session.user.id)
         .order('cree_le',{ascending:false}),
-      db.rpc('mes_directions')
+      db.rpc('mes_directions'),
+      db.rpc('mes_droits'),
+      db.rpc('ce_qui_attend')
     ]);
     setApps((liste||[]).map(a => ({ ...a, actif: true })));
     setDirections(dirs || []);
     setDemandes(mesDem || []);
+    setAttentes(file || []);
+    // Les droits sont énoncés par la base. L'interface ne les devine plus :
+    // `v_annuaire` ne les porte pas, la devinette était toujours fausse.
+    profil.droits = (mesDroits || []).map(d => d.code);
 
     // Les postes occupés : ils ouvrent des droits que la fonction ne
     // donne pas — référent RGPD, ordonnateur, conseil de discipline…
@@ -12462,7 +13756,7 @@ function Espace({ session, sous }){
   if (blocage && sous !== 'compte') return html`
     <div class="app">
       <${Flanc} p=${p} apps=${apps} directions=${directions} page="compte"
-        ouvert=${false} fermer=${()=>{}} />
+        ouvert=${false} fermer=${()=>{}} attentes=${attentes} />
       <main class="contenu"><${DossierIncomplet} p=${p} manques=${blocage} /></main>
     </div>`;
   if (p.statut !== 'actif') return html`<${EnAttente} p=${p} />`;
@@ -12477,7 +13771,8 @@ function Espace({ session, sous }){
     const idG = sous.slice('groupe/'.length);
     return html`
       <div class="app">
-        <${Flanc} p=${p} apps=${apps} directions=${directions} page="groupes" />
+        <${Flanc} p=${p} apps=${apps} directions=${directions} page="groupes"
+          attentes=${attentes} />
         <main class="contenu">
           ${acces('groupes') ? html`<${Groupe} p=${p} id=${idG} />` : refus}
         </main>
@@ -12487,19 +13782,23 @@ function Espace({ session, sous }){
     const idF = sous.slice('formation/'.length);
     return html`
       <div class="app">
-        <${Flanc} p=${p} apps=${apps} directions=${directions} page="formations" />
+        <${Flanc} p=${p} apps=${apps} directions=${directions} page="formations"
+          attentes=${attentes} />
         <main class="contenu">
           ${acces('formations') ? html`<${Formation} p=${p} id=${idF} />` : refus}
         </main>
       </div>`;
   }
   switch (sous){
-    case '':           vue = html`<${TableauDeBord} p=${p} apps=${apps} chemin=${chemin} demandes=${demandes} />`; break;
+    case '':           vue = html`<${TableauDeBord} p=${p} apps=${apps} chemin=${chemin}
+                         demandes=${demandes} attentes=${attentes} />`; break;
+    case 'mandats':    vue = html`<${MesMandats} p=${p} recharger=${charger} />`; break;
     case 'compte':     vue = html`<${MonCompte} p=${p} recharger=${charger} />`; break;
     case 'mon-dossier':vue = html`<${MonDossier} p=${p} entier=${true} />`; break;
     case 'referentiel':vue = html`<${Referentiel} />`; break;
     case 'engagement': vue = acces('engagement') ? html`<${Engagement} p=${p} />` : refus; break;
-    case 'comite':     vue = acces('comite') ? html`<${MonComite} p=${p} />` : refus; break;
+    case 'comite':     vue = acces('comite')
+                       ? html`<${MonComite} p=${p} apps=${apps} />` : refus; break;
     case 'budget':     vue = acces('budget') ? html`<${Budget} p=${p} />` : refus; break;
     case 'publier':    vue = acces('publier') ? html`<${Publier} p=${p} />` : refus; break;
     case 'editeur':    vue = (admin || (p.postes||[]).length > 0)
@@ -12520,7 +13819,9 @@ function Espace({ session, sous }){
     case 'discipline': vue = acces('discipline') ? html`<${Discipline} p=${p} />` : refus; break;
     case 'demandes':   vue = html`<${MesDemandes} p=${p} apps=${apps} demandes=${demandes} recharger=${charger} />`; break;
     case 'annuaire':   vue = acces('annuaire') ? html`<${Annuaire} p=${p} />` : refus; break;
-    case 'validation': vue = admin ? html`<${Validation} p=${p} />` : refus; break;
+    case 'validation': vue = (admin || (p.droits||[]).includes('membres.valider')
+                          || (p.droits||[]).includes('rgpd.alertes'))
+                          ? html`<${Validation} p=${p} />` : refus; break;
     case 'reseau':     vue = admin ? html`<${Habilitations} p=${p} />` : refus; break;
     case 'vitrine':    vue = admin ? html`<${VitrineAdmin} />` : refus; break;
     case 'habilitations': vue = (admin || p.droits?.includes('habilitations.gerer'))
@@ -12533,6 +13834,8 @@ function Espace({ session, sous }){
                        ? html`<${Finances} p=${p} role="tresorerie" />` : refus; break;
     case 'ordonnancement': vue = acces('ordonnancement')
                        ? html`<${Finances} p=${p} role="ordonnancement" />` : refus; break;
+    case 'ressources': vue = acces('ressources')
+                       ? html`<${Ressources} p=${p} />` : refus; break;
     default:           vue = html`<div class="vide">Page inconnue.</div>`;
   }
 
@@ -12550,7 +13853,7 @@ function Espace({ session, sous }){
       </div>
       <div class=${'voile'+(menu?' ouvert':'')} onClick=${()=>setMenu(false)}></div>
       <${Flanc} p=${p} apps=${apps} directions=${directions} page=${sous}
-        ouvert=${menu} fermer=${()=>setMenu(false)} />
+        ouvert=${menu} fermer=${()=>setMenu(false)} attentes=${attentes} />
       <main class="contenu">${vue}</main>
     </div>`;
 }
