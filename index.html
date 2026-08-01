@@ -1282,6 +1282,9 @@ function TableauDeBord({ p, apps, chemin, demandes, attentes }){
 
       <${MonDossier} p=${p} entier=${false} />
 
+      <${FicheOuverture} compact=${true}
+        titre="Ce qu\u2019il vous reste à faire pour être pleinement outillé" />
+
       <${Delegations} />
 
       <${MesVirements} />
@@ -9721,6 +9724,8 @@ function MonComite({ p, apps }){
                   <a class="btn sm light" href="#/espace/messagerie">Écrire</a>
                 </div>`)}
           </div>
+
+          <${NommerLocal} p=${p} territoire=${t.id} setMsg=${setMsg} />
         </div>`}
     </div>`;
 }
@@ -13526,16 +13531,22 @@ function MesMandats({ p, recharger }){
   const [interims, setInterims] = useState([]);
   const [invits, setInvits] = useState([]);
   const [droits, setDroits] = useState([]);
+  const [gens, setGens] = useState([]);
+  const [confier, setConfier] = useState(false);
+  const [ci, setCi] = useState({ profil:'', poste:'', debut:'', fin:'', motif:'' });
   const [msg, setMsg] = useState('');
   const [pret, setPret] = useState(false);
 
   const charger = useCallback(async () => {
-    const [a, b, c] = await Promise.all([
+    const [a, b, c, g] = await Promise.all([
       db.rpc('mes_interims'),
       db.rpc('mes_invitations_groupe'),
-      db.rpc('mes_droits')
+      db.rpc('mes_droits'),
+      db.from('v_annuaire').select('id,prenom,nom,fonction_nom')
+        .eq('statut','actif').order('nom')
     ]);
     setInterims(a.data || []); setInvits(b.data || []); setDroits(c.data || []);
+    setGens(g.data || []);
     setPret(true);
   }, []);
   useEffect(() => { charger(); }, [charger]);
@@ -13626,7 +13637,12 @@ function MesMandats({ p, recharger }){
             </div>`)}
         </div>`}
 
-      <h3 style="font-size:17px;margin:28px 0 12px">Mes postes</h3>
+      <div class="spread" style="margin:28px 0 12px">
+        <h3 style="font-size:17px">Mes postes</h3>
+        ${(p.postes||[]).length > 0 && html`
+          <button class="btn sm light" onClick=${()=>setConfier(!confier)}>
+            ${confier ? 'Fermer' : 'Confier un intérim'}</button>`}
+      </div>
       <div class="panneau" style="margin-bottom:28px">
         ${(p.postes||[]).length === 0
           ? html`<div class="corps muted">
@@ -13641,6 +13657,48 @@ function MesMandats({ p, recharger }){
                 ? html`<span class="small muted">jusqu\u2019au ${jour(x.fin)}</span>`
                 : html`<span class="tag vert">Sans terme</span>`}
             </div>`)}
+        ${confier && html`
+          <form class="corps stack" onSubmit=${e=>{
+            e.preventDefault();
+            appel('confier_interim', {
+              p_interimaire: ci.profil, p_poste: ci.poste,
+              p_debut: ci.debut || null, p_fin: ci.fin || null, p_motif: ci.motif
+            }, 'Intérim proposé. La personne le verra dans ses mandats.');
+            setCi({ profil:'', poste:'', debut:'', fin:'', motif:'' }); setConfier(false);
+          }}>
+            <p class="small muted" style="margin:0">
+              On ne délègue qu\u2019un poste qu\u2019on occupe, pour six mois au plus.
+              Au-delà, il faut nommer. L\u2019intérimaire doit accepter.
+            </p>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:180px;margin:0">
+                <label>Poste délégué</label>
+                <select value=${ci.poste} onChange=${e=>setCi(o=>({...o,poste:e.target.value}))}>
+                  <option value="">— Choisir —</option>
+                  ${(p.postes||[]).map(x => html`
+                    <option value=${x.poste || x.code}>${x.nom}</option>`)}
+                </select></div>
+              <div class="field" style="flex:2;min-width:200px;margin:0">
+                <label>Intérimaire</label>
+                <select value=${ci.profil} onChange=${e=>setCi(o=>({...o,profil:e.target.value}))}>
+                  <option value="">— Choisir —</option>
+                  ${gens.map(g => html`<option value=${g.id}>
+                    ${nomComplet(g)} · ${g.fonction_nom}</option>`)}
+                </select></div>
+            </div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;margin:0"><label>Début</label>
+                <input type="date" value=${ci.debut}
+                  onInput=${e=>setCi(o=>({...o,debut:e.target.value}))} /></div>
+              <div class="field" style="flex:1;margin:0"><label>Fin</label>
+                <input type="date" value=${ci.fin}
+                  onInput=${e=>setCi(o=>({...o,fin:e.target.value}))} /></div>
+            </div>
+            <div class="field"><label>Motif</label>
+              <input value=${ci.motif} placeholder="Absence, congé, empêchement…"
+                onInput=${e=>setCi(o=>({...o,motif:e.target.value}))} /></div>
+            <div><button class="btn">Proposer l\u2019intérim</button></div>
+          </form>`}
       </div>
 
       ${(miens.length > 0 || confies.length > 0) && html`
@@ -13690,6 +13748,178 @@ function MesMandats({ p, recharger }){
               </div>
             </div>`)}
       </div>
+    </div>`;
+}
+
+/* =====================================================================
+   LA FICHE D'OUVERTURE
+   « Comment tout lui débloquer, et rien de plus. » La question se posait
+   à chaque arrivée sans réponse écrite. Le membre et celui qui
+   l'accompagne lisent maintenant la même liste, dans les mêmes mots.
+   ===================================================================== */
+function FicheOuverture({ profil, titre, compact }){
+  const [l, setL] = useState(null);
+  useEffect(() => {
+    db.rpc('checklist_ouverture', { p_profil: profil || null })
+      .then(({data}) => setL(data || []));
+  }, [profil]);
+  if (!l) return null;
+
+  const reste = l.filter(x => x.etat !== 'fait');
+  if (compact && reste.length === 0) return null;
+
+  const marque = e => e === 'fait'
+    ? html`<span class="tag vert">Fait</span>`
+    : e === 'bloquant'
+      ? html`<span class="tag rouge">Bloquant</span>`
+      : html`<span class="tag or">À faire</span>`;
+
+  const lignes = compact ? reste : l;
+
+  return html`
+    <div class="panneau">
+      <div class="tete spread">
+        <h3 style="font-size:17px">${titre || 'Ce qu\u2019il reste à ouvrir'}</h3>
+        <span class="small muted">${l.filter(x=>x.etat==='fait').length} sur ${l.length}</span>
+      </div>
+      ${lignes.map(x => html`
+        <div class="ligne" key=${x.code} style="align-items:flex-start">
+          <div style="flex:1;min-width:220px">
+            <div>${x.libelle}</div>
+            <div class="small muted" style="margin-top:3px">${x.detail}</div>
+          </div>
+          <div class="row" style="gap:10px">
+            ${marque(x.etat)}
+            ${x.etat !== 'fait' && html`<a class="btn sm light" href=${x.lien}>Ouvrir</a>`}
+          </div>
+        </div>`)}
+    </div>`;
+}
+
+/* --- Nommer dans sa structure ------------------------------------------
+   La liste des postes vient de `postes_conferables` : l'écran ne peut
+   pas proposer ce que la base refusera. Si elle est vide, on le dit.
+   --------------------------------------------------------------------- */
+function NommerLocal({ p, territoire, setMsg }){
+  const [postes, setPostes] = useState([]);
+  const [gens, setGens] = useState([]);
+  const [noms, setNoms] = useState([]);
+  const [f, setF] = useState({ profil:'', poste:'', fin:'', motif:'' });
+  const [ouvert, setOuvert] = useState(false);
+  const [fiche, setFiche] = useState(null);
+
+  const charger = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      db.rpc('postes_conferables', { p_territoire: territoire || null }),
+      db.from('v_annuaire').select('id,prenom,nom,fonction_nom,territoire_nom,photo_url')
+        .eq('statut','actif').order('nom')
+    ]);
+    setPostes(a.data||[]); setGens(b.data||[]);
+    // Sans territoire, il n'y a pas de nominations locales à lister — et
+    // une chaîne vide n'est pas un identifiant valide.
+    if (!territoire){ setNoms([]); return; }
+    const { data } = await db.from('nominations')
+      .select('id,poste,fin,cree_le,profil_id,territoire_id,postes(nom,rang)')
+      .is('revoque_le', null).eq('territoire_id', territoire);
+    setNoms(data || []);
+  }, [territoire]);
+  useEffect(() => { charger(); }, [charger]);
+
+  const appel = async (fn, args, ok) => {
+    const { data, error } = await db.rpc(fn, args);
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (data && data.ok === false) return setMsg('Erreur : ' + data.message);
+    setMsg(ok); charger();
+  };
+
+  const nomDe = id => {
+    const g = gens.find(x => x.id === id);
+    return g ? nomComplet(g) : 'Membre';
+  };
+
+  async function nommer(e){
+    e.preventDefault();
+    if (!f.profil || !f.poste) return setMsg('Erreur : choisissez un membre et un poste.');
+    const ok = await appel('nommer', {
+      p_profil: f.profil, p_poste: f.poste, p_territoire: territoire || null,
+      p_fin: f.fin || null, p_motif: f.motif || null
+    }, 'Nomination enregistrée. Les accès du poste sont ouverts.');
+    setF({ profil:'', poste:'', fin:'', motif:'' }); setOuvert(false);
+  }
+
+  return html`
+    <div class="panneau" style="margin-top:24px">
+      <div class="tete spread">
+        <h3 style="font-size:17px">Confier un poste</h3>
+        ${postes.length > 0 && html`
+          <button class="btn sm" onClick=${()=>setOuvert(!ouvert)}>
+            ${ouvert ? 'Fermer' : 'Nommer quelqu\u2019un'}</button>`}
+      </div>
+
+      ${postes.length === 0
+        ? html`<div class="corps small muted">
+            Vous ne pouvez conférer aucun poste ici. On ne nomme qu\u2019en dessous
+            de soi, dans son périmètre, et jamais à un poste ouvrant des droits
+            sensibles \u2014 ceux-là restent à la direction.</div>`
+        : ouvert && html`
+          <form onSubmit=${nommer} class="corps stack">
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:2;min-width:200px;margin:0">
+                <label>Membre</label>
+                <select value=${f.profil}
+                  onChange=${e=>setF(o=>({...o,profil:e.target.value}))}>
+                  <option value="">— Choisir —</option>
+                  ${gens.map(g => html`<option value=${g.id}>
+                    ${nomComplet(g)} · ${g.fonction_nom}${
+                      g.territoire_nom ? ' · '+g.territoire_nom : ''}</option>`)}
+                </select></div>
+              <div class="field" style="flex:1;min-width:180px;margin:0">
+                <label>Poste</label>
+                <select value=${f.poste}
+                  onChange=${e=>setF(o=>({...o,poste:e.target.value}))}>
+                  <option value="">— Choisir —</option>
+                  ${postes.map(x => html`<option value=${x.code}>${x.nom}</option>`)}
+                </select></div>
+              <div class="field" style="flex:0 0 160px;margin:0">
+                <label>Fin du mandat</label>
+                <input type="date" value=${f.fin}
+                  onInput=${e=>setF(o=>({...o,fin:e.target.value}))} /></div>
+            </div>
+            <div class="field"><label>Motif</label>
+              <input value=${f.motif} placeholder="Élu en assemblée du…, désigné par le bureau…"
+                onInput=${e=>setF(o=>({...o,motif:e.target.value}))} /></div>
+            ${f.poste && html`<div class="small muted">
+              ${(postes.find(x=>x.code===f.poste)||{}).description || ''}</div>`}
+            <div><button class="btn">Nommer</button></div>
+          </form>`}
+
+      ${noms.length > 0 && html`
+        <div>
+          ${noms.map(n => html`
+            <div class="ligne" key=${n.id} style="align-items:flex-start">
+              <div style="flex:1;min-width:200px">
+                <div>${nomDe(n.profil_id)}</div>
+                <div class="small muted">${n.postes?.nom || n.poste}
+                  · depuis le ${jour(n.cree_le)}
+                  ${n.fin ? ' · jusqu\u2019au ' + jour(n.fin) : ''}</div>
+              </div>
+              <div class="row" style="gap:8px">
+                <button class="btn sm light"
+                  onClick=${()=>setFiche(fiche===n.profil_id?null:n.profil_id)}>
+                  ${fiche===n.profil_id ? 'Masquer' : 'Ce qui lui manque'}</button>
+                <button class="btn sm light" onClick=${()=>{
+                  const m = prompt('Motif du retrait (obligatoire)');
+                  if (m) appel('revoquer', { p_nomination:n.id, p_motif:m },
+                    'Poste retiré. Les accès qu\u2019il ouvrait se referment.');
+                }}>Retirer</button>
+              </div>
+            </div>
+            ${fiche === n.profil_id && html`
+              <div style="padding:0 20px 20px">
+                <${FicheOuverture} profil=${n.profil_id}
+                  titre=${'Ouverture du dossier de ' + nomDe(n.profil_id)} />
+              </div>`}`)}
+        </div>`}
     </div>`;
 }
 
