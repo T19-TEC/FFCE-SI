@@ -8235,6 +8235,8 @@ function BordNational(){
           </div>
         </div>`}
 
+      <${PropositionsNationales} setMsg=${()=>{}} />
+
       <div style="margin-top:24px"><${Tunnel} t=${b.tunnel} compact=${true} /></div>
 
       <div class="panneau" style="margin-top:24px">
@@ -9186,6 +9188,445 @@ function MesVirements(){
     </div>`;
 }
 
+
+/* =====================================================================
+   MON COMITÉ
+   La vie locale directe. Un adhérent n'a pas à comprendre
+   l'organigramme fédéral pour agir : il a besoin de savoir ce qui se
+   passe près de chez lui, qui l'anime, et comment proposer.
+   ===================================================================== */
+
+const STATUT_PROJET = {
+  idee:['Idée',''], preparation:['En préparation','bleu'],
+  en_cours:['En cours','vert'], termine:['Terminé',''], abandonne:['Abandonné','rouge']
+};
+const STATUT_PROP = {
+  deposee:['Déposée',''], a_l_etude:['À l\u2019étude','bleu'],
+  retenue:['Retenue','vert'], remontee:['Remontée au national','or'],
+  nationale:['Reprise au national','or'], ecartee:['Écartée','rouge']
+};
+
+function MonComite({ p }){
+  const [c, setC] = useState(null);
+  const [onglet, setOnglet] = useState('vie');
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const { data } = await db.rpc('mon_comite', { p_territoire: null });
+    setC(data);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  if (!c) return html`<div class="vide">Chargement…</div>`;
+  const t = c.territoire || {};
+
+  return html`
+    <div>
+      <div class="eyebrow">Mon comité</div>
+      <h1 style="margin:6px 0 4px">${t.nom || 'Votre territoire'}</h1>
+      <p class="muted">${t.chemin || ''}</p>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div class="chiffres" style="margin:24px 0">
+        <div><div class="n" style="font-size:30px">${c.effectif.actifs}</div>
+          <div class="l">Membres actifs</div></div>
+        <div><div class="n" style="font-size:30px">${c.effectif.nouveaux_30j}</div>
+          <div class="l">Arrivés ce mois</div></div>
+        <div><div class="n" style="font-size:30px">
+          ${(c.projets||[]).filter(x=>x.statut==='en_cours').length}</div>
+          <div class="l">Projets en cours</div></div>
+        <div><div class="n" style="font-size:30px">${Number(c.effectif.heures_mois||0)}</div>
+          <div class="l">Heures ce mois</div></div>
+      </div>
+
+      <div class="row" style="margin:0 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['vie','La vie du comité'],['projets','Projets'],
+           ['propositions','Propositions'],['equipe','Qui anime']]
+          .map(([k,lab]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${lab}${k==='propositions'&&(c.propositions||[]).length
+              ? ' ('+c.propositions.length+')' : ''}</button>`)}
+      </div>
+
+      ${onglet === 'vie' && html`
+        <div>
+          <div class="panneau">
+            <div class="tete"><h3 style="font-size:17px">Ce qui arrive</h3></div>
+            ${(c.agenda||[]).length === 0
+              ? html`<div class="vide">Rien de programmé pour l\u2019instant.</div>`
+              : (c.agenda||[]).map(x => html`
+                <a class="ligne" href=${x.lien} style="color:var(--nuit)">
+                  <div style="flex:1;min-width:200px">
+                    <div class="row" style="gap:8px">
+                      <span>${x.titre}</span>
+                      <span class="tag">${x.type === 'mission' ? 'Mission'
+                        : x.type === 'assemblee' ? 'Assemblée' : 'Projet'}</span>
+                    </div>
+                    <div class="small muted">
+                      ${x.date ? new Date(x.date).toLocaleDateString('fr-FR',
+                        {weekday:'long',day:'numeric',month:'long'}) : ''}
+                      ${x.lieu ? ' · ' + x.lieu : ''}</div>
+                  </div>
+                </a>`)}
+          </div>
+
+          <div class="panneau" style="margin-top:24px">
+            <div class="tete"><h3 style="font-size:17px">Projets en cours</h3></div>
+            ${(c.projets||[]).filter(x=>x.statut==='en_cours').length === 0
+              ? html`<div class="vide">Aucun projet en cours.</div>`
+              : (c.projets||[]).filter(x=>x.statut==='en_cours').map(pj => html`
+                <div class="ligne">
+                  <div style="flex:1;min-width:220px">
+                    <div>${pj.titre}</div>
+                    <div class="small muted">${pj.responsable || 'sans responsable'}
+                      · ${pj.participants} participant${pj.participants>1?'s':''}</div>
+                    <div class="jauge" style="margin-top:8px;max-width:200px">
+                      <i style=${'width:'+pj.avancement+'%;background:var(--valide)'}></i></div>
+                  </div>
+                  <span class="mono">${pj.avancement} %</span>
+                </div>`)}
+          </div>
+        </div>`}
+
+      ${onglet === 'projets' && html`<${ProjetsComite} c=${c} p=${p}
+        recharger=${charger} setMsg=${setMsg} />`}
+
+      ${onglet === 'propositions' && html`<${PropositionsComite} c=${c}
+        recharger=${charger} setMsg=${setMsg} />`}
+
+      ${onglet === 'equipe' && html`
+        <div>
+          <div class="panneau">
+            <div class="tete"><h3 style="font-size:17px">Le bureau</h3></div>
+            ${(c.bureau||[]).length === 0
+              ? html`<div class="corps small muted">
+                  Aucun bureau constitué. Une assemblée peut être convoquée pour
+                  élire un président, un trésorier et un secrétaire.</div>`
+              : (c.bureau||[]).map(b => html`
+                <div class="ligne">
+                  <div class="row" style="gap:14px">
+                    <${Portrait} chemin=${b.photo} nom=${b.nom} taille=${44} />
+                    <div>
+                      <div>${b.nom}</div>
+                      <div class="small muted">${b.poste}
+                        · depuis le ${jour(b.depuis)}
+                        ${b.jusqu_au ? ' · mandat jusqu\u2019au ' + jour(b.jusqu_au) : ''}</div>
+                    </div>
+                  </div>
+                  <span class="insigne">${b.echelon}</span>
+                </div>`)}
+          </div>
+
+          <div class="panneau" style="margin-top:24px">
+            <div class="tete"><h3 style="font-size:17px">L\u2019encadrement</h3>
+              <span class="tag">${(c.encadrement||[]).length}</span></div>
+            ${(c.encadrement||[]).length === 0
+              ? html`<div class="vide">Aucun encadrant sur ce territoire.</div>`
+              : (c.encadrement||[]).map(e => html`
+                <div class="ligne">
+                  <div class="row" style="gap:14px">
+                    <${Portrait} chemin=${e.photo} nom=${e.nom} taille=${38} />
+                    <div>
+                      <div>${e.nom}</div>
+                      <div class="small muted">${e.fonction}
+                        ${e.territoire ? ' · ' + e.territoire : ''}</div>
+                    </div>
+                  </div>
+                  <a class="btn sm light" href="#/espace/messagerie">Écrire</a>
+                </div>`)}
+          </div>
+        </div>`}
+    </div>`;
+}
+
+function ProjetsComite({ c, p, recharger, setMsg }){
+  const [ouvert, setOuvert] = useState(false);
+  const [f, setF] = useState({titre:'', objet:'', lieu:'', debut:'', fin:'',
+                              statut:'idee', avancement:'0', public:'', partenaires:''});
+
+  async function enregistrer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('enregistrer_projet', {
+      p_id: null, p_titre: f.titre, p_objet: f.objet || null,
+      p_lieu: f.lieu || null, p_debut: f.debut || null, p_fin: f.fin || null,
+      p_statut: f.statut, p_avancement: Number(f.avancement||0),
+      p_public: f.public || null, p_partenaires: f.partenaires || null,
+      p_budget: null, p_territoire: null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({titre:'', objet:'', lieu:'', debut:'', fin:'', statut:'idee',
+          avancement:'0', public:'', partenaires:''});
+    setOuvert(false); setMsg('Projet créé.'); recharger();
+  }
+
+  async function avancer(pj, val){
+    await db.rpc('enregistrer_projet', {
+      p_id: pj.id, p_titre: pj.titre, p_objet: pj.objet, p_lieu: pj.lieu,
+      p_debut: pj.debut, p_fin: pj.fin, p_statut: pj.statut,
+      p_avancement: Number(val), p_public: null, p_partenaires: null,
+      p_budget: null, p_territoire: null
+    });
+    recharger();
+  }
+
+  const peutCreer = p.niveau >= 40 || c.je_pilote;
+
+  return html`
+    <div>
+      ${peutCreer && html`
+        <div class="spread" style="margin-bottom:16px">
+          <span class="small muted">${(c.projets||[]).length} projet(s)</span>
+          <button class="btn sm" onClick=${()=>setOuvert(o=>!o)}>
+            ${ouvert ? 'Annuler' : 'Nouveau projet'}</button>
+        </div>`}
+
+      ${ouvert && html`
+        <form onSubmit=${enregistrer} class="panneau" style="margin-bottom:24px">
+          <div class="corps stack">
+            <div class="field"><label>Intitulé</label>
+              <input required value=${f.titre}
+                onInput=${e=>setF(o=>({...o,titre:e.target.value}))} /></div>
+            <div class="field"><label>De quoi s\u2019agit-il</label>
+              <textarea value=${f.objet}
+                onInput=${e=>setF(o=>({...o,objet:e.target.value}))} /></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:160px;margin:0"><label>Lieu</label>
+                <input value=${f.lieu} onInput=${e=>setF(o=>({...o,lieu:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:140px;margin:0"><label>Début</label>
+                <input type="date" value=${f.debut}
+                  onInput=${e=>setF(o=>({...o,debut:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:140px;margin:0"><label>Fin</label>
+                <input type="date" value=${f.fin}
+                  onInput=${e=>setF(o=>({...o,fin:e.target.value}))} /></div>
+            </div>
+            <div class="field"><label>Public visé</label>
+              <input value=${f.public} placeholder="Collégiens, quartier des Tilleuls…"
+                onInput=${e=>setF(o=>({...o,public:e.target.value}))} /></div>
+            <div class="field"><label>Partenaires</label>
+              <input value=${f.partenaires}
+                onInput=${e=>setF(o=>({...o,partenaires:e.target.value}))} /></div>
+            <div class="field"><label>État</label>
+              <select value=${f.statut} onChange=${e=>setF(o=>({...o,statut:e.target.value}))}>
+                ${Object.entries(STATUT_PROJET).filter(([k])=>k!=='abandonne')
+                  .map(([k,v]) => html`<option value=${k}>${v[0]}</option>`)}
+              </select></div>
+            <div><button class="btn">Créer</button></div>
+          </div>
+        </form>`}
+
+      <div class="panneau">
+        ${(c.projets||[]).length === 0
+          ? html`<div class="vide">Aucun projet. C\u2019est peut-être le moment
+              d\u2019en proposer un.</div>`
+          : (c.projets||[]).map(pj => html`
+            <div class="ligne" style="align-items:flex-start">
+              <div style="flex:1;min-width:240px">
+                <div class="row" style="gap:8px">
+                  <strong>${pj.titre}</strong>
+                  <span class=${'tag '+(STATUT_PROJET[pj.statut]||['',''])[1]}>
+                    ${(STATUT_PROJET[pj.statut]||[pj.statut,''])[0]}</span>
+                </div>
+                ${pj.objet && html`<div class="small muted"
+                  style="margin-top:4px;max-width:56ch">${pj.objet}</div>`}
+                <div class="small muted" style="margin-top:4px">
+                  <span class="mono">${pj.reference}</span>
+                  ${pj.responsable ? ' · ' + pj.responsable : ''}
+                  ${pj.lieu ? ' · ' + pj.lieu : ''}
+                  ${pj.debut ? ' · ' + jour(pj.debut) : ''}
+                  · ${pj.participants} participant${pj.participants>1?'s':''}
+                </div>
+                <div class="row" style="margin-top:10px;gap:10px;align-items:center">
+                  <div class="jauge" style="flex:1;max-width:180px;margin:0">
+                    <i style=${'width:'+pj.avancement+'%;background:var(--valide)'}></i></div>
+                  ${c.je_pilote
+                    ? html`<input type="range" min="0" max="100" step="10"
+                        value=${pj.avancement} style="width:140px;padding:0;
+                        accent-color:var(--valide)"
+                        onChange=${e=>avancer(pj, e.target.value)} />`
+                    : ''}
+                  <span class="mono small">${pj.avancement} %</span>
+                </div>
+              </div>
+              <button class=${'btn sm '+(pj.je_participe?'light':'')}
+                onClick=${async ()=>{
+                  await db.rpc('rejoindre_projet', { p_projet: pj.id, p_role: 'participant' });
+                  recharger();
+                }}>${pj.je_participe ? 'Je me retire' : 'Je participe'}</button>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+function PropositionsComite({ c, recharger, setMsg }){
+  const [ouvert, setOuvert] = useState(false);
+  const [f, setF] = useState({titre:'', description:'', besoin:'', public:''});
+
+  async function envoyer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('proposer', {
+      p_titre: f.titre, p_description: f.description,
+      p_besoin: f.besoin || null, p_public: f.public || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({titre:'', description:'', besoin:'', public:''});
+    setOuvert(false); setMsg('Proposition déposée. Votre responsable local vous répondra.');
+    recharger();
+  }
+
+  async function soutenir(pr){
+    await db.rpc('soutenir', { p_proposition: pr.id });
+    recharger();
+  }
+
+  async function statuer(pr, statut){
+    const reponse = prompt(statut === 'ecartee'
+      ? 'Expliquez à l\u2019auteur pourquoi (obligatoire)'
+      : 'Votre réponse à l\u2019auteur (obligatoire)');
+    if (!reponse) return;
+    const projet = statut === 'retenue'
+      && confirm('Créer un projet à partir de cette proposition ?');
+    const { data, error } = await db.rpc('statuer_proposition', {
+      p_id: pr.id, p_statut: statut, p_reponse: reponse, p_creer_projet: projet
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg(data.projet_id ? 'Proposition retenue et projet créé.' : 'Réponse enregistrée.');
+    recharger();
+  }
+
+  async function remonter(pr){
+    const motif = prompt(
+      'Pourquoi cette idée mérite-t-elle d\u2019être généralisée ? (obligatoire)');
+    if (!motif) return;
+    const { data, error } = await db.rpc('faire_remonter', { p_id: pr.id, p_motif: motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Proposition transmise au national.'); recharger();
+  }
+
+  const props = c.propositions || [];
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:16px">
+        <p class="small muted" style="margin:0;max-width:44ch">
+          Une idée pour votre territoire ? Proposez-la. Votre responsable local
+          vous répondra, et ce qui mérite d\u2019être généralisé remonte au national.
+        </p>
+        <button class="btn" onClick=${()=>setOuvert(o=>!o)}>
+          ${ouvert ? 'Annuler' : 'Proposer une idée'}</button>
+      </div>
+
+      ${ouvert && html`
+        <form onSubmit=${envoyer} class="panneau" style="margin-bottom:24px">
+          <div class="corps stack">
+            <div class="field"><label>Votre idée, en une ligne</label>
+              <input required value=${f.titre}
+                onInput=${e=>setF(o=>({...o,titre:e.target.value}))}
+                placeholder="Un atelier d\u2019éducation aux médias au collège Voltaire" /></div>
+            <div class="field"><label>Ce que vous proposez</label>
+              <textarea required value=${f.description} style="min-height:110px"
+                onInput=${e=>setF(o=>({...o,description:e.target.value}))} /></div>
+            <div class="field"><label>À qui cela s\u2019adresse</label>
+              <input value=${f.public}
+                onInput=${e=>setF(o=>({...o,public:e.target.value}))} /></div>
+            <div class="field"><label>Ce qu\u2019il faudrait</label>
+              <textarea value=${f.besoin}
+                onInput=${e=>setF(o=>({...o,besoin:e.target.value}))}
+                placeholder="Des bénévoles, une salle, un partenariat…" /></div>
+            <div><button class="btn">Déposer</button></div>
+          </div>
+        </form>`}
+
+      <div class="panneau">
+        ${props.length === 0
+          ? html`<div class="vide">Aucune proposition. Lancez-vous.</div>`
+          : props.map(pr => html`
+            <div class="ligne" style="align-items:flex-start">
+              <button class=${'btn sm '+(pr.je_soutiens?'':'light')}
+                style="flex-direction:column;min-width:56px;padding:8px 6px"
+                onClick=${()=>soutenir(pr)}>
+                <span style="font-family:var(--titre);font-weight:900;font-size:17px;
+                  display:block;line-height:1">${pr.soutiens}</span>
+                <span style="font-size:9.5px;letter-spacing:.04em">
+                  ${pr.je_soutiens ? 'soutenu' : 'soutenir'}</span>
+              </button>
+
+              <div style="flex:1;min-width:230px">
+                <div class="row" style="gap:8px">
+                  <strong>${pr.titre}</strong>
+                  <span class=${'tag '+(STATUT_PROP[pr.statut]||['',''])[1]}>
+                    ${(STATUT_PROP[pr.statut]||[pr.statut,''])[0]}</span>
+                  ${pr.mienne && html`<span class="tag bleu">La vôtre</span>`}
+                </div>
+                <p class="small" style="margin:8px 0 0;max-width:58ch">${pr.description}</p>
+                ${pr.besoin && html`<p class="small muted" style="margin:6px 0 0">
+                  Il faudrait : ${pr.besoin}</p>`}
+                <div class="small muted" style="margin-top:6px">
+                  ${pr.auteur} · ${jour(pr.cree_le)}
+                  · <span class="mono">${pr.reference}</span>
+                </div>
+                ${pr.reponse && html`
+                  <div class="small" style="margin-top:10px;padding:10px;
+                       background:var(--papier);border-radius:2px">
+                    <strong>Réponse :</strong> ${pr.reponse}</div>`}
+              </div>
+
+              ${c.je_pilote && ['deposee','a_l_etude'].includes(pr.statut) && html`
+                <div class="row" style="gap:6px">
+                  <button class="btn sm" onClick=${()=>statuer(pr,'retenue')}>Retenir</button>
+                  <button class="btn sm light" onClick=${()=>remonter(pr)}>
+                    Faire remonter</button>
+                  <button class="btn sm light" onClick=${()=>statuer(pr,'ecartee')}>
+                    Écarter</button>
+                </div>`}
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- Ce qui remonte, côté national ------------------------------------ */
+function PropositionsNationales({ setMsg }){
+  const [liste, setListe] = useState([]);
+  const charger = useCallback(() =>
+    db.rpc('propositions_remontees').then(({data}) => setListe(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+  if (liste.length === 0) return null;
+
+  return html`
+    <div class="panneau" style="margin-top:24px">
+      <div class="tete">
+        <div class="row" style="gap:8px">
+          <h3 style="font-size:17px">Idées remontées du terrain</h3>
+          <${Info} texte="Des propositions qu'un responsable local a jugées généralisables. C'est le canal qui manque le plus souvent : les bonnes idées meurent à l'échelon local faute de chemin pour monter." />
+        </div>
+        <span class="tag or">${liste.length}</span>
+      </div>
+      ${liste.map(x => html`
+        <div class="ligne" style="align-items:flex-start">
+          <div style="flex:1;min-width:240px">
+            <div class="row" style="gap:8px">
+              <strong>${x.titre}</strong>
+              <span class="tag or">${x.soutiens} soutien${x.soutiens>1?'s':''}</span>
+            </div>
+            <p class="small" style="margin:8px 0 0;max-width:58ch">${x.description}</p>
+            <div class="small muted" style="margin-top:6px">
+              ${x.auteur}${x.territoire ? ' · ' + x.territoire : ''}
+              · remontée par ${x.remontee_par} le ${jour(x.remontee_le)}
+            </div>
+            ${x.motif_remontee && html`
+              <div class="small" style="margin-top:8px;padding:10px;
+                   background:var(--papier);border-radius:2px">
+                <strong>Pourquoi :</strong> ${x.motif_remontee}</div>`}
+          </div>
+        </div>`)}
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation({ p }){
   const [attente, setAttente] = useState([]);
@@ -10020,6 +10461,7 @@ function Espace({ session, sous }){
     case 'mon-dossier':vue = html`<${MonDossier} p=${p} entier=${true} />`; break;
     case 'referentiel':vue = html`<${Referentiel} />`; break;
     case 'engagement': vue = acces('engagement') ? html`<${Engagement} p=${p} />` : refus; break;
+    case 'comite':     vue = acces('comite') ? html`<${MonComite} p=${p} />` : refus; break;
     case 'conformite': vue = html`<${Conformite} p=${p} />`; break;
     case 'parcours':   vue = acces('parcours')
                           ? html`<${ParcoursAdherent} p=${p} />` : refus; break;
