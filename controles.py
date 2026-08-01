@@ -89,6 +89,9 @@ def ctrl_10():
     ko = []
     for f in FS:
         s = open(f, encoding='utf-8').read()
+        # `extract(year from c.cree_le)` n'est pas une clause FROM :
+        # sans cette précaution le contrôle signale l'alias comme table.
+        s = re.sub(r'extract\s*\([^)]*\)', 'extract()', s, flags=re.I)
         loc = set(re.findall(r'\b([a-z_][a-z0-9_]*)\s+as\s*\(', s))
         for c in set(re.findall(r'(?:from|join|update|insert into|delete from)\s+([a-z_][a-z0-9_]*)', s)):
             if c not in BRUIT and c not in loc and c not in TABLES and c not in FONCTIONS:
