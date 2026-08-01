@@ -2731,6 +2731,9 @@ function Conversation({ p, id, fermer }){
   const [signaler, setSignaler] = useState(false);
   const [motif, setMotif] = useState('propos_deplaces');
   const [details, setDetails] = useState('');
+  const [piece, setPiece] = useState(null);
+  const [profilOuvert, setProfilOuvert] = useState(null);
+  const [liens, setLiens] = useState({});
 
   const charger = useCallback(async () => {
     const [{ data: cs }, { data: ps }, { data: ms }] = await Promise.all([
@@ -2755,19 +2758,51 @@ function Conversation({ p, id, fermer }){
 
   async function envoyer(e){
     e.preventDefault();
-    if (!texte.trim()) return;
+    if (!texte.trim() && !piece) return;
     setEnvoi(true); setMsg('');
-    const { data, error } = await db.rpc('envoyer_message',
-      { p_conv: id, p_contenu: texte });
+
+    // Le chemin commence par l'identifiant de la conversation : c'est ce
+    // qui permet à Storage d'appliquer la règle d'accès de la messagerie
+    // au lieu d'en écrire une seconde.
+    let chemin = null;
+    if (piece){
+      if (piece.size > 10485760){
+        setEnvoi(false);
+        return setMsg('Fichier trop lourd : 10 Mo au maximum.');
+      }
+      chemin = id + '/' + crypto.randomUUID() + '-' + piece.name.replace(/[^\w.\-]/g,'_');
+      const { error: eUp } = await db.storage.from('pieces').upload(chemin, piece);
+      if (eUp){ setEnvoi(false); return setMsg('Dépôt impossible : ' + eUp.message); }
+    }
+
+    const { data, error } = await db.rpc('envoyer_message', {
+      p_conv: id, p_contenu: texte || null, p_piece: chemin,
+      p_piece_nom: piece ? piece.name : null,
+      p_taille: piece ? piece.size : null,
+      p_type: piece ? (piece.type || null) : null
+    });
     setEnvoi(false);
     if (error) return setMsg(error.message);
     if (!data.ok) return setMsg(data.message);
-    setTexte(''); charger();
+    setTexte(''); setPiece(null); charger();
+  }
+
+  // Les liens de téléchargement sont signés et expirent : une pièce ne
+  // circule pas hors de la conversation qui la porte.
+  async function ouvrirPiece(m){
+    if (liens[m.id]){ window.open(liens[m.id], '_blank'); return; }
+    const { data, error } = await db.storage.from('pieces')
+      .createSignedUrl(m.piece, 120);
+    if (error) return setMsg('Pièce indisponible : ' + error.message);
+    setLiens(l => ({ ...l, [m.id]: data.signedUrl }));
+    window.open(data.signedUrl, '_blank');
   }
 
   async function retirer(m){
     if (!confirm('Retirer ce message ?')) return;
-    await db.from('messages').update({ retire: true, retire_par: p.id }).eq('id', m.id);
+    const { data, error } = await db.rpc('retirer_message', { p_id: m.id });
+    if (error) return setMsg(error.message);
+    if (data && !data.ok) return setMsg(data.message);
     charger();
   }
 
@@ -2796,8 +2831,13 @@ function Conversation({ p, id, fermer }){
         ${entete?.type === 'groupe' && html`<span class="tag">Groupe de travail</span>`}
       </div>
       <div class="small muted" style="margin-top:6px">
-        ${gens.map(g => [g.prenom,g.nom].filter(Boolean).join(' ')).join(' · ')}
+        ${gens.map((g,i) => html`${i>0 ? ' · ' : ''}<a href="#"
+          onClick=${e=>{e.preventDefault();
+            setProfilOuvert(profilOuvert===g.profil_id?null:g.profil_id)}}
+          >${[g.prenom,g.nom].filter(Boolean).join(' ')}</a>`)}
       </div>
+      ${profilOuvert && html`<${ProfilInterne} profil=${profilOuvert}
+        fermer=${()=>setProfilOuvert(null)} />`}
 
       ${superviseur && html`
         <p class="small muted" style="margin-top:16px">
@@ -2830,6 +2870,17 @@ function Conversation({ p, id, fermer }){
                     ${m.retire
                       ? html`<span class="muted"><em>Message retiré</em></span>`
                       : m.contenu}
+                    ${!m.retire && m.piece && html`
+                      <div style="margin-top:10px;padding-top:10px;
+                        border-top:1px solid var(--filet)">
+                        <a href="#" onClick=${e=>{e.preventDefault();ouvrirPiece(m)}}>
+                          ${m.piece_nom || 'Pièce jointe'}</a>
+                        <span class="small muted"> · ${m.piece_taille
+                          ? (m.piece_taille >= 1048576
+                             ? (m.piece_taille/1048576).toFixed(1)+' Mo'
+                             : Math.round(m.piece_taille/1024)+' ko')
+                          : ''}</span>
+                      </div>`}
                   </div>
                   ${!m.retire && (moi || p.echelon >= 6 || p.niveau >= 90) && html`
                     <div><button class="btn sm light" style="margin-top:6px;border:0;
@@ -2845,6 +2896,16 @@ function Conversation({ p, id, fermer }){
               <textarea value=${texte} onInput=${e=>setTexte(e.target.value)}
                 placeholder="Votre message" style="min-height:80px"
                 onKeyDown=${e => { if (e.key==='Enter' && (e.metaKey||e.ctrlKey)) envoyer(e); }} />
+            </div>
+            <div class="row" style="gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
+              <input type="file" style="width:auto;font-size:13px;padding:4px 0;border:0"
+                onChange=${e=>setPiece(e.target.files[0] || null)} />
+              ${piece && html`<span class="small muted">${piece.name} ·
+                ${Math.round(piece.size/1024)} ko
+                <a href="#" onClick=${e=>{e.preventDefault();setPiece(null)}}>retirer</a>
+              </span>`}
+              <span class="small muted">10 Mo au maximum. Tout envoi est
+                consigné : qui, quand, vers qui — jamais le contenu.</span>
             </div>
             <div class="spread" style="margin-top:12px">
               <span class="small muted">Ctrl + Entrée pour envoyer</span>
@@ -11761,7 +11822,12 @@ function Validation({ p }){
   const [alertes, setAlertes] = useState([]);
   const [actes, setActes] = useState([]);
   const [encadrants, setEncadrants] = useState([]);
+  const [journal, setJournal] = useState(false);
   const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    db.rpc('puis_je_lire_journal_pieces').then(({data}) => setJournal(!!data));
+  }, []);
 
   const charger = useCallback(async () => {
     // La table demandes pointe deux fois vers profils (profil_id et
@@ -11925,6 +11991,9 @@ function Validation({ p }){
       ${msg && html`<div class="alerte ok" style="margin-bottom:24px">${msg}</div>`}
 
       <${AssistanceAdmin} setMsg=${setMsg} />
+
+      ${journal && html`<div style="margin-bottom:24px">
+        <${JournalPieces} setMsg=${setMsg} /></div>`}
 
       ${actes.length > 0 && html`
         <div class="panneau" style="margin-bottom:24px;border-color:var(--brun)">
@@ -14452,6 +14521,128 @@ function VersLeCabinet(){
             d\u2019arbitrage. Elle arrive directement au cabinet, quelle que soit
             votre échelle, et y reste jusqu\u2019à ce qu\u2019on l\u2019ait traitée
             \u2014 elle ne se perd pas en conversation.</div>`}
+    </div>`;
+}
+
+/* =====================================================================
+   LE PROFIL INTERNE
+   Ce que la fédération montre d'un membre à un autre. Ni courriel, ni
+   téléphone, ni adresse : ceux-là relèvent de la fiche membre, dont la
+   consultation se journalise et déclenche une alerte si le dossier est
+   protégé. Ici, rien de plus que ce qui est déjà interne-public.
+   ===================================================================== */
+function ProfilInterne({ profil, fermer }){
+  const [d, setD] = useState(null);
+  useEffect(() => {
+    db.rpc('profil_interne', { p_profil: profil }).then(({data}) => setD(data));
+  }, [profil]);
+  if (!d) return null;
+
+  if (!d.ok) return html`
+    <div class="panneau" style="margin-top:16px">
+      <div class="corps small muted">${d.message}
+        <a href="#" onClick=${e=>{e.preventDefault();fermer()}}>Fermer</a></div>
+    </div>`;
+
+  return html`
+    <div class="panneau" style="margin-top:16px">
+      <div class="corps">
+        <div class="spread" style="align-items:flex-start;gap:18px">
+          <div class="row" style="gap:16px;align-items:flex-start;min-width:0">
+            <${Portrait} chemin=${d.photo_url} nom=${d.nom} taille=${64} />
+            <div style="min-width:0">
+              <div style="font-weight:600;font-size:18px">${d.nom}</div>
+              <div class="small muted" style="margin-top:2px">
+                ${d.fonction}${d.echelon ? ' · ' + d.echelon : ''}
+              </div>
+              <div class="small muted">${d.territoire || 'National'}
+                ${d.depuis ? ' · adhérent depuis le ' + jour(d.depuis) : ''}</div>
+              <div class="mono muted small" style="margin-top:2px">${d.matricule}</div>
+            </div>
+          </div>
+          <button class="btn sm light" onClick=${fermer}>Fermer</button>
+        </div>
+
+        ${d.bio && html`<p class="small" style="margin-top:14px">${d.bio}</p>`}
+
+        ${(d.postes||[]).length > 0 && html`
+          <div style="margin-top:14px">
+            <div class="small muted" style="margin-bottom:6px">Mandats en cours</div>
+            <div class="row" style="gap:6px;flex-wrap:wrap">
+              ${d.postes.map((x,i) => html`<span class="tag" key=${i}>${x.nom}${
+                x.territoire ? ' · ' + x.territoire : ''}</span>`)}
+            </div>
+          </div>`}
+
+        ${(d.distinctions||[]).length > 0 && html`
+          <div style="margin-top:14px">
+            <div class="small muted" style="margin-bottom:6px">Distinctions</div>
+            <div class="row" style="gap:6px;flex-wrap:wrap">
+              ${d.distinctions.map((x,i) => html`<span class="tag or" key=${i}>${x}</span>`)}
+            </div>
+          </div>`}
+      </div>
+    </div>`;
+}
+
+/* --- Le journal des envois ---------------------------------------------
+   Qui, quand, vers qui, quel nom, quelle taille. Ni le message, ni le
+   fichier : c'est une trace, pas une clé.
+   --------------------------------------------------------------------- */
+function JournalPieces({ setMsg }){
+  const [l, setL] = useState([]);
+  const [jours, setJours] = useState(30);
+  const charger = useCallback(() =>
+    db.rpc('journal_pieces', { p_jours: jours }).then(({data}) => setL(data||[])),
+    [jours]);
+  useEffect(() => { charger(); }, [charger]);
+
+  const ko = n => n ? (n >= 1048576
+    ? (n/1048576).toFixed(1) + ' Mo' : Math.round(n/1024) + ' ko') : '—';
+
+  return html`
+    <div class="panneau">
+      <div class="tete spread">
+        <h3 style="font-size:17px">Pièces échangées en messagerie</h3>
+        <div class="row" style="gap:8px">
+          <select value=${jours} style="width:auto;padding:5px 8px;font-size:13px"
+            onChange=${e=>setJours(Number(e.target.value))}>
+            <option value="7">7 jours</option>
+            <option value="30">30 jours</option>
+            <option value="90">90 jours</option>
+          </select>
+          <button class="btn sm light" onClick=${async ()=>{
+            const { data } = await db.rpc('marquer_pieces_vues');
+            if (data && data.ok) setMsg('Contrôle enregistré.');
+          }}>J\u2019ai contrôlé</button>
+        </div>
+      </div>
+      <div class="corps small muted" style="padding-bottom:0">
+        Le journal dit qu\u2019un fichier est parti, de qui, vers qui et quand. Il
+        ne donne ni le message, ni le moyen d\u2019ouvrir la pièce : la
+        traçabilité n\u2019est pas un droit de lecture.
+      </div>
+      ${l.length === 0
+        ? html`<div class="corps muted">Aucun envoi sur la période.</div>`
+        : html`<div style="overflow-x:auto;padding:16px 20px">
+            <table>
+              <thead><tr><th>Date</th><th>De</th><th>Vers</th>
+                <th>Fichier</th><th style="text-align:right">Taille</th></tr></thead>
+              <tbody>
+                ${l.map((x,i) => html`
+                  <tr key=${i}>
+                    <td class="small">${new Date(x.envoye_le).toLocaleString('fr-FR',
+                      {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+                    <td><div>${x.auteur}</div>
+                      <div class="small muted">${x.auteur_fonction}${
+                        x.territoire ? ' · '+x.territoire : ''}</div></td>
+                    <td class="small">${x.destinataires || '—'}</td>
+                    <td class="small mono">${x.nom || 'sans nom'}</td>
+                    <td class="small mono" style="text-align:right">${ko(x.taille)}</td>
+                  </tr>`)}
+              </tbody>
+            </table>
+          </div>`}
     </div>`;
 }
 
