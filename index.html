@@ -3611,6 +3611,9 @@ function Finances({ p, role }){
 
       ${onglet === 'virements' && html`<${SuiviVirements} setMsg=${setMsg} />`}
 
+      ${onglet === 'ordonnancer' && html`<${InvestissementsAOrdonnancer}
+        setMsg=${setMsg} />`}
+
       ${onglet !== 'bareme' && onglet !== 'virements' && html`
         <div class="panneau">
           ${L(onglet).length === 0
@@ -12823,7 +12826,8 @@ function ResSolde({ solde }){
             <div class="mono" style="font-size:19px">${solde.alloues}</div></div>
           <div><div class="small muted">Reportés</div>
             <div class="mono" style="font-size:19px">${solde.reportes}</div></div>
-          ${Number(solde.bonus) > 0 && html`<div><div class="small muted">Bonus</div>
+          ${Number(solde.bonus) > 0 && html`<div><div class="small muted">Bonus${
+            Number(solde.exceptionnel) > 0 ? ' et exceptionnel' : ''}</div>
             <div class="mono" style="font-size:19px">${solde.bonus}</div></div>`}
           <div><div class="small muted">Dépensés</div>
             <div class="mono" style="font-size:19px">${solde.depenses}</div></div>
@@ -12832,8 +12836,10 @@ function ResSolde({ solde }){
         </div>
         <div class="jauge"><i style=${'width:'+pct+'%'}></i></div>
         <div class="small muted" style="margin-top:6px">
-          ${pct} % de la dotation consommée. Les points non dépensés sont
-          reportables en partie sur l\u2019exercice suivant.
+          ${pct} % de la dotation consommée. Un panier en cours ne coûte rien :
+          les points sont retenus au dépôt de la commande, et rendus si elle
+          est refusée ou retirée. Les points non dépensés sont reportables en
+          partie sur l\u2019exercice suivant.
         </div>
       </div>
     </div>`;
@@ -12842,13 +12848,16 @@ function ResSolde({ solde }){
 /* --- Le catalogue ---------------------------------------------------- */
 function ResCatalogue({ cats, articles, lignes, appel, aller }){
   const [qte, setQte] = useState({});
+  const [variante, setVariante] = useState({});
   const actifs = articles.filter(a => a.actif);
 
   async function ajouter(a){
     const n = Number(qte[a.id] || 1);
     if (!(n > 0)) return;
-    const ok = await appel('ajouter_au_panier', { p_article:a.id, p_quantite:n },
-      n + ' × ' + a.nom + ' ajouté au panier.');
+    const v = (a.variantes && a.variantes.length) ? variante[a.id] : null;
+    const ok = await appel('ajouter_au_panier',
+      { p_article:a.id, p_quantite:n, p_variante: v || null, p_commande: null },
+      n + ' × ' + a.nom + (v ? ' (' + v + ')' : '') + ' ajouté au panier.');
     if (ok) setQte({ ...qte, [a.id]: '' });
   }
 
@@ -12882,7 +12891,7 @@ function ResCatalogue({ cats, articles, lignes, appel, aller }){
                     ${a.description && html`
                       <div class="small muted" style="margin-top:3px">${a.description}</div>`}
                     <div class="small muted" style="margin-top:4px">
-                      ${a.unite}${a.stock_national === null
+                      ${a.conditionnement || a.unite}${a.stock_national === null
                         ? ' · à la demande'
                         : ' · ' + a.stock_national + ' en stock national'}${
                         a.plafond_annuel ? ' · plafond de ' + a.plafond_annuel
@@ -12891,6 +12900,13 @@ function ResCatalogue({ cats, articles, lignes, appel, aller }){
                   </div>
                   <div class="row" style="gap:8px">
                     <span class="mono" style="font-size:15px">${a.cout_points} pts</span>
+                    ${a.variantes && a.variantes.length > 0 && html`
+                      <select value=${variante[a.id] || ''} style="width:auto;
+                        padding:6px 8px;font-size:14px"
+                        onChange=${e=>setVariante({ ...variante, [a.id]: e.target.value })}>
+                        <option value="">${a.variante_libelle || 'Choisir'}</option>
+                        ${a.variantes.map(v => html`<option value=${v}>${v}</option>`)}
+                      </select>`}
                     <input type="number" min="1" value=${qte[a.id] || ''} placeholder="1"
                       style="width:74px;padding:6px 8px;font-size:14px"
                       onInput=${e=>setQte({ ...qte, [a.id]: e.target.value })} />
@@ -12908,6 +12924,8 @@ function ResCatalogue({ cats, articles, lignes, appel, aller }){
 /* --- Le panier et les commandes -------------------------------------- */
 function ResCommandes({ p, panier, lignes, mesCmd, cmdReseau, solde, appel }){
   const [motif, setMotif] = useState('');
+  const [adresse, setAdresse] = useState('');
+  const [destinataire, setDestinataire] = useState('');
   const total = lignes.reduce((s,l) => s + Number(l.points||0), 0);
   const dispo = solde ? Number(solde.disponible) || 0 : 0;
 
@@ -12931,7 +12949,8 @@ function ResCommandes({ p, panier, lignes, mesCmd, cmdReseau, solde, appel }){
             ${lignes.map(l => html`
               <div class="ligne">
                 <div style="flex:1;min-width:220px">
-                  <div>${l.articles_catalogue?.nom || 'Article'}</div>
+                  <div>${l.articles_catalogue?.nom || 'Article'}${
+                    l.variante ? ' · ' + l.variante : ''}</div>
                   <div class="small muted">
                     <span class="mono">${l.articles_catalogue?.reference || ''}</span>
                     · ${l.quantite} ${l.articles_catalogue?.unite || 'unité'}
@@ -12963,10 +12982,28 @@ function ResCommandes({ p, panier, lignes, mesCmd, cmdReseau, solde, appel }){
                   placeholder="À quoi ce matériel va-t-il servir ?"
                   onInput=${e=>setMotif(e.target.value)}></textarea>
               </div>
+              <div class="row" style="gap:16px;align-items:flex-start">
+                <div class="field" style="flex:2;min-width:220px">
+                  <label>Adresse de livraison</label>
+                  <textarea value=${adresse} style="min-height:70px"
+                    placeholder="Numéro, rue, complément, code postal, commune"
+                    onInput=${e=>setAdresse(e.target.value)}></textarea>
+                </div>
+                <div class="field" style="flex:1;min-width:180px">
+                  <label>À l\u2019attention de</label>
+                  <input value=${destinataire} placeholder="Qui réceptionne"
+                    onInput=${e=>setDestinataire(e.target.value)} />
+                </div>
+              </div>
+              <div class="small muted">
+                Les points ne sont retenus qu\u2019au dépôt, et rendus si la
+                commande est refusée ou retirée.
+              </div>
               <div style="margin-top:14px">
-                <button class="btn" disabled=${total > dispo}
+                <button class="btn" disabled=${total > dispo || !adresse.trim()}
                   onClick=${()=>appel('deposer_commande',
-                    { p_id: panier.id, p_motif: motif },
+                    { p_id: panier.id, p_motif: motif, p_adresse: adresse,
+                      p_destinataire: destinataire || null },
                     'Commande déposée. La logistique fédérale l\u2019examine.')}>
                   Déposer la commande</button>
               </div>
@@ -12998,6 +13035,11 @@ function ResCommandes({ p, panier, lignes, mesCmd, cmdReseau, solde, appel }){
               </div>
               <div class="row" style="gap:10px">
                 ${etatCmd(c.statut)}
+                ${['deposee','validee'].includes(c.statut) && html`
+                  <button class="btn sm light" onClick=${()=>appel('retirer_commande',
+                    { p_id:c.id, p_motif:null },
+                    'Commande retirée. Les points vous sont rendus.')}>
+                    Retirer</button>`}
                 ${c.statut === 'expediee' && html`
                   <button class="btn sm" onClick=${()=>appel('traiter_commande',
                     { p_id:c.id, p_statut:'recue', p_motif:null,
@@ -13443,6 +13485,10 @@ function ResLogistique({ aTraiter, articles, cats, appel, recharger, setMsg }){
                   <div class="small muted" style="margin-top:3px">
                     ${c.territoires?.nom || ''} · déposée le ${jour(c.cree_le)}
                   </div>
+                  ${c.adresse_livraison && html`
+                    <div class="small muted" style="margin-top:4px;white-space:pre-wrap">
+                      Livraison : ${c.adresse_livraison}${
+                        c.destinataire ? ' — ' + c.destinataire : ''}</div>`}
                   ${c.motif && html`
                     <div class="small" style="margin-top:4px">${c.motif}</div>`}
                 </div>
@@ -13570,7 +13616,34 @@ function ResLogistique({ aTraiter, articles, cats, appel, recharger, setMsg }){
 /* --- Les dotations en points ----------------------------------------- */
 function ResDotations({ regles, dotations, p, appel, setMsg }){
   const [simul, setSimul] = useState(null);
+  const [exc, setExc] = useState(false);
+  const [excs, setExcs] = useState([]);
+  const [terr, setTerr] = useState([]);
+  const [fe, setFe] = useState({ points:'', portee:'territoires', echelle:'departement',
+                                 cibles:[], motif:'', campagne:'' });
   const annee = new Date().getFullYear();
+
+  const chargerExc = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      db.rpc('dotations_exceptionnelles_recentes', { p_annee: annee }),
+      db.from('territoires').select('id,nom,echelle')
+        .in('echelle',['region','departement','local']).order('nom')
+    ]);
+    setExcs(a.data || []); setTerr(b.data || []);
+  }, [annee]);
+  useEffect(() => { chargerExc(); }, [chargerExc]);
+
+  async function doter(e){
+    e.preventDefault();
+    const ok = await appel('doter_exceptionnellement', {
+      p_points: Number(fe.points) || 0, p_motif: fe.motif, p_portee: fe.portee,
+      p_territoires: fe.portee === 'territoires' ? fe.cibles : [],
+      p_echelle: fe.portee === 'echelle' ? fe.echelle : null,
+      p_campagne: fe.campagne || null, p_annee: annee
+    }, 'Dotation exceptionnelle attribuée.');
+    if (ok){ setFe({ points:'', portee:'territoires', echelle:'departement',
+      cibles:[], motif:'', campagne:'' }); setExc(false); chargerExc(); }
+  }
 
   async function simuler(){
     if (!p.territoire_id) return setMsg('Erreur : votre profil n\u2019a pas de territoire.');
@@ -13597,13 +13670,87 @@ function ResDotations({ regles, dotations, p, appel, setMsg }){
         <p class="muted" style="max-width:56ch;margin:0">
           Les points sont une monnaie annuelle. Le barème et les règles de
           report se règlent ici, jamais dans le code. L\u2019attribution recalcule
-          la dotation de chaque structure locale et départementale.
+          la dotation de chaque structure locale et départementale ; une
+          dotation exceptionnelle s\u2019ajoute en cours d\u2019année, sans la modifier.
         </p>
         <div class="row" style="gap:8px">
           <button class="btn sm light" onClick=${simuler}>Simuler pour ma structure</button>
+          <button class="btn sm light" onClick=${()=>setExc(!exc)}>
+            ${exc ? 'Fermer' : 'Dotation exceptionnelle'}</button>
           <button class="btn sm" onClick=${attribuer}>Attribuer les dotations</button>
         </div>
       </div>
+
+      ${exc && html`
+        <form class="panneau" style="margin-bottom:24px" onSubmit=${doter}>
+          <div class="tete"><h3 style="font-size:17px">Dotation exceptionnelle</h3></div>
+          <div class="corps stack">
+            <p class="small muted" style="margin:0">
+              Elle ne modifie pas le calcul annuel : elle s\u2019y ajoute, se lit à
+              part, et reste rattachée à son motif. Un même geste peut viser une
+              structure, toutes celles d\u2019une échelle, ou le réseau entier.
+            </p>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:0 0 120px;margin:0">
+                <label>Points</label>
+                <input type="number" value=${fe.points}
+                  onInput=${e=>setFe(o=>({...o,points:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:170px;margin:0">
+                <label>Portée</label>
+                <select value=${fe.portee}
+                  onChange=${e=>setFe(o=>({...o,portee:e.target.value}))}>
+                  <option value="territoires">Des structures choisies</option>
+                  <option value="echelle">Toutes celles d\u2019une échelle</option>
+                  <option value="reseau">Tout le réseau</option>
+                </select></div>
+              ${fe.portee === 'echelle' && html`
+                <div class="field" style="flex:1;min-width:150px;margin:0">
+                  <label>Échelle</label>
+                  <select value=${fe.echelle}
+                    onChange=${e=>setFe(o=>({...o,echelle:e.target.value}))}>
+                    <option value="region">Régions</option>
+                    <option value="departement">Départements</option>
+                    <option value="local">Structures locales</option>
+                  </select></div>`}
+            </div>
+            ${fe.portee === 'territoires' && html`
+              <div class="field">
+                <label>Structures visées</label>
+                <div class="row" style="gap:6px;flex-wrap:wrap;max-height:150px;
+                  overflow-y:auto;padding:4px 0">
+                  ${terr.map(t => html`
+                    <button type="button" key=${t.id}
+                      class=${'btn sm ' + (fe.cibles.includes(t.id) ? '' : 'light')}
+                      onClick=${()=>setFe(o=>({...o, cibles: o.cibles.includes(t.id)
+                        ? o.cibles.filter(x=>x!==t.id) : [...o.cibles, t.id]}))}>
+                      ${t.nom}</button>`)}
+                </div>
+              </div>`}
+            <div class="field"><label>Motif</label>
+              <input value=${fe.motif} placeholder="Forum des associations, sinistre, réussite…"
+                onInput=${e=>setFe(o=>({...o,motif:e.target.value}))} /></div>
+            <div class="field" style="max-width:280px"><label>Campagne (facultatif)</label>
+              <input value=${fe.campagne} placeholder="Rentrée 2026"
+                onInput=${e=>setFe(o=>({...o,campagne:e.target.value}))} /></div>
+            <div><button class="btn">Attribuer</button></div>
+          </div>
+        </form>`}
+
+      ${excs.length > 0 && html`
+        <div class="panneau" style="margin-bottom:24px">
+          <div class="tete"><h3 style="font-size:17px">Dotations exceptionnelles de l\u2019année</h3>
+            <span class="tag">${excs.length}</span></div>
+          ${excs.slice(0,30).map(x => html`
+            <div class="ligne" key=${x.id}>
+              <div style="flex:1;min-width:220px">
+                <div>${x.territoire}</div>
+                <div class="small muted">${x.motif}${
+                  x.campagne ? ' · ' + x.campagne : ''} · ${jour(x.cree_le)}
+                  ${x.accorde_par ? ' · ' + x.accorde_par : ''}</div>
+              </div>
+              <span class="mono">${x.points > 0 ? '+' : ''}${x.points} pts</span>
+            </div>`)}
+        </div>`}
 
       ${simul && html`
         <div class="panneau" style="margin-bottom:24px">
@@ -15856,6 +16003,66 @@ function ApProspection({ contacts, appel }){
                   }}>Abandonner</button>`}
               </div>
             </div>`)}
+      </div>
+    </div>`;
+}
+
+/* =====================================================================
+   LES INVESTISSEMENTS À ORDONNANCER
+   Ils n'apparaissaient que dans Ressources, alors qu'ordonnancer est le
+   métier de l'ordonnateur, qui travaille dans son écran. Même fonction,
+   deux endroits — pas deux circuits.
+   ===================================================================== */
+function InvestissementsAOrdonnancer({ setMsg }){
+  const [l, setL] = useState([]);
+  const charger = useCallback(() =>
+    db.rpc('investissements_a_traiter', { p_filtre: 'a_ordonnancer' })
+      .then(({data}) => setL(data || [])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function decider(i, ok){
+    const m = ok ? null : prompt('Motif du refus (obligatoire)');
+    if (!ok && !m) return;
+    const { data, error } = await db.rpc('ordonnancer_investissement',
+      { p_id: i.id, p_ok: ok, p_motif: m });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg(ok ? 'Investissement ordonnancé.' : 'Investissement refusé.');
+    charger();
+  }
+
+  if (l.length === 0) return null;
+  return html`
+    <div class="panneau" style="margin-bottom:24px;border-color:var(--brun)">
+      <div class="tete spread" style="border-bottom-color:var(--brun)">
+        <h3 style="font-size:17px">Investissements à ordonnancer</h3>
+        <span class="mono">${EURO(l.reduce((t,i) => t + Number(i.montant||0), 0))}</span>
+      </div>
+      ${l.map(i => html`
+        <div class="ligne" key=${i.id} style="align-items:flex-start">
+          <div style="flex:1;min-width:260px">
+            <div class="row" style="gap:8px;flex-wrap:wrap">
+              <span style="font-weight:600">${i.intitule}</span>
+              <span class="mono muted small">${i.reference}</span>
+            </div>
+            <div class="small muted" style="margin-top:3px">
+              ${i.demandeur}${i.territoire ? ' · ' + i.territoire : ''}
+              ${i.fournisseur ? ' · ' + i.fournisseur : ''}
+              ${i.poste_budget ? ' · imputation ' + i.poste_budget : ''}
+            </div>
+            <div class="small" style="margin-top:6px">${i.justification}</div>
+            ${i.avis_logistique && html`<div class="small muted" style="margin-top:3px">
+              Avis : ${i.avis_logistique}</div>`}
+          </div>
+          <div class="row" style="gap:10px;align-items:flex-start">
+            <span class="mono" style="font-size:15px">${EURO(i.montant)}</span>
+            <button class="btn sm" onClick=${()=>decider(i, true)}>Ordonnancer</button>
+            <button class="btn sm light" onClick=${()=>decider(i, false)}>Refuser</button>
+          </div>
+        </div>`)}
+      <div class="corps small muted">
+        Un investissement ordonnancé entre au budget de l\u2019exercice en cours,
+        au poste 215, sans ressaisie.
       </div>
     </div>`;
 }
