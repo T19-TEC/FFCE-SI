@@ -996,6 +996,9 @@ function Flanc({ p, apps, page }){
            || dispo('chancellerie')) && html`
           <div class="groupe">Mes responsabilités</div>
           ${dispo('pilotage') && item('pilotage','Pilotage du réseau')}
+          ${(p.postes||[]).some(x => x.nom.includes('conformité')
+            || x.nom.includes('affaires juridiques'))
+            && item('conformite','Conformité des élections')}
           ${dispo('parcours') && item('parcours','Parcours adhérent')}
           ${dispo('annuaire') && item('annuaire','Annuaire fédéral')}
           ${dispo('ordonnancement') && item('ordonnancement','Ordonnancement')}
@@ -1163,10 +1166,9 @@ function TableauDeBord({ p, apps, chemin, demandes }){
                 <div style="margin-top:12px">
                   ${a.demande_en_cours
                     ? html`<span class="tag bleu">Demande en cours</span>`
-                    : a.etat === 'sur_demande'
-                      ? html`<a class="btn sm light" href="#/espace/demandes">Demander l\u2019accès</a>`
-                      : html`<span class="tag">Non ouverte à votre fonction</span>`}
+                    : html`<a class="btn sm light" href="#/espace/demandes">Demander l\u2019accès</a>`}
                 </div>
+                <div class="small muted" style="margin-top:6px">${a.explication}</div>
               </div>`;
             const teinte = {bleu:'var(--bleu)', bordeaux:'var(--bordeaux)',
               nuit:'var(--nuit)', brun:'var(--brun)', action:'var(--action)',
@@ -1181,6 +1183,14 @@ function TableauDeBord({ p, apps, chemin, demandes }){
                   <h3 style=${'color:'+teinte}>${a.nom_court || a.nom}${a.externe_url ? ' ↗' : ''}</h3>
                 </div>
                 <p style="margin-top:8px">${a.accroche || a.description}</p>
+                ${a.source !== 'fonction' && html`
+                  <div style="margin-top:10px">
+                    <span class=${'tag '+(a.source==='nominatif'?'bleu':
+                      a.source==='poste'?'or':a.source==='admin'?'':'')}>
+                      ${a.source === 'nominatif' ? 'Accordée'
+                        : a.source === 'poste' ? 'Par votre poste'
+                        : a.source === 'admin' ? 'Administration' : ''}</span>
+                  </div>`}
               </a>`;
           })}
         </div>
@@ -1276,6 +1286,9 @@ function MonCompte({ p, recharger }){
       <${MonPortrait} p=${p} recharger=${recharger} />
       <div style="height:24px"></div>
 
+      <${DossierAdhesion} p=${p} recharger=${recharger} />
+      <div style="height:24px"></div>
+
       <form onSubmit=${enregistrer} class="panneau">
         <div class="corps stack">
           <div class="row" style="gap:16px">
@@ -1347,11 +1360,11 @@ function MonCompte({ p, recharger }){
         </div>
       </div>
 
-      <${DossierAdhesion} />
-
       <${MonRib} />
 
       <${QuiMaConsulte} />
+
+      <${Assistance} p=${p} />
     </div>`;
 }
 
@@ -3767,6 +3780,8 @@ function FicheAdmin({ p, id, fermer, setMsg }){
         </form>
       </div>
 
+      <${MesDistinctions} profil=${id} />
+
       <div class="row" style="margin-top:24px;gap:24px;align-items:flex-start">
         <div class="panneau" style="flex:1;min-width:260px">
           <div class="tete"><h3 style="font-size:17px">Formations</h3></div>
@@ -5627,7 +5642,9 @@ function Matrice({ setMsg }){
         <strong>Sur demande</strong>, elle apparaît grisée avec un bouton de
         demande. <strong>Non ouverte</strong>, elle n\u2019apparaît pas du tout.
         Un poste passe outre : un référent RGPD atteint son outil quelle que soit
-        sa fonction.
+        sa fonction. Le chiffre en brun sous une case indique combien de membres
+        de cette fonction y accèdent malgré tout — par un poste ou un octroi
+        nominatif. Fermer la case ne les ferme pas.
       </p>
       <div class="panneau" style="overflow-x:auto">
         <table style="font-size:12.5px">
@@ -5641,7 +5658,7 @@ function Matrice({ setMsg }){
               <tr>
                 <td style="position:sticky;left:0;background:#fff">
                   <div>${a.nom}</div>
-                  ${a.droit && html`<div class="small muted">poste requis</div>`}
+                  ${a.droit && html`<div class="small muted">${a.droit_nom||'poste requis'}</div>`}
                 </td>
                 ${fonctions.map(f => {
                   const c = m.find(x => x.application === a.code && x.fonction === f.code);
@@ -5653,6 +5670,10 @@ function Matrice({ setMsg }){
                           'font-family:var(--titre);font-weight:700;font-size:10px;'+
                           'letter-spacing:.04em;text-transform:uppercase;'+style[c.etat]}>
                         ${signe[c.etat]}</button>
+                      ${c.contournements > 0 && html`
+                        <div class="small" style="color:var(--brun);margin-top:3px;font-size:10px"
+                          title="Membres qui y accèdent par un poste ou un octroi nominatif">
+                          +${c.contournements}</div>`}
                     </td>`;
                 })}
               </tr>`)}
@@ -5980,105 +6001,232 @@ function Engagement({ p }){
     </div>`;
 }
 
-/* --- Le dossier d'adhésion, côté membre ------------------------------- */
-function DossierAdhesion(){
+/* --- Le dossier d'adhésion --------------------------------------------
+   Quatre sections courtes plutôt qu'un formulaire d'un mètre. Ce qui
+   manque est dit en tête, avec le nombre exact.
+   --------------------------------------------------------------------- */
+const SECTIONS_DOSSIER = [
+  ['identite',    'Vous',            'Nom, téléphone, rattachement'],
+  ['coordonnees', 'Vos coordonnées', 'Naissance, ville, code postal'],
+  ['engagement',  'Votre engagement','Situation et motivation'],
+  ['consentement','Vos accords',     'Statuts et données personnelles']
+];
+
+function DossierAdhesion({ p, recharger }){
   const [a, setA] = useState(null);
+  const [c, setC] = useState(null);
   const [f, setF] = useState({});
-  const [ouvert, setOuvert] = useState(false);
+  const [section, setSection] = useState(null);
   const [msg, setMsg] = useState('');
 
   const charger = useCallback(async () => {
-    const { data } = await db.rpc('mon_adhesion');
-    setA(data || {}); setF(data || {});
-  }, []);
+    const [x, y] = await Promise.all([
+      db.rpc('mon_adhesion'), db.rpc('completude_dossier', { p_profil: null })
+    ]);
+    setA(x.data || {}); setC(y.data);
+    setF({ ...(x.data||{}), prenom: p?.prenom||'', nom: p?.nom||'',
+           telephone: p?.telephone||'', territoire_id: p?.territoire_id||'' });
+  }, [p]);
   useEffect(() => { charger(); }, [charger]);
-  if (!a) return null;
 
+  const [terr, setTerr] = useState([]);
+  useEffect(() => {
+    db.from('territoires').select('id,nom').eq('echelle','departement')
+      .eq('actif',true).order('code').then(({data}) => setTerr(data||[]));
+  }, []);
+
+  if (!c) return null;
   const maj = (k,v) => setF(o => ({...o, [k]: v}));
-  const rempli = Object.keys(a).length > 0;
+  const manque = cle => (c.manques_detail||[]).some(m => m.cle === cle);
+
+  // Le téléphone se met en forme pendant la frappe.
+  function formatTel(v){
+    const n = v.replace(/[^0-9+]/g, '');
+    if (n.startsWith('0') && n.length <= 10)
+      return n.replace(/(\d{2})(?=\d)/g, '$1 ').trim();
+    return v;
+  }
 
   async function enregistrer(e){
-    e.preventDefault();
+    e.preventDefault(); setMsg('');
+    // Identité : elle vit dans profils.
+    const majProfil = {};
+    if (f.prenom !== p.prenom) majProfil.prenom = f.prenom;
+    if (f.nom !== p.nom) majProfil.nom = f.nom;
+    if (f.telephone !== p.telephone) majProfil.telephone = f.telephone;
+    if (f.territoire_id && f.territoire_id !== p.territoire_id)
+      majProfil.territoire_id = f.territoire_id;
+    if (Object.keys(majProfil).length){
+      const { error } = await db.from('profils').update(majProfil).eq('id', p.id);
+      if (error) return setMsg('Erreur : ' + error.message);
+    }
+    // Le reste vit dans dossier_adhesion.
     const { data, error } = await db.rpc('enregistrer_adhesion', {
       d: { ...f, accepte_statuts: true, accepte_rgpd: true }
     });
     if (error) return setMsg('Erreur : ' + error.message);
     if (!data.ok) return setMsg('Erreur : ' + data.message);
-    setOuvert(false); setMsg('Dossier enregistré.'); charger();
+    setSection(null); setMsg('Enregistré.');
+    charger(); recharger && recharger();
   }
 
+  const champ = (cle, label, contenu) => html`
+    <div class="field">
+      <label style=${manque(cle)?'color:var(--bordeaux)':''}>
+        ${label}${manque(cle) ? ' — à compléter' : ''}</label>
+      ${contenu}
+    </div>`;
+
   return html`
-    <div class="panneau" style="margin-top:24px">
+    <div class="panneau" style=${c.complet ? '' : 'border-left:3px solid var(--bordeaux)'}>
       <div class="tete">
         <div class="row" style="gap:8px">
           <h3 style="font-size:17px">Mon dossier d\u2019adhésion</h3>
-          <${Info} texte="Ces informations sont conservées à part de l'annuaire et ne sont lisibles que par les personnes chargées de la validation des adhésions." />
+          <${Info} texte="Ces informations sont conservées à part de l'annuaire et ne sont lisibles que par les personnes chargées de valider les adhésions." />
         </div>
-        <button class="btn sm light" onClick=${()=>setOuvert(o=>!o)}>
-          ${ouvert ? 'Annuler' : (rempli ? 'Modifier' : 'Compléter')}</button>
+        <span class=${'tag '+(c.complet?'vert':'rouge')}>
+          ${c.complet ? 'Complet' : c.nb_manques + ' à compléter'}</span>
       </div>
-      ${msg && html`<div class="corps"><div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}>
-        ${msg}</div></div>`}
-      ${!ouvert && html`
-        <div class="corps">
-          <${Completude} id=${null} />
-          <p class="small muted" style="margin:12px 0 0">
-            ${rempli
-              ? 'Dossier complété' + (a.maj_le ? ' — mis à jour le ' + jour(a.maj_le) : '') + '.'
-              : 'Un dossier complet est nécessaire pour que votre adhésion soit validée.'}
-          </p>
-        </div>`}
-      ${ouvert && html`
-        <form onSubmit=${enregistrer} class="corps stack">
-          <div class="row" style="gap:16px;align-items:flex-start">
-            <div class="field" style="flex:1;min-width:160px;margin:0"><label>Date de naissance</label>
-              <input type="date" value=${f.date_naissance||''}
-                onInput=${e=>maj('date_naissance', e.target.value)} /></div>
-            <div class="field" style="flex:1;min-width:160px;margin:0"><label>Pronoms</label>
-              <input value=${f.pronoms||''} placeholder="elle, il, iel…"
-                onInput=${e=>maj('pronoms', e.target.value)} /></div>
-          </div>
-          <div class="field"><label>Adresse</label>
-            <input value=${f.adresse||''} onInput=${e=>maj('adresse', e.target.value)} /></div>
-          <div class="row" style="gap:16px;align-items:flex-start">
-            <div class="field" style="flex:1;min-width:120px;margin:0"><label>Code postal</label>
-              <input value=${f.code_postal||''} onInput=${e=>maj('code_postal', e.target.value)} /></div>
-            <div class="field" style="flex:2;min-width:160px;margin:0"><label>Ville</label>
-              <input value=${f.ville||''} onInput=${e=>maj('ville', e.target.value)} /></div>
-          </div>
-          <div class="field"><label>Situation</label>
-            <select value=${f.situation||''} onChange=${e=>maj('situation', e.target.value)}>
-              <option value="">Choisir…</option>
-              ${['Lycéen·ne','Étudiant·e','En emploi','En recherche d\u2019emploi',
-                 'En service civique','Retraité·e','Autre'].map(x =>
-                html`<option value=${x}>${x}</option>`)}
-            </select></div>
-          <div class="field"><label>Profession ou formation</label>
-            <input value=${f.profession||''} onInput=${e=>maj('profession', e.target.value)} /></div>
-          <div class="field"><label>Compétences et savoir-faire</label>
-            <textarea value=${f.competences||''} onInput=${e=>maj('competences', e.target.value)}
-              placeholder="Animation, graphisme, droit, langues, comptabilité…" /></div>
-          <div class="field"><label>Disponibilités habituelles</label>
-            <input value=${f.disponibilites||''} onInput=${e=>maj('disponibilites', e.target.value)}
-              placeholder="Soirs de semaine, samedis, vacances scolaires…" /></div>
-          <div class="field"><label>Ce qui vous amène à la FFCE</label>
-            <textarea value=${f.motivation||''} onInput=${e=>maj('motivation', e.target.value)} /></div>
-          <div class="field"><label>Comment avez-vous connu la fédération ?</label>
-            <input value=${f.origine||''} onInput=${e=>maj('origine', e.target.value)} /></div>
-          <label class="row" style="text-transform:none;letter-spacing:0;font-size:14px;
-              color:var(--nuit);margin:0;cursor:pointer">
-            <input type="checkbox" style="width:auto" checked=${!!f.accepte_image}
-              onChange=${e=>maj('accepte_image', e.target.checked)} />
-            <span>J\u2019autorise la fédération à utiliser mon image sur ses supports</span>
-          </label>
-          <p class="small muted">
-            En enregistrant, vous confirmez adhérer aux statuts et avoir pris
-            connaissance de la <a href="#/confidentialite">politique de confidentialité</a>.
-          </p>
-          <div><button class="btn">Enregistrer</button></div>
-        </form>`}
+
+      <div class="corps">
+        <div class="jauge" style="height:6px;margin:0">
+          <i style=${'width:'+c.pourcent+'%;background:'+
+            (c.complet?'var(--valide)':'var(--bordeaux)')}></i></div>
+        <div class="spread small muted" style="margin-top:6px">
+          <span>${c.total - c.nb_manques} sur ${c.total} renseignés</span>
+          <span class="mono">${c.pourcent} %</span>
+        </div>
+        ${!c.complet && html`
+          <p class="small" style="margin:14px 0 0">
+            Il manque : ${(c.manques||[]).join(', ')}.
+          </p>`}
+      </div>
+
+      ${msg && html`<div class="corps" style="padding-top:0">
+        <div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}>${msg}</div></div>`}
+
+      ${SECTIONS_DOSSIER.map(([cle, titre, resume]) => {
+        const st = (c.sections||{})[cle] || {total:0, faits:0, complet:true};
+        const ouvert = section === cle;
+        return html`
+          <div style="border-top:1px solid var(--filet)">
+            <div class="ligne" style="cursor:pointer"
+              onClick=${()=>setSection(ouvert ? null : cle)}>
+              <div>
+                <div class="row" style="gap:8px">
+                  <span style=${st.complet?'':'font-weight:700'}>${titre}</span>
+                  ${st.complet
+                    ? html`<span class="tag vert">Fait</span>`
+                    : html`<span class="tag rouge">${st.total - st.faits} manquant${st.total-st.faits>1?'s':''}</span>`}
+                </div>
+                <div class="small muted">${resume}</div>
+              </div>
+              <button class="btn sm light">${ouvert ? 'Replier' : 'Compléter'}</button>
+            </div>
+
+            ${ouvert && html`
+              <form onSubmit=${enregistrer} class="corps stack"
+                style="background:var(--papier)">
+                ${cle === 'identite' && html`
+                  <div class="row" style="gap:16px;align-items:flex-start">
+                    <div style="flex:1;min-width:150px">
+                      ${champ('prenom','Prénom', html`<input required value=${f.prenom||''}
+                        onInput=${e=>maj('prenom', e.target.value)} />`)}
+                    </div>
+                    <div style="flex:1;min-width:150px">
+                      ${champ('nom','Nom', html`<input required value=${f.nom||''}
+                        onInput=${e=>maj('nom', e.target.value)} />`)}
+                    </div>
+                  </div>
+                  ${champ('telephone','Téléphone', html`
+                    <div>
+                      <input type="tel" value=${f.telephone||''} placeholder="06 12 34 56 78"
+                        onInput=${e=>maj('telephone', formatTel(e.target.value))} />
+                      <p class="small muted" style="margin:6px 0 0">
+                        Dix chiffres commençant par 0, ou format international
+                        (+33…). La mise en forme est automatique.</p>
+                    </div>`)}
+                  ${champ('territoire','Département de rattachement', html`
+                    <select required value=${f.territoire_id||''}
+                      onChange=${e=>maj('territoire_id', e.target.value)}>
+                      <option value="">Choisir…</option>
+                      ${terr.map(t => html`<option value=${t.id}>${t.nom}</option>`)}
+                    </select>`)}`}
+
+                ${cle === 'coordonnees' && html`
+                  ${champ('date_naissance','Date de naissance', html`
+                    <input type="date" required value=${f.date_naissance||''}
+                      onInput=${e=>maj('date_naissance', e.target.value)} />`)}
+                  <div class="field"><label>Adresse</label>
+                    <input value=${f.adresse||''}
+                      onInput=${e=>maj('adresse', e.target.value)} /></div>
+                  <div class="row" style="gap:16px;align-items:flex-start">
+                    <div style="flex:0 0 130px">
+                      ${champ('code_postal','Code postal', html`
+                        <input required maxlength="5" inputmode="numeric"
+                          value=${f.code_postal||''}
+                          onInput=${e=>maj('code_postal', e.target.value.replace(/[^0-9]/g,''))} />`)}
+                    </div>
+                    <div style="flex:1;min-width:180px">
+                      ${champ('ville','Ville', html`<input required value=${f.ville||''}
+                        onInput=${e=>maj('ville', e.target.value)} />`)}
+                    </div>
+                  </div>`}
+
+                ${cle === 'engagement' && html`
+                  ${champ('situation','Votre situation', html`
+                    <select required value=${f.situation||''}
+                      onChange=${e=>maj('situation', e.target.value)}>
+                      <option value="">Choisir…</option>
+                      ${['Lycéen·ne','Étudiant·e','En emploi','En recherche d\u2019emploi',
+                         'En service civique','Retraité·e','Autre'].map(x =>
+                        html`<option value=${x}>${x}</option>`)}
+                    </select>`)}
+                  <div class="field"><label>Profession ou formation</label>
+                    <input value=${f.profession||''}
+                      onInput=${e=>maj('profession', e.target.value)} /></div>
+                  ${champ('motivation','Ce qui vous amène à la FFCE', html`
+                    <textarea required value=${f.motivation||''} style="min-height:90px"
+                      onInput=${e=>maj('motivation', e.target.value)}
+                      placeholder="Quelques lignes suffisent." />`)}
+                  <div class="field"><label>Compétences et savoir-faire</label>
+                    <textarea value=${f.competences||''} style="min-height:70px"
+                      onInput=${e=>maj('competences', e.target.value)}
+                      placeholder="Animation, graphisme, droit, langues, comptabilité…" /></div>
+                  <div class="field"><label>Disponibilités habituelles</label>
+                    <input value=${f.disponibilites||''}
+                      onInput=${e=>maj('disponibilites', e.target.value)}
+                      placeholder="Soirs de semaine, samedis, vacances scolaires…" /></div>
+                  <div class="field"><label>Comment nous avez-vous connus ?</label>
+                    <input value=${f.origine||''}
+                      onInput=${e=>maj('origine', e.target.value)} /></div>`}
+
+                ${cle === 'consentement' && html`
+                  <p class="small muted" style="margin:0">
+                    En enregistrant, vous confirmez adhérer aux statuts de la
+                    fédération et avoir pris connaissance de la
+                    <a href="#/confidentialite">politique de confidentialité</a>.
+                    Ces deux accords sont nécessaires à toute adhésion.
+                  </p>
+                  <label class="row" style="text-transform:none;letter-spacing:0;
+                      font-size:14px;color:var(--nuit);margin:0;cursor:pointer">
+                    <input type="checkbox" style="width:auto" checked=${!!f.accepte_image}
+                      onChange=${e=>maj('accepte_image', e.target.checked)} />
+                    <span>J\u2019autorise la fédération à utiliser mon image sur ses
+                      supports de communication (facultatif)</span>
+                  </label>`}
+
+                <div class="row">
+                  <button class="btn">Enregistrer</button>
+                  <button type="button" class="btn light"
+                    onClick=${()=>setSection(null)}>Annuler</button>
+                </div>
+              </form>`}
+          </div>`;
+      })}
     </div>`;
 }
+
 
 /* --- Le dossier d'adhésion, vu par la validation ----------------------
    Replié par défaut : on ne consulte pas des données personnelles par
@@ -6684,7 +6832,8 @@ function Chancellerie({ p }){
 
       <div class="row" style="margin:0 0 24px;gap:0;border-bottom:1px solid var(--filet)">
         ${[['synthese','Synthèse'],['classement','Classement'],
-           ['promouvoir','À promouvoir'],['bareme','Barème'],['historique','Décisions']]
+           ['promouvoir','À promouvoir'],['distinctions','Distinctions'],
+           ['bareme','Barème'],['historique','Décisions']]
           .map(([k,t]) => html`
           <button class="btn light" style=${'border:0;border-bottom:2px solid '+
             (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
@@ -6766,6 +6915,9 @@ function Chancellerie({ p }){
                 ? 'Personne n\u2019a atteint son palier.' : 'Aucun membre.'}</div>`}
           </div>
         </div>`}
+
+      ${onglet === 'distinctions' && html`<${Distinctions} classement=${classement}
+        recharger=${charger} setMsg=${setMsg} />`}
 
       ${onglet === 'bareme' && html`
         <div>
@@ -8031,6 +8183,526 @@ function PrendreRendezVous(){
     </div>`;
 }
 
+
+/* --- Distinctions -------------------------------------------------------
+   Reconnaître un engagement sans attendre un palier. Une lettre de
+   félicitations n'a pas besoin d'un barème.
+   --------------------------------------------------------------------- */
+function Distinctions({ classement, recharger, setMsg }){
+  const [types, setTypes] = useState([]);
+  const [recues, setRecues] = useState([]);
+  const [f, setF] = useState({profil:'', type:'felicitations', motif:'', texte:'', publique:true});
+  const [q, setQ] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      db.from('types_distinction').select('*').eq('actif',true).order('ordre'),
+      db.from('distinctions').select('*, types_distinction(nom,couleur)')
+        .is('retiree_le', null).order('decernee_le',{ascending:false}).limit(50)
+    ]);
+    setTypes(a.data||[]); setRecues(b.data||[]);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function decerner(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('decerner_distinction', {
+      p_profil: f.profil, p_type: f.type, p_motif: f.motif,
+      p_texte: f.texte || null, p_publique: f.publique
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({profil:'', type:'felicitations', motif:'', texte:'', publique:true});
+    setMsg('Distinction décernée.'); charger(); recharger && recharger();
+  }
+
+  const nomDe = id => (classement.find(c => c.profil_id === id)||{}).membre || 'Membre';
+  const candidats = classement.filter(c =>
+    (c.membre||'').toLowerCase().includes(q.toLowerCase()));
+
+  return html`
+    <div>
+      <p class="small muted" style="margin-bottom:20px;max-width:62ch">
+        Toute reconnaissance n\u2019attend pas un palier. Une distinction se
+        décerne quand elle est méritée, quelle que soit la place au classement —
+        et elle bonifie le total de points de son titulaire.
+      </p>
+
+      <form onSubmit=${decerner} class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">Décerner</h3></div>
+        <div class="corps stack">
+          <div class="field"><label>Membre</label>
+            <input placeholder="Rechercher…" value=${q}
+              onInput=${e=>setQ(e.target.value)} style="margin-bottom:8px" />
+            <select required value=${f.profil}
+              onChange=${e=>setF(o=>({...o,profil:e.target.value}))}>
+              <option value="">Choisir…</option>
+              ${candidats.slice(0,60).map(c => html`
+                <option value=${c.profil_id}>${c.membre} — ${c.fonction}
+                  ${c.territoire ? ' · '+c.territoire : ''}</option>`)}
+            </select></div>
+          <div class="field"><label>Nature</label>
+            <select value=${f.type} onChange=${e=>setF(o=>({...o,type:e.target.value}))}>
+              ${types.map(t => html`<option value=${t.code}>
+                ${t.nom}${t.points ? ' (+' + t.points + ' points)' : ''}</option>`)}
+            </select>
+            ${types.find(t=>t.code===f.type) && html`
+              <p class="small muted" style="margin:6px 0 0">
+                ${types.find(t=>t.code===f.type).description}</p>`}
+          </div>
+          <div class="field"><label>Motif</label>
+            <textarea required value=${f.motif} style="min-height:80px"
+              onInput=${e=>setF(o=>({...o,motif:e.target.value}))}
+              placeholder="Ce qui est reconnu, précisément. C\u2019est ce que la personne lira." /></div>
+          <div class="field"><label>Texte de la citation</label>
+            <textarea value=${f.texte}
+              onInput=${e=>setF(o=>({...o,texte:e.target.value}))}
+              placeholder="Facultatif — le texte lu en assemblée, s\u2019il y a lieu." /></div>
+          <label class="row" style="text-transform:none;letter-spacing:0;font-size:14px;
+              color:var(--nuit);margin:0;cursor:pointer">
+            <input type="checkbox" style="width:auto" checked=${f.publique}
+              onChange=${e=>setF(o=>({...o,publique:e.target.checked}))} />
+            <span>Visible des autres membres</span>
+          </label>
+          <div><button class="btn">Décerner</button></div>
+        </div>
+      </form>
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">Distinctions décernées</h3>
+          <span class="tag">${recues.length}</span></div>
+        ${recues.length === 0
+          ? html`<div class="vide">Aucune distinction décernée.</div>`
+          : recues.map(d => html`
+            <div class="ligne" style="align-items:flex-start">
+              <div style="flex:1;min-width:230px">
+                <div class="row" style="gap:8px">
+                  <strong>${nomDe(d.profil_id)}</strong>
+                  <span class=${'tag '+((d.types_distinction||{}).couleur||'or')}>
+                    ${(d.types_distinction||{}).nom || d.type}</span>
+                  ${!d.publique && html`<span class="tag">Non publiée</span>`}
+                </div>
+                <p class="small" style="margin:8px 0 0;max-width:58ch">${d.motif}</p>
+                <div class="small muted" style="margin-top:4px">
+                  <span class="mono">${d.numero}</span> · ${jour(d.decernee_le)}</div>
+              </div>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- Mes distinctions, sur la fiche du membre ------------------------- */
+function MesDistinctions({ profil }){
+  const [d, setD] = useState([]);
+  useEffect(() => {
+    db.rpc('mes_distinctions', { p_profil: profil || null })
+      .then(({data}) => setD(data||[]));
+  }, [profil]);
+  if (d.length === 0) return null;
+  return html`
+    <div class="panneau" style="margin-top:24px">
+      <div class="tete"><h3 style="font-size:17px">Distinctions</h3>
+        <span class="tag or">${d.length}</span></div>
+      ${d.map(x => html`
+        <div class="ligne" style="align-items:flex-start">
+          <div style="flex:1;min-width:220px">
+            <div class="row" style="gap:8px">
+              <span class=${'tag '+(x.couleur||'or')}>${x.type_nom}</span>
+            </div>
+            <p class="small" style="margin:8px 0 0;max-width:56ch">${x.motif}</p>
+            ${x.texte && html`<p class="small muted" style="margin:6px 0 0;
+              font-style:italic">${x.texte}</p>`}
+          </div>
+          <div class="row">
+            <span class="mono muted">${x.numero}</span>
+            <span class="small muted">${jour(x.decernee_le)}</span>
+          </div>
+        </div>`)}
+    </div>`;
+}
+
+/* --- Assistance : signaler, proposer ---------------------------------- */
+const NATURES_TICKET = { probleme:'Un problème', amelioration:'Une amélioration',
+                         question:'Une question', donnee:'Une donnée erronée' };
+const ETAT_TICKET = { ouvert:['Reçu',''], pris_en_compte:['Pris en compte','bleu'],
+  en_cours:['En cours','bleu'], resolu:['Résolu','vert'],
+  refuse:['Écarté','rouge'], differe:['Différé','or'] };
+
+function Assistance({ p }){
+  const [ouvert, setOuvert] = useState(false);
+  const [miens, setMiens] = useState([]);
+  const [f, setF] = useState({nature:'probleme', titre:'', description:'', importance:'normale'});
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(() =>
+    db.rpc('liste_tickets', { p_filtre: 'miens' }).then(({data}) => setMiens(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function envoyer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('ouvrir_ticket', {
+      p_nature: f.nature, p_titre: f.titre, p_description: f.description,
+      p_page: location.hash, p_importance: f.importance
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({nature:'probleme', titre:'', description:'', importance:'normale'});
+    setOuvert(false); setMsg('Merci. Votre signalement est transmis.');
+    charger();
+  }
+
+  return html`
+    <div class="panneau" style="margin-top:24px">
+      <div class="tete">
+        <div class="row" style="gap:8px">
+          <h3 style="font-size:17px">Signaler ou proposer</h3>
+          <${Info} texte="Un bug, une lenteur, une idée d'amélioration, une donnée fausse : dites-le. C'est lu, et vous verrez la réponse ici." />
+        </div>
+        <button class="btn sm light" onClick=${()=>setOuvert(o=>!o)}>
+          ${ouvert ? 'Annuler' : 'Nouveau signalement'}</button>
+      </div>
+      ${msg && html`<div class="corps"><div class=${'alerte '+
+        (msg.startsWith('Erreur')?'err':'ok')}>${msg}</div></div>`}
+
+      ${ouvert && html`
+        <form onSubmit=${envoyer} class="corps stack">
+          <div class="row" style="gap:16px;align-items:flex-start">
+            <div class="field" style="flex:1;min-width:170px;margin:0"><label>Nature</label>
+              <select value=${f.nature} onChange=${e=>setF(o=>({...o,nature:e.target.value}))}>
+                ${Object.entries(NATURES_TICKET).map(([k,v]) =>
+                  html`<option value=${k}>${v}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:150px;margin:0"><label>Importance</label>
+              <select value=${f.importance}
+                onChange=${e=>setF(o=>({...o,importance:e.target.value}))}>
+                <option value="basse">Peut attendre</option>
+                <option value="normale">Normale</option>
+                <option value="haute">Gênant au quotidien</option>
+              </select></div>
+          </div>
+          <div class="field"><label>En une ligne</label>
+            <input required value=${f.titre}
+              onInput=${e=>setF(o=>({...o,titre:e.target.value}))} /></div>
+          <div class="field"><label>Ce qui s\u2019est passé, ou ce que vous proposez</label>
+            <textarea required value=${f.description} style="min-height:110px"
+              onInput=${e=>setF(o=>({...o,description:e.target.value}))}
+              placeholder="Si c\u2019est un problème : ce que vous faisiez, ce qui devait arriver, ce qui est arrivé." /></div>
+          <div><button class="btn">Transmettre</button></div>
+          <p class="small muted">La page où vous vous trouvez est jointe automatiquement.</p>
+        </form>`}
+
+      ${miens.length > 0 && html`
+        <div>
+          ${miens.slice(0,8).map(t => html`
+            <div class="ligne">
+              <div style="flex:1;min-width:200px">
+                <div>${t.titre}</div>
+                <div class="small muted">
+                  <span class="mono">${t.reference}</span> · ${jour(t.cree_le)}
+                  ${t.assigne ? ' · suivi par ' + t.assigne : ''}
+                </div>
+                ${t.reponse && html`<div class="small" style="margin-top:6px;
+                  padding:8px;background:var(--papier);border-radius:2px">${t.reponse}</div>`}
+              </div>
+              <span class=${'tag '+(ETAT_TICKET[t.statut]||['',''])[1]}>
+                ${(ETAT_TICKET[t.statut]||[t.statut,''])[0]}</span>
+            </div>`)}
+        </div>`}
+    </div>`;
+}
+
+/* --- Assistance, côté pilotage ---------------------------------------- */
+function AssistanceAdmin({ p, setMsg }){
+  const [liste, setListe] = useState([]);
+  const [filtre, setFiltre] = useState('ouverts');
+  const [gens, setGens] = useState([]);
+
+  const charger = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      db.rpc('liste_tickets', { p_filtre: filtre }),
+      db.from('v_annuaire').select('id,prenom,nom').eq('statut','actif').order('nom')
+    ]);
+    setListe(a.data||[]); setGens(b.data||[]);
+  }, [filtre]);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function traiter(t, champs){
+    const { data, error } = await db.rpc('traiter_ticket', {
+      p_id: t.id, p_statut: champs.statut || null, p_assigne: champs.assigne || null,
+      p_echeance: champs.echeance || null, p_importance: champs.importance || null,
+      p_reponse: champs.reponse || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    charger();
+  }
+
+  return html`
+    <div class="panneau" style="margin-bottom:24px">
+      <div class="tete">
+        <h3 style="font-size:17px">Signalements et propositions</h3>
+        <div class="row">
+          <select style="width:auto" value=${filtre} onChange=${e=>setFiltre(e.target.value)}>
+            <option value="ouverts">En cours</option>
+            <option value="assignes">Qui me sont assignés</option>
+            <option value="tous">Tous</option>
+          </select>
+          <span class="tag">${liste.length}</span>
+        </div>
+      </div>
+      ${liste.length === 0
+        ? html`<div class="vide">Aucun signalement.</div>`
+        : html`<div style="overflow-x:auto">
+            <table>
+              <thead><tr><th>Signalement</th><th>Par</th><th>Assigné à</th>
+                <th>Échéance</th><th>Importance</th><th>État</th><th></th></tr></thead>
+              <tbody>
+                ${liste.map(t => html`
+                  <tr>
+                    <td style="max-width:280px">
+                      <div>${t.titre}</div>
+                      <div class="small muted">${NATURES_TICKET[t.nature]||t.nature}
+                        · <span class="mono">${t.reference}</span>
+                        ${t.page ? ' · ' + t.page : ''}</div>
+                      <div class="small muted" style="margin-top:4px;white-space:pre-wrap">
+                        ${t.description}</div>
+                    </td>
+                    <td class="small">${t.auteur}
+                      <div class="mono muted">${t.auteur_matricule}</div></td>
+                    <td>
+                      <select value=${t.assigne_id||''} style="min-width:130px"
+                        onChange=${e=>traiter(t,{assigne:e.target.value||null,
+                          statut: e.target.value ? 'pris_en_compte' : null})}>
+                        <option value="">—</option>
+                        ${gens.map(g => html`<option value=${g.id}>${nomComplet(g)}</option>`)}
+                      </select></td>
+                    <td>
+                      <input type="date" defaultValue=${t.echeance||''} style="min-width:130px"
+                        onBlur=${e=>traiter(t,{echeance:e.target.value||null})} />
+                      ${t.retard && html`<div class="small"
+                        style="color:var(--bordeaux)">En retard</div>`}</td>
+                    <td>
+                      <select value=${t.importance} style="min-width:110px"
+                        onChange=${e=>traiter(t,{importance:e.target.value})}>
+                        <option value="basse">Basse</option>
+                        <option value="normale">Normale</option>
+                        <option value="haute">Haute</option>
+                        <option value="bloquante">Bloquante</option>
+                      </select></td>
+                    <td>
+                      <select value=${t.statut} style="min-width:130px"
+                        onChange=${e=>{
+                          const st = e.target.value;
+                          if (st === 'refuse' || st === 'differe'){
+                            const r = prompt('Expliquez à la personne qui a signalé (obligatoire)');
+                            if (!r) return charger();
+                            return traiter(t,{statut:st, reponse:r});
+                          }
+                          traiter(t,{statut:st});
+                        }}>
+                        ${Object.entries(ETAT_TICKET).map(([k,v]) =>
+                          html`<option value=${k}>${v[0]}</option>`)}
+                      </select></td>
+                    <td>
+                      <button class="btn sm light" onClick=${()=>{
+                        const r = prompt('Réponse à la personne', t.reponse||'');
+                        if (r !== null) traiter(t,{reponse:r});
+                      }}>Répondre</button></td>
+                  </tr>`)}
+              </tbody>
+            </table>
+          </div>`}
+    </div>`;
+}
+
+/* --- Conformité des élections ----------------------------------------- */
+function Conformite({ p }){
+  const [cands, setCands] = useState([]);
+  const [scrutins, setScrutins] = useState([]);
+  const [archives, setArchives] = useState([]);
+  const [onglet, setOnglet] = useState('candidatures');
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a,b,c] = await Promise.all([
+      db.rpc('conformite_a_traiter'),
+      db.rpc('scrutins_a_arreter'),
+      db.rpc('archives_electorales', { p_territoire: null })
+    ]);
+    setCands(a.data||[]); setScrutins(b.data||[]); setArchives(c.data||[]);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function examiner(c, ok){
+    const motif = ok ? null : prompt('Motif de l\u2019irrecevabilité (obligatoire)');
+    if (!ok && !motif) return;
+    const { data, error } = await db.rpc('examiner_candidature',
+      { p_id: c.candidature_id, p_recevable: ok, p_motif: motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Décision enregistrée et transmise à l\u2019administrateur.'); charger();
+  }
+
+  async function phase(s, st){
+    const { data, error } = await db.rpc('changer_phase_assemblee',
+      { p_assemblee: s.assemblee_id, p_statut: st });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Phase modifiée.'); charger();
+  }
+
+  const aFaire = scrutins.filter(s => s.action);
+
+  return html`
+    <div>
+      <div class="eyebrow">Conformité des élections</div>
+      <h1 style="margin:6px 0 8px">Contrôle des scrutins</h1>
+      <p class="muted" style="max-width:60ch">
+        La recevabilité des candidatures, l\u2019ouverture et la clôture du scrutin,
+        la proclamation : chacune de ces décisions est inscrite au registre des
+        actes et remonte à l\u2019administrateur.
+      </p>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div class="chiffres" style="margin:24px 0">
+        <div><div class="n" style="font-size:30px">${cands.length}</div>
+          <div class="l">Candidatures à examiner</div></div>
+        <div><div class="n" style="font-size:30px">${aFaire.length}</div>
+          <div class="l">Scrutins en attente</div></div>
+        <div><div class="n" style="font-size:30px">${archives.length}</div>
+          <div class="l">Scrutins archivés</div></div>
+        <div><div class="n" style="font-size:30px">
+          ${cands.filter(c => c.jours_avant_cloture !== null
+            && c.jours_avant_cloture <= 3).length}</div>
+          <div class="l">Clôture imminente</div></div>
+      </div>
+
+      <div class="row" style="margin:0 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['candidatures','Candidatures'],['scrutins','Scrutins'],['archives','Archives']]
+          .map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'candidatures' && html`
+        <div class="panneau">
+          ${cands.length === 0
+            ? html`<div class="vide">Aucune candidature en attente d\u2019examen.</div>`
+            : cands.map(c => html`
+              <div class="ligne" style="align-items:flex-start">
+                <div style="flex:1;min-width:250px">
+                  <div class="row" style="gap:8px">
+                    <strong>${c.candidat}</strong>
+                    <span class="tag">${c.poste_nom}</span>
+                    ${c.jours_avant_cloture !== null && c.jours_avant_cloture <= 3 && html`
+                      <span class="tag rouge">
+                        ${c.jours_avant_cloture < 0 ? 'Clôture passée'
+                          : 'Clôture dans ' + c.jours_avant_cloture + ' j'}</span>`}
+                  </div>
+                  <div class="small muted" style="margin-top:4px">
+                    <span class="mono">${c.matricule}</span> · ${c.assemblee}
+                    · ${c.territoire||''}
+                    · déposée le ${jour(c.depose_le)}
+                  </div>
+                  <p class="small" style="margin:8px 0 0;white-space:pre-wrap;max-width:58ch">
+                    ${c.profession_foi}</p>
+                </div>
+                <div class="row">
+                  <button class="btn sm" onClick=${()=>examiner(c,true)}>Recevable</button>
+                  <button class="btn sm light" onClick=${()=>examiner(c,false)}>Écarter</button>
+                </div>
+              </div>`)}
+        </div>`}
+
+      ${onglet === 'scrutins' && html`
+        <div class="panneau">
+          ${scrutins.length === 0
+            ? html`<div class="vide">Aucun scrutin en cours.</div>`
+            : scrutins.map(sc => html`
+              <div class="ligne">
+                <div style="flex:1;min-width:240px">
+                  <div>${sc.titre}</div>
+                  <div class="small muted">
+                    <span class="mono">${sc.reference}</span> · ${sc.territoire||''}
+                    · ${jour(sc.date_tenue)}
+                  </div>
+                  <div class="small muted">
+                    ${sc.candidatures_a_examiner} à examiner ·
+                    ${sc.recevables} recevable${sc.recevables>1?'s':''}
+                    ${sc.inscrits ? ' · ' + sc.votants + '/' + sc.inscrits + ' votants' : ''}
+                  </div>
+                </div>
+                <div class="row">
+                  ${sc.action && html`<span class="tag or">${sc.action}</span>`}
+                  ${sc.statut === 'candidatures' && sc.recevables > 0 && html`
+                    <button class="btn sm" onClick=${()=>phase(sc,'scrutin')}>
+                      Ouvrir le scrutin</button>`}
+                  ${sc.statut === 'scrutin' && html`
+                    <button class="btn sm" onClick=${()=>phase(sc,'depouillement')}>
+                      Clore</button>`}
+                  <a class="btn sm light" href="#/espace/assemblees">Ouvrir</a>
+                </div>
+              </div>`)}
+        </div>`}
+
+      ${onglet === 'archives' && html`<${ArchivesElectorales} archives=${archives} />`}
+    </div>`;
+}
+
+function ArchivesElectorales({ archives }){
+  const [ouvert, setOuvert] = useState(null);
+  return html`
+    <div>
+      <p class="small muted" style="margin-bottom:16px;max-width:62ch">
+        Les procès-verbaux sont consultables par les électeurs du scrutin, par les
+        membres du territoire concerné, et sans limite par la direction des
+        affaires juridiques.
+      </p>
+      <div class="panneau">
+        ${archives.length === 0
+          ? html`<div class="vide">Aucun scrutin archivé.</div>`
+          : archives.map(a => html`
+            <div style="border-bottom:1px solid var(--filet)">
+              <div class="ligne" style="cursor:pointer;border:0"
+                onClick=${()=>setOuvert(ouvert===a.assemblee_id?null:a.assemblee_id)}>
+                <div style="flex:1;min-width:230px">
+                  <div class="row" style="gap:8px">
+                    <span>${a.titre}</span>
+                    ${a.jai_participe && html`<span class="tag vert">Vous avez voté</span>`}
+                  </div>
+                  <div class="small muted">
+                    <span class="mono">${a.reference}</span> · ${a.territoire||''}
+                    · ${jour(a.date_tenue)}
+                    · ${a.votants}/${a.inscrits} votants (${a.participation} %)
+                  </div>
+                </div>
+                <button class="btn sm light">
+                  ${ouvert===a.assemblee_id ? 'Replier' : 'Consulter'}</button>
+              </div>
+              ${ouvert === a.assemblee_id && html`
+                <div class="corps" style="background:var(--papier)">
+                  <div class="eyebrow" style="margin-bottom:10px">Élus</div>
+                  ${(a.elus||[]).map(e => html`
+                    <div class="spread small" style="padding:4px 0">
+                      <span>${e.poste} — <strong>${e.elu}</strong></span>
+                      <span class="muted">${e.voix} voix · mandat jusqu\u2019au ${jour(e.fin)}</span>
+                    </div>`)}
+                  ${a.proces_verbal && html`
+                    <div style="margin-top:18px">
+                      <div class="eyebrow" style="margin-bottom:8px">Procès-verbal</div>
+                      <div class="small" style="white-space:pre-wrap">${a.proces_verbal}</div>
+                    </div>`}
+                  <div class="small muted" style="margin-top:14px">
+                    Proclamé le ${jour(a.proclame_le)}
+                  </div>
+                </div>`}
+            </div>`)}
+      </div>
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation(){
   const [attente, setAttente] = useState([]);
@@ -8201,6 +8873,8 @@ function Validation(){
       </div>
       <div style="height:32px"></div>
       ${msg && html`<div class="alerte ok" style="margin-bottom:24px">${msg}</div>`}
+
+      <${AssistanceAdmin} p=${p} setMsg=${setMsg} />
 
       ${actes.length > 0 && html`
         <div class="panneau" style="margin-bottom:24px;border-color:var(--brun)">
@@ -8860,6 +9534,7 @@ function Espace({ session, sous }){
     case 'mon-dossier':vue = html`<${MonDossier} p=${p} entier=${true} />`; break;
     case 'referentiel':vue = html`<${Referentiel} />`; break;
     case 'engagement': vue = acces('engagement') ? html`<${Engagement} p=${p} />` : refus; break;
+    case 'conformite': vue = html`<${Conformite} p=${p} />`; break;
     case 'parcours':   vue = acces('parcours')
                           ? html`<${ParcoursAdherent} p=${p} />` : refus; break;
     case 'pilotage':   vue = acces('pilotage')
