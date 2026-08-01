@@ -187,7 +187,25 @@ textarea{min-height:110px;resize:vertical;line-height:1.45}
 .nav{display:flex;gap:26px;align-items:center}
 .nav a{color:var(--nuit);font-size:14.5px}
 .nav a.on{color:var(--bleu);border-bottom:2px solid var(--bordeaux);padding-bottom:2px}
-@media(max-width:900px){.nav{display:none}.logo .baseline{display:none}}
+@media(max-width:900px){
+  .logo .baseline{display:none}
+  .nav{position:absolute;top:100%;left:0;right:0;background:var(--blanc);
+    border-bottom:1px solid var(--filet);flex-direction:column;gap:0;
+    align-items:stretch;display:none;box-shadow:none}
+  .nav.ouverte{display:flex}
+  .nav a{padding:14px 24px;border-bottom:1px solid var(--filet)}
+  .nav a.on{border-bottom:1px solid var(--filet);border-left:3px solid var(--bordeaux)}
+  .burger{display:flex;width:44px;height:44px;border:1px solid var(--filet);
+    background:#fff;border-radius:2px;align-items:center;justify-content:center;
+    padding:0}
+  .burger span{display:block;width:20px;height:2px;background:var(--bleu);
+    position:relative}
+  .burger span::before,.burger span::after{content:'';position:absolute;left:0;
+    width:20px;height:2px;background:var(--bleu)}
+  .burger span::before{top:-6px}
+  .burger span::after{top:6px}
+}
+.burger{display:none}
 
 /* --- Héros ---------------------------------------------------------- */
 .heros{border-bottom:1px solid var(--filet);background:var(--blanc);
@@ -338,6 +356,87 @@ th{text-align:left;font-family:var(--titre);font-weight:700;font-size:10.5px;
   padding:11px 12px;border-bottom:1px solid var(--filet)}
 td{padding:12px;border-bottom:1px solid var(--filet);vertical-align:middle}
 tr:last-child td{border-bottom:0}
+
+/* =====================================================================
+   TÉLÉPHONE
+   Un bénévole déclare ses heures depuis son canapé, pas depuis un
+   bureau. Le menu s'escamote, les cibles tactiles atteignent 44 px, et
+   les champs passent à 16 px — en dessous, iOS zoome tout seul et
+   l'écran devient inutilisable.
+   ===================================================================== */
+.bascule{display:none}
+.voile{display:none}
+
+@media(max-width:900px){
+  .app{grid-template-columns:1fr}
+
+  /* La barre du haut, fixe, avec le logo et le portrait. */
+  .bascule{display:flex;position:sticky;top:0;z-index:60;
+    align-items:center;justify-content:space-between;gap:12px;
+    padding:10px 14px;background:var(--blanc);
+    border-bottom:1px solid var(--filet)}
+  .bascule img{height:38px;width:auto}
+  .bascule button{width:44px;height:44px;border:1px solid var(--filet);
+    background:#fff;border-radius:2px;display:flex;align-items:center;
+    justify-content:center;padding:0}
+  .bascule .barres{display:block;width:20px;height:2px;background:var(--bleu);
+    position:relative}
+  .bascule .barres::before,.bascule .barres::after{content:'';position:absolute;
+    left:0;width:20px;height:2px;background:var(--bleu)}
+  .bascule .barres::before{top:-6px}
+  .bascule .barres::after{top:6px}
+
+  /* Le menu glisse par-dessus au lieu de pousser le contenu. */
+  .flanc{position:fixed;top:0;left:0;bottom:0;width:min(84vw,300px);
+    z-index:80;transform:translateX(-100%);transition:transform .2s ease;
+    border-right:1px solid var(--filet);overflow-y:auto;
+    box-shadow:none;height:100vh}
+  .flanc.ouvert{transform:translateX(0)}
+  .voile{display:block;position:fixed;inset:0;z-index:70;
+    background:rgba(30,42,56,.4);opacity:0;pointer-events:none;
+    transition:opacity .2s}
+  .voile.ouvert{opacity:1;pointer-events:auto}
+
+  .contenu{padding:20px 14px 60px}
+  h1{font-size:29px}
+  h2{font-size:23px}
+  .heros .wrap{padding:56px 20px 48px}
+  .entete .wrap{height:74px}
+
+  /* Cibles tactiles : 44 px, la règle d'Apple comme de Google. */
+  .btn{padding:12px 18px;min-height:44px}
+  .btn.sm{padding:9px 14px;min-height:38px}
+  .flanc nav a{padding:13px 20px}
+  .moi{padding:14px 18px}
+
+  /* 16 px : en dessous, iOS zoome à la mise au point. */
+  input,select,textarea{font-size:16px;padding:12px}
+
+  /* Les lignes deviennent des blocs empilés. */
+  .ligne{flex-direction:column;align-items:stretch;gap:10px;padding:14px 16px}
+  .ligne>.row{justify-content:flex-start}
+  .panneau>.tete{flex-wrap:wrap;padding:14px 16px}
+  .panneau>.corps{padding:16px}
+  .spread{flex-direction:column;align-items:stretch}
+  .spread>.row{justify-content:flex-start}
+
+  .tuiles{grid-template-columns:1fr}
+  .chiffres{grid-template-columns:repeat(2,1fr)}
+  .cartes{grid-template-columns:1fr}
+  .chiffres .n{font-size:34px}
+
+  /* Un tableau ne tient pas sur un téléphone : on le fait défiler, et
+     on le signale au doigt. */
+  .panneau table{min-width:520px}
+  .panneau>div[style*="overflow-x"]{-webkit-overflow-scrolling:touch}
+}
+
+@media(max-width:420px){
+  .contenu{padding:16px 12px 60px}
+  h1{font-size:25px}
+  .chiffres{grid-template-columns:1fr}
+  .row{gap:8px}
+}
 </style>
 </head>
 <body>
@@ -438,6 +537,8 @@ function Logo({ href = '#/', baseline = true, clair = false }){
 }
 
 function EntetePublique({ route, session }){
+  const [ouvert, setOuvert] = useState(false);
+  useEffect(() => { setOuvert(false); }, [route]);
   const liens = [
     ['/', 'Accueil'], ['/association','La fédération'], ['/actions','Nos actions'],
     ['/reseau','Le réseau'], ['/actualites','Actualités'],
@@ -446,15 +547,19 @@ function EntetePublique({ route, session }){
   return html`
     <header class="entete">
       <hr class="bicolore" />
-      <div class="wrap">
+      <div class="wrap" style="position:relative">
         <${Logo} />
-        <nav class="nav">
+        <nav class=${'nav'+(ouvert?' ouverte':'')}>
           ${liens.map(([r,t]) => html`
             <a href=${'#'+r} class=${route===r?'on':''}>${t}</a>`)}
         </nav>
-        <a class="btn ghost sm" href="#/espace">
-          ${session ? 'Mon espace' : 'Se connecter'}
-        </a>
+        <div class="row" style="gap:10px">
+          <a class="btn ghost sm" href="#/espace">
+            ${session ? 'Mon espace' : 'Se connecter'}
+          </a>
+          <button class="burger" aria-label="Menu"
+            onClick=${()=>setOuvert(o=>!o)}><span></span></button>
+        </div>
       </div>
     </header>`;
 }
@@ -976,9 +1081,9 @@ function Portrait({ chemin, nom, taille = 40 }){
    grandes fédérations : on n'appartient pas à « des responsabilités »
    en vrac, on appartient à une direction.
    --------------------------------------------------------------------- */
-function Flanc({ p, apps, page, directions }){
+function Flanc({ p, apps, page, directions, ouvert, fermer }){
   const item = (r, t, marque, pivot) => html`
-    <a href=${'#/espace/'+r}
+    <a href=${'#/espace/'+r} onClick=${()=>fermer && fermer()}
        class=${(pivot?'pivot ':'') + (page===r?'on':'')}>
       <span class="spread" style="gap:8px">
         <span>${t}</span>
@@ -995,12 +1100,13 @@ function Flanc({ p, apps, page, directions }){
   const nom = a => a.nom_court || a.nom;
 
   return html`
-    <aside class="flanc">
+    <aside class=${'flanc'+(ouvert?' ouvert':'')}>
       <div class="entete-flanc">
         <${Logo} baseline=${false} />
       </div>
 
-      <a class=${'moi'+(page==='compte'?' on':'')} href="#/espace/compte">
+      <a class=${'moi'+(page==='compte'?' on':'')} href="#/espace/compte"
+         onClick=${()=>fermer && fermer()}>
         <${Portrait} chemin=${p.photo_url} nom=${nomComplet(p)} taille=${42} />
         <span style="min-width:0">
           <span class="moi-nom">${nomComplet(p)}</span>
@@ -1594,8 +1700,14 @@ function Formations({ p }){
 
   return html`
     <div>
-      <div class="eyebrow">Formations</div>
-      <h1 style="margin:6px 0 8px">Se former</h1>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Formations</div>
+          <h1 style="margin:6px 0 0">Se former</h1>
+        </div>
+        ${(p.niveau >= 90 || (p.postes||[]).length > 0) && html`
+          <a class="btn light" href="#/espace/editeur">Rédiger les parcours</a>`}
+      </div>
       <p class="muted" style="max-width:56ch">
         Chaque parcours achevé délivre une certification inscrite à votre
         compte. Certains projets et groupes de travail l'exigeront.
@@ -9371,6 +9483,32 @@ function MonComite({ p }){
                 </a>`)}
           </div>
 
+          ${(c.a_relayer||[]).length > 0 && html`
+            <div class="panneau" style="margin-top:24px;border-left:3px solid var(--framboise)">
+              <div class="tete">
+                <div class="row" style="gap:8px">
+                  <h3 style="font-size:17px">À relayer sur vos réseaux</h3>
+                  <${Info} texte="La direction de la communication a préparé ces publications. Adaptez-les à ce qui s'est passé chez vous, et publiez." />
+                </div>
+                <a class="btn sm" href="#/espace/publier">Ouvrir</a>
+              </div>
+              ${(c.a_relayer||[]).slice(0,4).map(x => html`
+                <a class="ligne" href="#/espace/publier" style="color:var(--nuit)">
+                  ${x.visuel && html`<img src=${urlPublique(x.visuel)} alt=""
+                    style="width:48px;height:48px;object-fit:cover;flex:0 0 48px;
+                           border:1px solid var(--filet)" />`}
+                  <div style="flex:1;min-width:200px">
+                    <div class="row" style="gap:8px">
+                      <span>${x.titre}</span>
+                      ${x.priorite === 'urgente' && html`
+                        <span class="tag rouge">Sans délai</span>`}
+                    </div>
+                    <div class="small muted">${x.contexte || ''}
+                      ${x.a_publier_le ? ' · vers le ' + jour(x.a_publier_le) : ''}</div>
+                  </div>
+                </a>`)}
+            </div>`}
+
           <div class="panneau" style="margin-top:24px">
             <div class="tete"><h3 style="font-size:17px">Projets en cours</h3></div>
             ${(c.projets||[]).filter(x=>x.statut==='en_cours').length === 0
@@ -10602,6 +10740,532 @@ function SuggestionsAdmin({ setMsg }){
     </div>`;
 }
 
+
+/* =====================================================================
+   ÉDITEUR DE FORMATIONS
+   Une formation en cours de rédaction ne doit jamais casser le
+   parcours de quelqu'un : supprimer une leçon achevée est refusé,
+   déplacer échange les rangs sans toucher à la progression acquise.
+   ===================================================================== */
+
+const TYPES_LECON = { lecture:'Texte', video:'Vidéo',
+                      document:'Document', quiz:'Quiz' };
+
+function EditeurFormations({ p }){
+  const [liste, setListe] = useState([]);
+  const [ouverte, setOuverte] = useState(null);
+  const [creation, setCreation] = useState(false);
+  const [f, setF] = useState({titre:'', resume:'', description:'',
+    niveau_min:'10', duree:'', seuil:'80'});
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(() =>
+    db.from('formations').select('*').order('ordre')
+      .then(({data}) => setListe(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function creer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('enregistrer_formation', {
+      p_id: null, p_code: null, p_titre: f.titre, p_resume: f.resume || null,
+      p_description: f.description || null, p_niveau_min: Number(f.niveau_min),
+      p_duree: f.duree ? Number(f.duree) : null, p_seuil: Number(f.seuil||80),
+      p_publiee: false, p_ordre: 100, p_image: null, p_prerequis: null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({titre:'', resume:'', description:'', niveau_min:'10', duree:'', seuil:'80'});
+    setCreation(false); setOuverte(data.id); charger();
+  }
+
+  if (ouverte) return html`<${EditeurParcours} id=${ouverte}
+    fermer=${()=>{ setOuverte(null); charger(); }} />`;
+
+  return html`
+    <div>
+      <div class="spread">
+        <div>
+          <div class="eyebrow">Formations</div>
+          <h1 style="margin:6px 0 0">Rédiger les parcours</h1>
+        </div>
+        <button class="btn" onClick=${()=>setCreation(c=>!c)}>
+          ${creation ? 'Annuler' : 'Nouvelle formation'}</button>
+      </div>
+      ${msg && html`<div class="alerte err" style="margin-top:16px">${msg}</div>`}
+
+      ${creation && html`
+        <form onSubmit=${creer} class="panneau" style="margin-top:24px">
+          <div class="corps stack">
+            <div class="field"><label>Titre</label>
+              <input required value=${f.titre}
+                onInput=${e=>setF(o=>({...o,titre:e.target.value}))} /></div>
+            <div class="field"><label>Résumé</label>
+              <input value=${f.resume} onInput=${e=>setF(o=>({...o,resume:e.target.value}))}
+                placeholder="Une ligne, affichée sur la tuile." /></div>
+            <div class="field"><label>Description</label>
+              <textarea value=${f.description}
+                onInput=${e=>setF(o=>({...o,description:e.target.value}))} /></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:150px;margin:0">
+                <label>Ouverte à partir de</label>
+                <select value=${f.niveau_min}
+                  onChange=${e=>setF(o=>({...o,niveau_min:e.target.value}))}>
+                  <option value="10">Tous les adhérents</option>
+                  <option value="40">Animateurs locaux</option>
+                  <option value="60">Référents départementaux</option>
+                  <option value="80">Direction</option>
+                </select></div>
+              <div class="field" style="flex:1;min-width:120px;margin:0">
+                <label>Durée (min)</label>
+                <input type="number" value=${f.duree}
+                  onInput=${e=>setF(o=>({...o,duree:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:120px;margin:0">
+                <label>Seuil des quiz (%)</label>
+                <input type="number" min="50" max="100" value=${f.seuil}
+                  onInput=${e=>setF(o=>({...o,seuil:e.target.value}))} /></div>
+            </div>
+            <div><button class="btn">Créer et rédiger</button></div>
+          </div>
+        </form>`}
+
+      <div class="panneau" style="margin-top:24px">
+        ${liste.length === 0
+          ? html`<div class="vide">Aucune formation.</div>`
+          : liste.map(x => html`
+            <div class="ligne" style="cursor:pointer" onClick=${()=>setOuverte(x.id)}>
+              <div style="flex:1;min-width:220px">
+                <div class="row" style="gap:8px">
+                  <span>${x.titre}</span>
+                  ${x.publiee
+                    ? html`<span class="tag vert">Publiée</span>`
+                    : html`<span class="tag">Brouillon</span>`}
+                </div>
+                <div class="small muted">${x.resume || ''}
+                  ${x.duree_min ? ' · ' + x.duree_min + ' min' : ''}
+                  · <span class="mono">${x.code}</span></div>
+              </div>
+              <button class="btn sm light">Rédiger</button>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+function EditeurParcours({ id, fermer }){
+  const [f, setF] = useState(null);
+  const [onglet, setOnglet] = useState('contenu');
+  const [verif, setVerif] = useState(null);
+  const [suivi, setSuivi] = useState([]);
+  const [lecon, setLecon] = useState(null);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a,b,c] = await Promise.all([
+      db.rpc('formation_complete', { p_formation: id }),
+      db.rpc('verifier_formation', { p_formation: id }),
+      db.rpc('suivi_formation', { p_formation: id })
+    ]);
+    setF(a.data); setVerif(b.data); setSuivi(c.data||[]);
+  }, [id]);
+  useEffect(() => { charger(); }, [charger]);
+
+  const appel = async (fn, args, ok) => {
+    const { data, error } = await db.rpc(fn, args);
+    if (error){ setMsg('Erreur : ' + error.message); return false; }
+    if (!data.ok){ setMsg('Erreur : ' + data.message); return false; }
+    if (ok) setMsg(ok);
+    charger(); return data;
+  };
+
+  if (!f) return html`<div class="vide">Chargement…</div>`;
+  if (f.erreur) return html`<div class="alerte err">${f.erreur}</div>`;
+  const fo = f.formation;
+
+  if (lecon) return html`<${EditeurLecon} lecon=${lecon}
+    fermer=${()=>{ setLecon(null); charger(); }} />`;
+
+  async function publier(){
+    if (!verif.publiable && !fo.publiee){
+      return setMsg('Erreur : corrigez d\u2019abord les points signalés.');
+    }
+    await appel('enregistrer_formation', {
+      p_id: id, p_code: fo.code, p_titre: fo.titre, p_resume: fo.resume,
+      p_description: fo.description, p_niveau_min: fo.niveau_min,
+      p_duree: fo.duree_min, p_seuil: fo.seuil_quiz, p_publiee: !fo.publiee,
+      p_ordre: fo.ordre, p_image: null, p_prerequis: fo.prerequis
+    }, fo.publiee ? 'Formation dépubliée.' : 'Formation publiée.');
+  }
+
+  return html`
+    <div>
+      <button class="lien-discret" onClick=${fermer}>← Toutes les formations</button>
+      <div class="spread" style="margin-top:12px">
+        <div>
+          <h1 style="font-size:28px">${fo.titre}</h1>
+          <div class="small muted" style="margin-top:4px">
+            <span class="mono">${fo.code}</span>
+            · ${f.inscrits} membre${f.inscrits>1?'s':''} engagé${f.inscrits>1?'s':''}
+          </div>
+        </div>
+        <div class="row">
+          ${fo.publiee
+            ? html`<span class="tag vert">Publiée</span>`
+            : html`<span class="tag">Brouillon</span>`}
+          <button class=${'btn sm '+(fo.publiee?'light':'')} onClick=${publier}>
+            ${fo.publiee ? 'Dépublier' : 'Publier'}</button>
+        </div>
+      </div>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      ${verif && !verif.publiable && html`
+        <div class="alerte err" style="margin-top:20px">
+          <strong>À corriger avant publication :</strong>
+          <ul style="margin:8px 0 0;padding-left:18px">
+            ${(verif.soucis||[]).map(x => html`<li class="small">${x}</li>`)}
+          </ul>
+        </div>`}
+
+      <div class="row" style="margin:28px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['contenu','Contenu'],['reglages','Réglages'],
+           ['suivi','Qui suit ('+suivi.length+')']].map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'contenu' && html`
+        <div>
+          ${(f.modules||[]).map((m, im) => html`
+            <div class="panneau" style="margin-bottom:16px">
+              <div class="tete">
+                <div style="flex:1">
+                  <input defaultValue=${m.titre} style="font-family:var(--titre);
+                    font-weight:700;font-size:16px;border-color:transparent;padding:4px 6px"
+                    onBlur=${e=>appel('enregistrer_module',
+                      { p_id: m.id, p_formation: id, p_titre: e.target.value,
+                        p_resume: m.resume })} />
+                  <input defaultValue=${m.resume||''} placeholder="Résumé du module"
+                    style="font-size:13px;border-color:transparent;padding:2px 6px;
+                           color:var(--gris)"
+                    onBlur=${e=>appel('enregistrer_module',
+                      { p_id: m.id, p_formation: id, p_titre: m.titre,
+                        p_resume: e.target.value })} />
+                </div>
+                <div class="row" style="gap:4px">
+                  <button class="btn sm light" disabled=${im===0}
+                    onClick=${()=>appel('deplacer',{p_table:'module',p_id:m.id,p_sens:-1})}>↑</button>
+                  <button class="btn sm light" disabled=${im===(f.modules||[]).length-1}
+                    onClick=${()=>appel('deplacer',{p_table:'module',p_id:m.id,p_sens:1})}>↓</button>
+                  <button class="btn sm light" onClick=${()=>{
+                    if (confirm('Supprimer « ' + m.titre + ' » ?'))
+                      appel('supprimer_element',{p_table:'module',p_id:m.id},'Module supprimé.');
+                  }}>Supprimer</button>
+                </div>
+              </div>
+
+              ${(m.lecons||[]).map((l, il) => html`
+                <div class="ligne">
+                  <div style="flex:1;min-width:200px;cursor:pointer"
+                    onClick=${()=>setLecon(l)}>
+                    <div class="row" style="gap:8px">
+                      <span>${l.titre}</span>
+                      <span class="tag">${TYPES_LECON[l.type]||l.type}</span>
+                      ${l.type === 'quiz' && html`<span class="tag">
+                        ${(l.questions||[]).length} question(s)</span>`}
+                    </div>
+                    <div class="small muted">
+                      ${l.duree_min ? l.duree_min + ' min' : 'sans durée'}
+                      ${l.faites > 0 ? ' · achevée par ' + l.faites + ' membre(s)' : ''}
+                    </div>
+                  </div>
+                  <div class="row" style="gap:4px">
+                    <button class="btn sm light" disabled=${il===0}
+                      onClick=${()=>appel('deplacer',{p_table:'lecon',p_id:l.id,p_sens:-1})}>↑</button>
+                    <button class="btn sm light" disabled=${il===(m.lecons||[]).length-1}
+                      onClick=${()=>appel('deplacer',{p_table:'lecon',p_id:l.id,p_sens:1})}>↓</button>
+                    <button class="btn sm light" onClick=${()=>setLecon(l)}>Ouvrir</button>
+                    <button class="btn sm light" onClick=${()=>{
+                      if (confirm('Supprimer « ' + l.titre + ' » ?'))
+                        appel('supprimer_element',{p_table:'lecon',p_id:l.id},'Leçon supprimée.');
+                    }}>×</button>
+                  </div>
+                </div>`)}
+
+              <div class="corps" style="border-top:1px solid var(--filet)">
+                <div class="row" style="gap:8px">
+                  ${Object.entries(TYPES_LECON).map(([k,v]) => html`
+                    <button class="btn sm light" onClick=${async ()=>{
+                      const t = prompt('Titre de la leçon');
+                      if (!t) return;
+                      const r = await appel('enregistrer_lecon',
+                        { p_id:null, p_module:m.id, p_titre:t, p_type:k,
+                          p_contenu:null, p_url:null, p_duree:null });
+                      if (r) setMsg('Leçon ajoutée.');
+                    }}>+ ${v}</button>`)}
+                </div>
+              </div>
+            </div>`)}
+
+          <button class="btn" onClick=${async ()=>{
+            const t = prompt('Titre du module');
+            if (!t) return;
+            appel('enregistrer_module', { p_id:null, p_formation:id,
+              p_titre:t, p_resume:null }, 'Module ajouté.');
+          }}>Ajouter un module</button>
+        </div>`}
+
+      ${onglet === 'reglages' && html`
+        <div class="panneau">
+          <div class="corps stack">
+            <div class="field"><label>Titre</label>
+              <input defaultValue=${fo.titre}
+                onBlur=${e=>appel('enregistrer_formation',
+                  {p_id:id, p_code:fo.code, p_titre:e.target.value, p_resume:fo.resume,
+                   p_description:fo.description, p_niveau_min:fo.niveau_min,
+                   p_duree:fo.duree_min, p_seuil:fo.seuil_quiz, p_publiee:fo.publiee,
+                   p_ordre:fo.ordre, p_image:null, p_prerequis:fo.prerequis},
+                  'Enregistré.')} /></div>
+            <div class="field"><label>Résumé</label>
+              <input defaultValue=${fo.resume||''}
+                onBlur=${e=>appel('enregistrer_formation',
+                  {p_id:id, p_code:fo.code, p_titre:fo.titre, p_resume:e.target.value,
+                   p_description:fo.description, p_niveau_min:fo.niveau_min,
+                   p_duree:fo.duree_min, p_seuil:fo.seuil_quiz, p_publiee:fo.publiee,
+                   p_ordre:fo.ordre, p_image:null, p_prerequis:fo.prerequis},
+                  'Enregistré.')} /></div>
+            <div class="field"><label>Description</label>
+              <textarea defaultValue=${fo.description||''}
+                onBlur=${e=>appel('enregistrer_formation',
+                  {p_id:id, p_code:fo.code, p_titre:fo.titre, p_resume:fo.resume,
+                   p_description:e.target.value, p_niveau_min:fo.niveau_min,
+                   p_duree:fo.duree_min, p_seuil:fo.seuil_quiz, p_publiee:fo.publiee,
+                   p_ordre:fo.ordre, p_image:null, p_prerequis:fo.prerequis},
+                  'Enregistré.')} /></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:130px;margin:0">
+                <label>Durée (min)</label>
+                <input type="number" defaultValue=${fo.duree_min||''}
+                  onBlur=${e=>appel('enregistrer_formation',
+                    {p_id:id, p_code:fo.code, p_titre:fo.titre, p_resume:fo.resume,
+                     p_description:fo.description, p_niveau_min:fo.niveau_min,
+                     p_duree:Number(e.target.value)||null, p_seuil:fo.seuil_quiz,
+                     p_publiee:fo.publiee, p_ordre:fo.ordre, p_image:null,
+                     p_prerequis:fo.prerequis}, 'Enregistré.')} /></div>
+              <div class="field" style="flex:1;min-width:130px;margin:0">
+                <label>Seuil des quiz (%)</label>
+                <input type="number" min="50" max="100" defaultValue=${fo.seuil_quiz}
+                  onBlur=${e=>appel('enregistrer_formation',
+                    {p_id:id, p_code:fo.code, p_titre:fo.titre, p_resume:fo.resume,
+                     p_description:fo.description, p_niveau_min:fo.niveau_min,
+                     p_duree:fo.duree_min, p_seuil:Number(e.target.value),
+                     p_publiee:fo.publiee, p_ordre:fo.ordre, p_image:null,
+                     p_prerequis:fo.prerequis}, 'Enregistré.')} /></div>
+            </div>
+
+            <div style="padding-top:16px;border-top:1px solid var(--filet)">
+              <div class="eyebrow" style="margin-bottom:10px">Certification délivrée</div>
+              ${f.certification
+                ? html`<div class="row" style="gap:8px">
+                    <span class="tag or">${f.certification.nom}</span>
+                    <span class="small muted">
+                      ${f.certification.validite_mois
+                        ? 'valable ' + f.certification.validite_mois + ' mois'
+                        : 'sans expiration'}</span>
+                  </div>`
+                : html`<button class="btn sm" onClick=${async ()=>{
+                    const nom = prompt('Nom de la certification', fo.titre);
+                    if (!nom) return;
+                    const v = prompt('Validité en mois (vide = sans expiration)');
+                    appel('enregistrer_certification',
+                      { p_code:null, p_nom:nom, p_description:null,
+                        p_formation:id, p_validite: v ? Number(v) : null },
+                      'Certification créée.');
+                  }}>Créer la certification</button>`}
+            </div>
+          </div>
+        </div>`}
+
+      ${onglet === 'suivi' && html`
+        <div class="panneau" style="overflow-x:auto">
+          ${suivi.length === 0
+            ? html`<div class="vide">Personne n\u2019a encore commencé.</div>`
+            : html`<table>
+                <thead><tr><th>Membre</th><th>Territoire</th>
+                  <th>Avancement</th><th>Dernière activité</th><th></th></tr></thead>
+                <tbody>
+                  ${suivi.map(x => html`
+                    <tr>
+                      <td>${x.membre}</td>
+                      <td class="small muted">${x.territoire||'—'}</td>
+                      <td style="min-width:150px">
+                        <div class="jauge" style="margin:0">
+                          <i style=${'width:'+x.pourcent+'%;background:'+
+                            (x.pourcent===100?'var(--valide)':'var(--bleu)')}></i></div>
+                        <span class="small muted">${x.lecons_faites}/${x.total}</span>
+                      </td>
+                      <td class="small">${jour(x.derniere_activite)}</td>
+                      <td>${x.certifie && html`<span class="tag or">Certifié</span>`}</td>
+                    </tr>`)}
+                </tbody>
+              </table>`}
+        </div>`}
+    </div>`;
+}
+
+function EditeurLecon({ lecon, fermer }){
+  const [l, setL] = useState(lecon);
+  const [msg, setMsg] = useState('');
+
+  const appel = async (fn, args, ok) => {
+    const { data, error } = await db.rpc(fn, args);
+    if (error){ setMsg('Erreur : ' + error.message); return false; }
+    if (!data.ok){ setMsg('Erreur : ' + data.message); return false; }
+    if (ok) setMsg(ok);
+    return data;
+  };
+
+  async function recharger(){
+    const { data } = await db.from('lecons').select('*').eq('id', l.id).maybeSingle();
+    if (!data) return;
+    if (data.type === 'quiz'){
+      const { data: qs } = await db.from('questions').select('*')
+        .eq('lecon_id', l.id).order('ordre');
+      const avec = await Promise.all((qs||[]).map(async q => {
+        const { data: rs } = await db.from('reponses').select('*')
+          .eq('question_id', q.id).order('ordre');
+        return { ...q, reponses: rs||[] };
+      }));
+      setL({ ...data, questions: avec });
+    } else setL(data);
+  }
+  useEffect(() => { recharger(); }, []);
+
+  async function enregistrer(champ, valeur){
+    await appel('enregistrer_lecon', {
+      p_id: l.id, p_module: l.module_id, p_titre: champ==='titre'?valeur:l.titre,
+      p_type: l.type, p_contenu: champ==='contenu'?valeur:l.contenu,
+      p_url: champ==='url'?valeur:l.url,
+      p_duree: champ==='duree'?(Number(valeur)||null):l.duree_min
+    }, 'Enregistré.');
+    recharger();
+  }
+
+  return html`
+    <div>
+      <button class="lien-discret" onClick=${fermer}>← Retour au parcours</button>
+      <div class="spread" style="margin-top:12px">
+        <h1 style="font-size:26px">${l.titre}</h1>
+        <span class="tag">${TYPES_LECON[l.type]||l.type}</span>
+      </div>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-top:16px">${msg}</div>`}
+
+      <div class="panneau" style="margin-top:24px">
+        <div class="corps stack">
+          <div class="field"><label>Titre</label>
+            <input defaultValue=${l.titre}
+              onBlur=${e=>enregistrer('titre', e.target.value)} /></div>
+          <div class="field"><label>Durée indicative (min)</label>
+            <input type="number" defaultValue=${l.duree_min||''}
+              onBlur=${e=>enregistrer('duree', e.target.value)} /></div>
+
+          ${l.type === 'lecture' && html`
+            <div class="field"><label>Texte de la leçon</label>
+              <textarea defaultValue=${l.contenu||''} style="min-height:320px;font-size:15px"
+                onBlur=${e=>enregistrer('contenu', e.target.value)} />
+              <p class="small muted" style="margin:6px 0 0">
+                Une ligne vide sépare deux paragraphes. Écrivez court : on lit mal
+                à l\u2019écran.</p>
+            </div>`}
+
+          ${(l.type === 'video' || l.type === 'document') && html`
+            <div class="field"><label>Adresse</label>
+              <input type="url" defaultValue=${l.url||''}
+                onBlur=${e=>enregistrer('url', e.target.value)}
+                placeholder=${l.type==='video'?'https://…':'https://drive.google.com/…'} />
+            </div>
+            <div class="field"><label>Introduction</label>
+              <textarea defaultValue=${l.contenu||''}
+                onBlur=${e=>enregistrer('contenu', e.target.value)} /></div>`}
+        </div>
+      </div>
+
+      ${l.type === 'quiz' && html`
+        <div style="margin-top:24px">
+          ${(l.questions||[]).map((q, iq) => html`
+            <div class="panneau" style="margin-bottom:16px">
+              <div class="tete">
+                <div style="flex:1">
+                  <textarea defaultValue=${q.enonce} style="min-height:52px;
+                    border-color:transparent;font-size:15px;padding:6px"
+                    onBlur=${async e=>{
+                      await appel('enregistrer_question',
+                        { p_id:q.id, p_lecon:l.id, p_enonce:e.target.value, p_aide:q.aide });
+                      recharger();
+                    }} />
+                </div>
+                <div class="row" style="gap:4px">
+                  <button class="btn sm light" disabled=${iq===0}
+                    onClick=${async ()=>{ await appel('deplacer',
+                      {p_table:'question',p_id:q.id,p_sens:-1}); recharger(); }}>↑</button>
+                  <button class="btn sm light"
+                    disabled=${iq===(l.questions||[]).length-1}
+                    onClick=${async ()=>{ await appel('deplacer',
+                      {p_table:'question',p_id:q.id,p_sens:1}); recharger(); }}>↓</button>
+                  <button class="btn sm light" onClick=${async ()=>{
+                    if (!confirm('Supprimer cette question ?')) return;
+                    await appel('supprimer_element',{p_table:'question',p_id:q.id});
+                    recharger();
+                  }}>×</button>
+                </div>
+              </div>
+              <div class="corps">
+                ${(q.reponses||[]).map(r => html`
+                  <div class="row" style="gap:10px;padding:5px 0">
+                    <input type="checkbox" style="width:auto" checked=${r.correcte}
+                      title="Bonne réponse"
+                      onChange=${async e=>{
+                        await appel('enregistrer_reponse',
+                          { p_id:r.id, p_question:q.id, p_texte:r.texte,
+                            p_correcte:e.target.checked });
+                        recharger();
+                      }} />
+                    <input defaultValue=${r.texte} style="flex:1"
+                      onBlur=${async e=>{
+                        await appel('enregistrer_reponse',
+                          { p_id:r.id, p_question:q.id, p_texte:e.target.value,
+                            p_correcte:r.correcte });
+                        recharger();
+                      }} />
+                    <button class="btn sm light" onClick=${async ()=>{
+                      await appel('supprimer_element',{p_table:'reponse',p_id:r.id});
+                      recharger();
+                    }}>×</button>
+                  </div>`)}
+                <button class="btn sm light" style="margin-top:8px"
+                  onClick=${async ()=>{
+                    await appel('enregistrer_reponse',
+                      { p_id:null, p_question:q.id, p_texte:'Nouvelle proposition',
+                        p_correcte:false });
+                    recharger();
+                  }}>+ Proposition</button>
+                <p class="small muted" style="margin:10px 0 0">
+                  Cochez chaque bonne réponse. Une question peut en avoir plusieurs.
+                </p>
+              </div>
+            </div>`)}
+
+          <button class="btn" onClick=${async ()=>{
+            const e = prompt('Énoncé de la question');
+            if (!e) return;
+            await appel('enregistrer_question',
+              { p_id:null, p_lecon:l.id, p_enonce:e, p_aide:null }, 'Question ajoutée.');
+            recharger();
+          }}>Ajouter une question</button>
+        </div>`}
+    </div>`;
+}
+
 /* --- Direction générale : vérifications ------------------------------ */
 function Validation({ p }){
   const [attente, setAttente] = useState([]);
@@ -11353,6 +12017,7 @@ function Espace({ session, sous }){
   const [chemin, setChemin] = useState('');
   const [blocage, setBlocage] = useState(null);
   const [directions, setDirections] = useState([]);
+  const [menu, setMenu] = useState(false);
   const [pret, setPret] = useState(false);
 
   const charger = useCallback(async () => {
@@ -11399,7 +12064,8 @@ function Espace({ session, sous }){
   if (p.statut === 'suspendu') return html`<${EspaceSuspendu} p=${p} />`;
   if (blocage && sous !== 'compte') return html`
     <div class="app">
-      <${Flanc} p=${p} apps=${apps} directions=${directions} page="compte" />
+      <${Flanc} p=${p} apps=${apps} directions=${directions} page="compte"
+        ouvert=${false} fermer=${()=>{}} />
       <main class="contenu"><${DossierIncomplet} p=${p} manques=${blocage} /></main>
     </div>`;
   if (p.statut !== 'actif') return html`<${EnAttente} p=${p} />`;
@@ -11439,6 +12105,8 @@ function Espace({ session, sous }){
     case 'comite':     vue = acces('comite') ? html`<${MonComite} p=${p} />` : refus; break;
     case 'budget':     vue = acces('budget') ? html`<${Budget} p=${p} />` : refus; break;
     case 'publier':    vue = acces('publier') ? html`<${Publier} p=${p} />` : refus; break;
+    case 'editeur':    vue = (admin || (p.postes||[]).length > 0)
+                       ? html`<${EditeurFormations} p=${p} />` : refus; break;
     case 'rapport':    vue = acces('rapport') ? html`<${Rapport} p=${p} />` : refus; break;
     case 'conformite': vue = html`<${Conformite} p=${p} />`; break;
     case 'parcours':   vue = acces('parcours')
@@ -11472,7 +12140,19 @@ function Espace({ session, sous }){
 
   return html`
     <div class="app">
-      <${Flanc} p=${p} apps=${apps} directions=${directions} page=${sous} />
+      <div class="bascule">
+        <${Logo} baseline=${false} />
+        <div class="row" style="gap:10px">
+          <a href="#/espace/compte">
+            <${Portrait} chemin=${p.photo_url} nom=${nomComplet(p)} taille=${38} />
+          </a>
+          <button aria-label="Menu" onClick=${()=>setMenu(true)}>
+            <span class="barres"></span></button>
+        </div>
+      </div>
+      <div class=${'voile'+(menu?' ouvert':'')} onClick=${()=>setMenu(false)}></div>
+      <${Flanc} p=${p} apps=${apps} directions=${directions} page=${sous}
+        ouvert=${menu} fermer=${()=>setMenu(false)} />
       <main class="contenu">${vue}</main>
     </div>`;
 }
