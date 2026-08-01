@@ -15206,6 +15206,660 @@ function BilanAnnee({ e }){
     </div>`;
 }
 
+/* =====================================================================
+   AFFAIRES PUBLIQUES
+   Le fichier des relations extérieures. Trois principes visibles à
+   l'écran : le fichier est fédéral et le partage est gradué ; les
+   personnes sont séparées des organismes ; ce qui mérite la présidence
+   remonte par le canal du cabinet, pas par un second.
+   ===================================================================== */
+const TYPE_CONTACT = { collectivite:'Collectivité', institution:'Institution',
+  entreprise:'Entreprise', fondation:'Fondation', association:'Association',
+  media:'Média', elu:'Élu', autre:'Autre' };
+const STATUT_CONTACT = { prospect:['Prospect',''], contact_pris:['Contact pris','bleu'],
+  en_relation:['En relation','bleu'], partenaire:['Partenaire','vert'],
+  sommeil:['En sommeil','or'], rompu:['Rompue','rouge'] };
+const NATURE_ECHANGE = { rendez_vous:'Rendez-vous', appel:'Appel',
+  courriel:'Courriel', courrier:'Courrier', evenement:'Événement', echange:'Échange' };
+
+function AffairesPubliques({ p }){
+  const [onglet, setOnglet] = useState('fichier');
+  const [tb, setTb] = useState(null);
+  const [contacts, setContacts] = useState([]);
+  const [demandes, setDemandes] = useState([]);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a, b, c] = await Promise.all([
+      db.rpc('tableau_ap'),
+      db.rpc('v_contacts', { p_filtre: 'tous' }),
+      db.rpc('sollicitations_ap_a_traiter', { p_filtre: 'ouvertes' })
+    ]);
+    setTb(a.data); setContacts(b.data||[]); setDemandes(c.data||[]);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const appel = async (fn, args, ok) => {
+    setMsg('');
+    const { data, error } = await db.rpc(fn, args);
+    if (error){ setMsg('Erreur : ' + error.message); return false; }
+    if (data && data.ok === false){ setMsg('Erreur : ' + data.message); return false; }
+    setMsg(ok); charger(); return true;
+  };
+
+  if (!tb) return html`<div class="vide" style="padding:120px">Chargement…</div>`;
+  const service = tb.service;
+
+  const tabs = [['fichier','Le fichier'], ['demandes','Sollicitations']];
+  if (service) tabs.push(['prospection','Prospection']);
+
+  return html`
+    <div>
+      <div class="eyebrow">Affaires publiques</div>
+      <h1 style="margin:6px 0 8px">Ce que la fédération a tissé</h1>
+      <p class="muted" style="max-width:62ch">
+        ${service
+          ? html`Le fichier est fédéral : rien n\u2019en sort sans que vous le
+              partagiez. Un partage vise une structure ou un groupe de travail,
+              jamais une personne \u2014 ce qui est confié survit ainsi au départ
+              de qui l\u2019a demandé. Les interlocuteurs, eux, ne se partagent pas.`
+          : html`Vous voyez ici les contacts que les affaires publiques ont
+              partagés avec votre structure ou vos groupes. Pour en obtenir
+              d\u2019autres, adressez-leur une demande : dites ce que vous cherchez
+              et pourquoi.`}
+      </p>
+
+      <div class="chiffres" style="margin-top:24px">
+        <div><div class="n" style="font-size:28px">${tb.contacts}</div>
+          <div class="l">Contacts accessibles</div></div>
+        <div><div class="n" style="font-size:28px">${tb.partenaires}</div>
+          <div class="l">Partenaires</div></div>
+        ${service && html`
+          <div><div class="n" style="font-size:28px">${tb.prospects}</div>
+            <div class="l">Prospects</div></div>
+          <div><div class="n" style="font-size:28px">${tb.sollicitations}</div>
+            <div class="l">Demandes en attente</div></div>`}
+      </div>
+
+      ${service && tb.suites_en_retard > 0 && html`
+        <div class="alerte" style="margin-top:24px;border-left:3px solid var(--laiton)">
+          ${tb.suites_en_retard} suite(s) annoncée(s) et non tenue(s) à échéance.
+          C\u2019est le premier signe qu\u2019une relation s\u2019éteint.
+        </div>`}
+
+      <div class="row" style="margin:28px 0 24px;gap:0;border-bottom:1px solid var(--filet);
+        flex-wrap:wrap">
+        ${tabs.map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bleu)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>{setOnglet(k);setMsg('')}}>${t}${
+              k==='demandes' && tb.sollicitations ? ' ('+tb.sollicitations+')' : ''}</button>`)}
+      </div>
+
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-bottom:20px">${msg}</div>`}
+
+      ${onglet === 'fichier' && html`<${ApFichier} p=${p} contacts=${contacts}
+        service=${service} appel=${appel} setMsg=${setMsg} recharger=${charger} />`}
+      ${onglet === 'demandes' && html`<${ApSollicitations} demandes=${demandes}
+        contacts=${contacts} service=${service} appel=${appel} />`}
+      ${onglet === 'prospection' && html`<${ApProspection} contacts=${contacts}
+        appel=${appel} />`}
+    </div>`;
+}
+
+/* --- Le fichier --------------------------------------------------------- */
+function ApFichier({ p, contacts, service, appel, setMsg, recharger }){
+  const [q, setQ] = useState('');
+  const [filtre, setFiltre] = useState('tous');
+  const [ouvert, setOuvert] = useState(null);
+  const [edition, setEdition] = useState(false);
+  const [f, setF] = useState({});
+  const [selection, setSelection] = useState([]);
+  const [terr, setTerr] = useState([]);
+
+  useEffect(() => {
+    db.from('territoires').select('id,nom,echelle').order('nom')
+      .then(({data}) => setTerr(data||[]));
+  }, []);
+
+  const liste = contacts.filter(c =>
+    (filtre === 'tous' || c.statut === filtre)
+    && (q === '' || (c.nom + ' ' + (c.sigle||'') + ' ' + (c.objet||''))
+        .toLowerCase().includes(q.toLowerCase())));
+
+  function nouveau(){
+    setF({ nom:'', sigle:'', type:'collectivite', echelle:'departement',
+           territoire_id:'', site:'', adresse:'', objet:'', interet:'',
+           statut:'prospect', reserve:false, motif_reserve:'' });
+    setEdition(true); setOuvert(null);
+  }
+  function editer(c){
+    setF({ ...c, territoire_id: c.territoire_id || '' });
+    setEdition(true);
+  }
+  async function enregistrer(e){
+    e.preventDefault();
+    const ok = await appel('enregistrer_contact', { d: {
+      ...f, territoire_id: f.territoire_id || null } }, 'Contact enregistré.');
+    if (ok) setEdition(false);
+  }
+
+  async function partager(){
+    if (selection.length === 0) return setMsg('Erreur : sélectionnez des contacts.');
+    const t = prompt('Identifiant du territoire destinataire (laisser vide pour un groupe)');
+    const g = t ? null : prompt('Identifiant du groupe de travail destinataire');
+    if (!t && !g) return;
+    const m = prompt('Motif du partage');
+    const ok = await appel('partager_contacts', {
+      p_contacts: selection, p_territoire: t || null, p_groupe: g || null,
+      p_portee: 'fiche', p_motif: m || null, p_expire: null
+    }, 'Partage enregistré.');
+    if (ok) setSelection([]);
+  }
+
+  return html`
+    <div>
+      <div class="row" style="gap:12px;margin-bottom:20px;flex-wrap:wrap;align-items:center">
+        <input value=${q} placeholder="Rechercher un organisme"
+          style="flex:1;min-width:200px" onInput=${e=>setQ(e.target.value)} />
+        <select value=${filtre} style="width:auto"
+          onChange=${e=>setFiltre(e.target.value)}>
+          <option value="tous">Tous les états</option>
+          ${Object.entries(STATUT_CONTACT).map(([k,v]) =>
+            html`<option value=${k}>${v[0]}</option>`)}
+        </select>
+        ${service && html`
+          <button class="btn sm" onClick=${nouveau}>Ajouter</button>
+          ${selection.length > 0 && html`
+            <button class="btn sm light" onClick=${partager}>
+              Partager ${selection.length}</button>`}`}
+      </div>
+
+      ${edition && html`
+        <form class="panneau" style="margin-bottom:24px" onSubmit=${enregistrer}>
+          <div class="tete spread">
+            <h3 style="font-size:17px">${f.id ? 'Modifier' : 'Nouvel organisme'}</h3>
+            <button type="button" class="btn sm light"
+              onClick=${()=>setEdition(false)}>Fermer</button>
+          </div>
+          <div class="corps stack">
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:2;min-width:200px;margin:0">
+                <label>Nom</label>
+                <input value=${f.nom||''}
+                  onInput=${e=>setF(o=>({...o,nom:e.target.value}))} /></div>
+              <div class="field" style="flex:0 0 120px;margin:0">
+                <label>Sigle</label>
+                <input value=${f.sigle||''}
+                  onInput=${e=>setF(o=>({...o,sigle:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:150px;margin:0">
+                <label>Type</label>
+                <select value=${f.type} onChange=${e=>setF(o=>({...o,type:e.target.value}))}>
+                  ${Object.entries(TYPE_CONTACT).map(([k,v]) =>
+                    html`<option value=${k}>${v}</option>`)}
+                </select></div>
+            </div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:150px;margin:0">
+                <label>Échelle</label>
+                <select value=${f.echelle} onChange=${e=>setF(o=>({...o,echelle:e.target.value}))}>
+                  <option value="national">Nationale</option>
+                  <option value="region">Régionale</option>
+                  <option value="departement">Départementale</option>
+                  <option value="local">Locale</option>
+                </select></div>
+              <div class="field" style="flex:2;min-width:180px;margin:0">
+                <label>Territoire concerné</label>
+                <select value=${f.territoire_id}
+                  onChange=${e=>setF(o=>({...o,territoire_id:e.target.value}))}>
+                  <option value="">— Aucun —</option>
+                  ${terr.map(t => html`<option value=${t.id}>${t.nom}</option>`)}
+                </select></div>
+              <div class="field" style="flex:1;min-width:150px;margin:0">
+                <label>État de la relation</label>
+                <select value=${f.statut} onChange=${e=>setF(o=>({...o,statut:e.target.value}))}>
+                  ${Object.entries(STATUT_CONTACT).map(([k,v]) =>
+                    html`<option value=${k}>${v[0]}</option>`)}
+                </select></div>
+            </div>
+            <div class="field"><label>Ce qu\u2019il fait</label>
+              <input value=${f.objet||''}
+                onInput=${e=>setF(o=>({...o,objet:e.target.value}))} /></div>
+            <div class="field"><label>Ce qu\u2019il représente pour nous</label>
+              <textarea value=${f.interet||''} style="min-height:60px"
+                onInput=${e=>setF(o=>({...o,interet:e.target.value}))}></textarea></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;margin:0"><label>Site</label>
+                <input value=${f.site||''}
+                  onInput=${e=>setF(o=>({...o,site:e.target.value}))} /></div>
+              <div class="field" style="flex:1;margin:0"><label>Adresse</label>
+                <input value=${f.adresse||''}
+                  onInput=${e=>setF(o=>({...o,adresse:e.target.value}))} /></div>
+            </div>
+            <label class="row" style="gap:8px;align-items:center">
+              <input type="checkbox" style="width:auto" checked=${!!f.reserve}
+                onChange=${e=>setF(o=>({...o,reserve:e.target.checked}))} />
+              <span class="small">Réserver au service \u2014 ce contact ne pourra
+                être inclus dans aucun partage</span>
+            </label>
+            ${f.reserve && html`
+              <div class="field" style="margin:0"><label>Pourquoi</label>
+                <input value=${f.motif_reserve||''}
+                  placeholder="Négociation en cours, litige, personne publique…"
+                  onInput=${e=>setF(o=>({...o,motif_reserve:e.target.value}))} /></div>`}
+            <div><button class="btn">Enregistrer</button></div>
+          </div>
+        </form>`}
+
+      <div class="panneau">
+        ${liste.length === 0
+          ? html`<div class="corps muted">
+              ${service ? 'Aucun contact ne correspond.'
+                : 'Aucun contact ne vous a été partagé pour l\u2019instant.'}</div>`
+          : liste.map(c => html`
+            <div key=${c.id}>
+              <div class="ligne" style="align-items:flex-start">
+                ${service && html`
+                  <input type="checkbox" style="width:auto;margin-top:4px"
+                    checked=${selection.includes(c.id)} disabled=${c.reserve}
+                    onChange=${()=>setSelection(s => s.includes(c.id)
+                      ? s.filter(x=>x!==c.id) : [...s, c.id])} />`}
+                <div style="flex:1;min-width:240px;cursor:pointer"
+                  onClick=${()=>setOuvert(ouvert===c.id?null:c.id)}>
+                  <div class="row" style="gap:8px;flex-wrap:wrap">
+                    <span style="font-weight:600">${c.nom}</span>
+                    ${c.sigle && html`<span class="mono muted small">${c.sigle}</span>`}
+                    <span class=${'tag '+(STATUT_CONTACT[c.statut]||['',''])[1]}>
+                      ${(STATUT_CONTACT[c.statut]||[c.statut])[0]}</span>
+                    ${c.reserve && html`<span class="tag rouge">Réservé</span>`}
+                  </div>
+                  <div class="small muted" style="margin-top:3px">
+                    ${TYPE_CONTACT[c.type] || c.type}
+                    ${c.territoire ? ' · ' + c.territoire : ''}
+                    ${c.dernier_echange ? ' · dernier échange ' + jour(c.dernier_echange)
+                      : ' · aucun échange consigné'}
+                    ${service && c.partages > 0 ? ' · partagé ' + c.partages + ' fois' : ''}
+                  </div>
+                  ${c.objet && html`<div class="small" style="margin-top:4px">${c.objet}</div>`}
+                </div>
+                ${service && html`
+                  <button class="btn sm light" onClick=${()=>editer(c)}>Modifier</button>`}
+              </div>
+              ${ouvert === c.id && html`
+                <${ApContact} contact=${c} service=${service}
+                  appel=${appel} recharger=${recharger} />`}
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- Le détail d'un contact -------------------------------------------- */
+function ApContact({ contact, service, appel, recharger }){
+  const [gens, setGens] = useState([]);
+  const [echanges, setEchanges] = useState([]);
+  const [ajout, setAjout] = useState(null);
+  const [e, setE] = useState({ date_echange:'', nature:'rendez_vous', objet:'',
+                               compte_rendu:'', suite:'', echeance:'' });
+  const [i, setI] = useState({ prenom:'', nom:'', fonction:'', email:'', telephone:'' });
+
+  const charger = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      db.from('contact_personnes').select('*').eq('contact_id', contact.id)
+        .eq('actif', true).order('nom'),
+      db.from('contact_echanges').select('*').eq('contact_id', contact.id)
+        .order('date_echange', { ascending:false })
+    ]);
+    setGens(a.data||[]); setEchanges(b.data||[]);
+  }, [contact.id]);
+  useEffect(() => { charger(); }, [charger]);
+
+  return html`
+    <div class="corps" style="background:var(--papier);border-bottom:1px solid var(--filet)">
+      ${contact.interet && html`
+        <p class="small" style="margin:0 0 16px"><strong>Ce qu\u2019il représente</strong> —
+          ${contact.interet}</p>`}
+      ${contact.reserve && html`
+        <p class="small" style="color:var(--rouge);margin:0 0 16px">
+          Contact réservé au service : il ne peut être inclus dans aucun partage.</p>`}
+
+      ${gens.length > 0 && html`
+        <div style="margin-bottom:18px">
+          <div class="small muted" style="margin-bottom:8px">Interlocuteurs</div>
+          ${gens.map(g => html`
+            <div class="small" key=${g.id} style="margin-bottom:6px">
+              <strong>${[g.prenom,g.nom].filter(Boolean).join(' ')}</strong>
+              ${g.fonction ? ' — ' + g.fonction : ''}
+              ${g.email ? html` · <a href=${'mailto:'+g.email}>${g.email}</a>` : ''}
+              ${g.telephone ? ' · ' + g.telephone : ''}
+            </div>`)}
+        </div>`}
+
+      ${!service && html`
+        <p class="small muted" style="margin:0 0 16px">
+          Les interlocuteurs nommément ne sortent pas du service : un partage
+          porte sur l\u2019organisme, pas sur les personnes qui y travaillent.
+          Passez par une sollicitation pour être mis en relation.
+        </p>`}
+
+      <div class="spread" style="margin-bottom:10px">
+        <div class="small muted">Échanges consignés</div>
+        ${service && html`
+          <div class="row" style="gap:6px">
+            <button class="btn sm light" onClick=${()=>setAjout(ajout==='e'?null:'e')}>
+              Consigner un échange</button>
+            <button class="btn sm light" onClick=${()=>setAjout(ajout==='i'?null:'i')}>
+              Ajouter un interlocuteur</button>
+          </div>`}
+      </div>
+
+      ${ajout === 'e' && html`
+        <form class="stack" style="margin-bottom:16px" onSubmit=${async ev=>{
+          ev.preventDefault();
+          const ok = await appel('consigner_echange', { d: { ...e,
+            contact_id: contact.id, date_echange: e.date_echange || null,
+            echeance: e.echeance || null } }, 'Échange consigné.');
+          if (ok){ setAjout(null); setE({ date_echange:'', nature:'rendez_vous',
+            objet:'', compte_rendu:'', suite:'', echeance:'' }); charger(); }
+        }}>
+          <div class="row" style="gap:12px;align-items:flex-start">
+            <div class="field" style="flex:0 0 150px;margin:0"><label>Date</label>
+              <input type="date" value=${e.date_echange}
+                onInput=${ev=>setE(o=>({...o,date_echange:ev.target.value}))} /></div>
+            <div class="field" style="flex:0 0 160px;margin:0"><label>Nature</label>
+              <select value=${e.nature} onChange=${ev=>setE(o=>({...o,nature:ev.target.value}))}>
+                ${Object.entries(NATURE_ECHANGE).map(([k,v]) =>
+                  html`<option value=${k}>${v}</option>`)}
+              </select></div>
+            <div class="field" style="flex:1;min-width:180px;margin:0"><label>Objet</label>
+              <input value=${e.objet}
+                onInput=${ev=>setE(o=>({...o,objet:ev.target.value}))} /></div>
+          </div>
+          <div class="field"><label>Compte rendu</label>
+            <textarea value=${e.compte_rendu} style="min-height:70px"
+              onInput=${ev=>setE(o=>({...o,compte_rendu:ev.target.value}))}></textarea></div>
+          <div class="row" style="gap:12px;align-items:flex-start">
+            <div class="field" style="flex:1;margin:0"><label>Suite à donner</label>
+              <input value=${e.suite}
+                onInput=${ev=>setE(o=>({...o,suite:ev.target.value}))} /></div>
+            <div class="field" style="flex:0 0 150px;margin:0"><label>Pour le</label>
+              <input type="date" value=${e.echeance}
+                onInput=${ev=>setE(o=>({...o,echeance:ev.target.value}))} /></div>
+          </div>
+          <div><button class="btn sm">Consigner</button></div>
+        </form>`}
+
+      ${ajout === 'i' && html`
+        <form class="stack" style="margin-bottom:16px" onSubmit=${async ev=>{
+          ev.preventDefault();
+          const ok = await appel('enregistrer_interlocuteur',
+            { d: { ...i, contact_id: contact.id } }, 'Interlocuteur enregistré.');
+          if (ok){ setAjout(null); setI({ prenom:'', nom:'', fonction:'',
+            email:'', telephone:'' }); charger(); }
+        }}>
+          <div class="row" style="gap:12px;align-items:flex-start">
+            <div class="field" style="flex:1;margin:0"><label>Prénom</label>
+              <input value=${i.prenom}
+                onInput=${ev=>setI(o=>({...o,prenom:ev.target.value}))} /></div>
+            <div class="field" style="flex:1;margin:0"><label>Nom</label>
+              <input value=${i.nom}
+                onInput=${ev=>setI(o=>({...o,nom:ev.target.value}))} /></div>
+            <div class="field" style="flex:1;margin:0"><label>Fonction</label>
+              <input value=${i.fonction}
+                onInput=${ev=>setI(o=>({...o,fonction:ev.target.value}))} /></div>
+          </div>
+          <div class="row" style="gap:12px;align-items:flex-start">
+            <div class="field" style="flex:1;margin:0"><label>Courriel</label>
+              <input value=${i.email}
+                onInput=${ev=>setI(o=>({...o,email:ev.target.value}))} /></div>
+            <div class="field" style="flex:1;margin:0"><label>Téléphone</label>
+              <input value=${i.telephone}
+                onInput=${ev=>setI(o=>({...o,telephone:ev.target.value}))} /></div>
+          </div>
+          <div><button class="btn sm">Enregistrer</button></div>
+        </form>`}
+
+      ${echanges.length === 0
+        ? html`<div class="small muted">Aucun échange consigné.</div>`
+        : echanges.map(x => html`
+          <div class="small" key=${x.id} style="margin-bottom:12px;padding-left:12px;
+            border-left:2px solid var(--filet)">
+            <div><strong>${jour(x.date_echange)}</strong> ·
+              ${NATURE_ECHANGE[x.nature] || x.nature} · ${x.objet}</div>
+            ${x.compte_rendu && html`<div class="muted" style="margin-top:2px">
+              ${x.compte_rendu}</div>`}
+            ${x.suite && html`<div style=${'margin-top:2px;color:'
+              + (x.echeance && new Date(x.echeance) < new Date()
+                 ? 'var(--rouge)' : 'var(--laiton)')}>
+              Suite : ${x.suite}${x.echeance ? ' — pour le ' + jour(x.echeance) : ''}</div>`}
+          </div>`)}
+    </div>`;
+}
+
+/* --- Les sollicitations du réseau -------------------------------------- */
+function ApSollicitations({ demandes, contacts, service, appel }){
+  const [ouvert, setOuvert] = useState(false);
+  const [f, setF] = useState({ objet:'', besoin:'', echeance:'' });
+  const [choix, setChoix] = useState({});
+
+  async function demander(e){
+    e.preventDefault();
+    const ok = await appel('solliciter_ap', {
+      p_objet: f.objet, p_besoin: f.besoin, p_groupe: null,
+      p_echeance: f.echeance || null
+    }, 'Demande transmise aux affaires publiques.');
+    if (ok){ setF({ objet:'', besoin:'', echeance:'' }); setOuvert(false); }
+  }
+
+  async function repondre(d, statut){
+    const r = prompt(statut === 'satisfaite'
+      ? 'Réponse au demandeur (obligatoire)'
+      : 'Pourquoi cette demande est-elle écartée ? (obligatoire)');
+    if (!r) return;
+    await appel('traiter_sollicitation', {
+      p_id: d.id, p_statut: statut, p_reponse: r,
+      p_contacts: statut === 'satisfaite' ? (choix[d.id] || []) : []
+    }, statut === 'satisfaite'
+      ? 'Réponse envoyée et contacts partagés.' : 'Demande écartée.');
+    setChoix(c => ({ ...c, [d.id]: [] }));
+  }
+
+  const partageables = contacts.filter(c => !c.reserve);
+
+  return html`
+    <div>
+      ${!service && html`
+        <div class="panneau" style="margin-bottom:24px">
+          <div class="tete spread">
+            <h3 style="font-size:17px">Demander un contact</h3>
+            <button class="btn sm" onClick=${()=>setOuvert(!ouvert)}>
+              ${ouvert ? 'Fermer' : 'Écrire'}</button>
+          </div>
+          ${ouvert
+            ? html`<form class="corps stack" onSubmit=${demander}>
+                <div class="field" style="margin:0"><label>Objet</label>
+                  <input value=${f.objet} placeholder="Partenaire pour le forum de septembre"
+                    onInput=${e=>setF(o=>({...o,objet:e.target.value}))} /></div>
+                <div class="field"><label>Ce que vous cherchez, et pourquoi</label>
+                  <textarea value=${f.besoin} style="min-height:90px"
+                    placeholder="Plus vous êtes précis, plus ce qu\u2019on vous partagera sera utile."
+                    onInput=${e=>setF(o=>({...o,besoin:e.target.value}))}></textarea></div>
+                <div class="field" style="max-width:200px"><label>Pour quand</label>
+                  <input type="date" value=${f.echeance}
+                    onInput=${e=>setF(o=>({...o,echeance:e.target.value}))} /></div>
+                <div><button class="btn">Transmettre</button></div>
+              </form>`
+            : html`<div class="corps small muted">
+                Le service dispose du fichier fédéral. Dites ce que vous cherchez
+                et pourquoi : il vous partagera ce qu\u2019il juge utile, ou vous
+                expliquera pourquoi il ne le fait pas.</div>`}
+        </div>`}
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">
+          ${service ? 'Demandes du réseau' : 'Mes demandes'}</h3>
+          <span class="tag">${demandes.length}</span></div>
+        ${demandes.length === 0
+          ? html`<div class="corps muted">Rien en attente.</div>`
+          : demandes.map(d => html`
+            <div key=${d.id}>
+              <div class="ligne" style="align-items:flex-start">
+                <div style="flex:1;min-width:250px">
+                  <div class="row" style="gap:8px;flex-wrap:wrap">
+                    <span style="font-weight:600">${d.objet}</span>
+                    ${d.echeance && html`<span class=${'tag '+(
+                      new Date(d.echeance) < new Date() ? 'rouge' : 'or')}>
+                      pour le ${jour(d.echeance)}</span>`}
+                  </div>
+                  <div class="small muted" style="margin-top:3px">
+                    ${d.demandeur} · ${d.fonction}
+                    ${d.territoire ? ' · ' + d.territoire : ''}
+                    ${d.groupe ? ' · ' + d.groupe : ''} · ${jour(d.cree_le)}
+                  </div>
+                  <div class="small" style="margin-top:6px">${d.besoin}</div>
+                  ${d.reponse && html`<div class="small" style="margin-top:6px;
+                    color:var(--laiton)">Réponse : ${d.reponse}</div>`}
+                </div>
+                ${service && html`
+                  <div class="row" style="gap:6px">
+                    <button class="btn sm" onClick=${()=>repondre(d,'satisfaite')}>
+                      Répondre${(choix[d.id]||[]).length
+                        ? ' et partager ' + choix[d.id].length : ''}</button>
+                    <button class="btn sm light" onClick=${()=>repondre(d,'ecartee')}>
+                      Écarter</button>
+                  </div>`}
+              </div>
+              ${service && html`
+                <div class="corps" style="background:var(--papier);
+                  border-bottom:1px solid var(--filet);padding-top:12px">
+                  <div class="small muted" style="margin-bottom:8px">
+                    Contacts à partager avec ${d.groupe || d.territoire || 'le demandeur'}</div>
+                  <div class="row" style="gap:6px;flex-wrap:wrap;max-height:130px;
+                    overflow-y:auto">
+                    ${partageables.map(c => html`
+                      <button type="button" key=${c.id}
+                        class=${'btn sm ' + ((choix[d.id]||[]).includes(c.id) ? '' : 'light')}
+                        onClick=${()=>setChoix(x => {
+                          const l = x[d.id] || [];
+                          return { ...x, [d.id]: l.includes(c.id)
+                            ? l.filter(y=>y!==c.id) : [...l, c.id] };
+                        })}>${c.sigle || c.nom}</button>`)}
+                  </div>
+                </div>`}
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- La prospection ----------------------------------------------------- */
+function ApProspection({ contacts, appel }){
+  const [l, setL] = useState([]);
+  const [ouvert, setOuvert] = useState(false);
+  const [f, setF] = useState({ intitule:'', cible:'', contact_id:'', objectif:'',
+                               enjeu:'', echeance:'', etat:'ouverte' });
+
+  const charger = useCallback(() =>
+    db.from('pistes_ap').select('*').order('echeance', { nullsFirst:false })
+      .then(({data}) => setL(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const ETAT = { ouverte:['Ouverte','bleu'], en_cours:['En cours','or'],
+                 aboutie:['Aboutie','vert'], abandonnee:['Abandonnée','rouge'] };
+
+  async function enregistrer(e){
+    e.preventDefault();
+    const ok = await appel('enregistrer_piste', { d: { ...f,
+      contact_id: f.contact_id || null, echeance: f.echeance || null } },
+      'Piste enregistrée.');
+    if (ok){ setF({ intitule:'', cible:'', contact_id:'', objectif:'', enjeu:'',
+      echeance:'', etat:'ouverte' }); setOuvert(false); charger(); }
+  }
+
+  return html`
+    <div>
+      <div class="spread" style="margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <p class="muted" style="max-width:56ch;margin:0">
+          Un contact est un fait, une piste est une intention. On y écrit ce
+          qu\u2019on cherche à obtenir, de qui, pour quand — de sorte que la
+          prospection ne dépende pas de la mémoire d\u2019une seule personne.
+        </p>
+        <button class="btn sm" onClick=${()=>setOuvert(!ouvert)}>
+          ${ouvert ? 'Fermer' : 'Ouvrir une piste'}</button>
+      </div>
+
+      ${ouvert && html`
+        <form class="panneau" style="margin-bottom:24px" onSubmit=${enregistrer}>
+          <div class="tete"><h3 style="font-size:17px">Nouvelle piste</h3></div>
+          <div class="corps stack">
+            <div class="field" style="margin:0"><label>Intitulé</label>
+              <input value=${f.intitule} placeholder="Convention avec la région"
+                onInput=${e=>setF(o=>({...o,intitule:e.target.value}))} /></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:160px;margin:0"><label>Cible</label>
+                <input value=${f.cible}
+                  onInput=${e=>setF(o=>({...o,cible:e.target.value}))} /></div>
+              <div class="field" style="flex:1;min-width:180px;margin:0">
+                <label>Contact rattaché</label>
+                <select value=${f.contact_id}
+                  onChange=${e=>setF(o=>({...o,contact_id:e.target.value}))}>
+                  <option value="">— Aucun —</option>
+                  ${contacts.map(c => html`<option value=${c.id}>${c.nom}</option>`)}
+                </select></div>
+              <div class="field" style="flex:0 0 150px;margin:0"><label>Échéance</label>
+                <input type="date" value=${f.echeance}
+                  onInput=${e=>setF(o=>({...o,echeance:e.target.value}))} /></div>
+            </div>
+            <div class="field"><label>Ce qu\u2019on cherche à obtenir</label>
+              <textarea value=${f.objectif} style="min-height:60px"
+                onInput=${e=>setF(o=>({...o,objectif:e.target.value}))}></textarea></div>
+            <div class="field"><label>Pourquoi cela compte</label>
+              <textarea value=${f.enjeu} style="min-height:60px"
+                onInput=${e=>setF(o=>({...o,enjeu:e.target.value}))}></textarea></div>
+            <div><button class="btn">Enregistrer</button></div>
+          </div>
+        </form>`}
+
+      <div class="panneau">
+        ${l.length === 0
+          ? html`<div class="corps muted">Aucune piste ouverte.</div>`
+          : l.map(x => html`
+            <div class="ligne" key=${x.id} style="align-items:flex-start">
+              <div style="flex:1;min-width:250px">
+                <div class="row" style="gap:8px;flex-wrap:wrap">
+                  <span style="font-weight:600">${x.intitule}</span>
+                  <span class=${'tag '+(ETAT[x.etat]||['',''])[1]}>
+                    ${(ETAT[x.etat]||[x.etat])[0]}</span>
+                  ${x.echeance && ['ouverte','en_cours'].includes(x.etat)
+                    && new Date(x.echeance) < new Date()
+                    && html`<span class="tag rouge">Échue</span>`}
+                </div>
+                <div class="small muted" style="margin-top:3px">
+                  ${x.cible || '—'}${x.echeance ? ' · pour le ' + jour(x.echeance) : ''}
+                </div>
+                <div class="small" style="margin-top:6px">${x.objectif}</div>
+                ${x.enjeu && html`<div class="small muted" style="margin-top:3px">
+                  ${x.enjeu}</div>`}
+              </div>
+              <div class="row" style="gap:6px">
+                ${['ouverte','en_cours'].includes(x.etat) && html`
+                  <button class="btn sm light" onClick=${async ()=>{
+                    const c = prompt('Ce qui a été obtenu');
+                    if (c) { await appel('enregistrer_piste',
+                      { d: { ...x, etat:'aboutie', conclusion:c } }, 'Piste aboutie.');
+                      charger(); }
+                  }}>Aboutie</button>
+                  <button class="btn sm light" onClick=${async ()=>{
+                    const c = prompt('Pourquoi on abandonne');
+                    if (c) { await appel('enregistrer_piste',
+                      { d: { ...x, etat:'abandonnee', conclusion:c } }, 'Piste close.');
+                      charger(); }
+                  }}>Abandonner</button>`}
+              </div>
+            </div>`)}
+      </div>
+    </div>`;
+}
+
 function Espace({ session, sous }){
   const [p, setP] = useState(null);
   const [apps, setApps] = useState([]);
@@ -15308,6 +15962,8 @@ function Espace({ session, sous }){
     case 'mandats':    vue = html`<${MesMandats} p=${p} recharger=${charger} />`; break;
     case 'cabinet':    vue = acces('cabinet') ? html`<${Cabinet} p=${p} />` : refus; break;
     case 'recueil':    vue = html`<${Recueil} />`; break;
+    case 'affaires_publiques': vue = acces('affaires_publiques')
+                       ? html`<${AffairesPubliques} p=${p} />` : refus; break;
     case 'compte':     vue = html`<${MonCompte} p=${p} recharger=${charger} />`; break;
     case 'mon-dossier':vue = html`<${MonDossier} p=${p} entier=${true} />`; break;
     case 'referentiel':vue = html`<${Referentiel} />`; break;
