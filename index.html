@@ -7271,6 +7271,10 @@ function Chancellerie({ p }){
             membres. Rien n\u2019est stocké : personne ne perd de points, les
             équilibres changent simplement.
           </p>
+
+          <${BaremeEchelons} setMsg=${setMsg} />
+
+          <h3 style="font-size:17px;margin-bottom:12px">Valeur des contributions</h3>
           <div class="panneau">
             ${bareme.map(b => html`
               <div class="ligne">
@@ -16067,6 +16071,674 @@ function InvestissementsAOrdonnancer({ setMsg }){
     </div>`;
 }
 
+/* =====================================================================
+   LA GESTION LOCALE
+   Voir avant de décider. Quatre volets : la fiche du territoire, les
+   accès du périmètre, les actes locaux, et — pour qui pilote le réseau
+   — le plan d'ensemble.
+
+   Ce que le national délègue est une donnée, pas une règle codée :
+   l'écran affiche la liste et dit, pour chaque application, pourquoi
+   elle est ouvrable ou non.
+   ===================================================================== */
+function GestionLocale({ p }){
+  const [onglet, setOnglet] = useState('fiche');
+  const [terr, setTerr] = useState(p.territoire_id || null);
+  const [fiche, setFiche] = useState(null);
+  const [msg, setMsg] = useState('');
+  const admin = p.niveau >= 80;
+
+  const charger = useCallback(async () => {
+    if (!terr) return;
+    const { data } = await db.rpc('fiche_territoire', { p_territoire: terr });
+    setFiche(data);
+  }, [terr]);
+  useEffect(() => { charger(); }, [charger]);
+
+  const appel = async (fn, args, ok) => {
+    setMsg('');
+    const { data, error } = await db.rpc(fn, args);
+    if (error){ setMsg('Erreur : ' + error.message); return false; }
+    if (data && data.ok === false){ setMsg('Erreur : ' + data.message); return false; }
+    setMsg(ok); charger(); return true;
+  };
+
+  if (!terr) return html`
+    <div class="vide" style="padding:80px">
+      Votre profil n\u2019est rattaché à aucun territoire.
+      <div class="small muted" style="margin-top:10px">
+        Sans rattachement, il n\u2019y a pas de structure à gérer.</div>
+    </div>`;
+
+  const tabs = [['fiche','La structure'], ['acces','Accès du périmètre'],
+                ['actes','Actes locaux']];
+  if (admin) tabs.push(['plan','Plan du réseau']);
+
+  return html`
+    <div>
+      <div class="eyebrow">Gestion de la structure</div>
+      <h1 style="margin:6px 0 8px">${fiche?.nom || 'Ma structure'}</h1>
+      <p class="muted" style="max-width:62ch">
+        Ce qui relève de votre ressort : l\u2019identité de la structure, les accès
+        de ses membres, et les décisions que vous prenez en son nom. Ce que la
+        fédération vous délègue est écrit noir sur blanc — comme ce qu\u2019elle
+        ne vous délègue pas.
+      </p>
+
+      <div class="row" style="margin:28px 0 24px;gap:0;border-bottom:1px solid var(--filet);
+        flex-wrap:wrap">
+        ${tabs.map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>{setOnglet(k);setMsg('')}}>${t}</button>`)}
+      </div>
+
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin-bottom:20px">${msg}</div>`}
+
+      ${onglet === 'fiche' && html`<${GlFiche} fiche=${fiche} appel=${appel} />`}
+      ${onglet === 'acces' && html`<${GlAcces} p=${p} territoire=${terr}
+        appel=${appel} setMsg=${setMsg} />`}
+      ${onglet === 'actes' && html`<${GlActes} p=${p} territoire=${terr}
+        appel=${appel} setMsg=${setMsg} />`}
+      ${onglet === 'plan' && html`<${GlPlan} appel=${appel} setMsg=${setMsg}
+        ouvrir=${t=>{setTerr(t);setOnglet('fiche')}} />`}
+    </div>`;
+}
+
+/* --- La fiche d'identité ------------------------------------------------ */
+function GlFiche({ fiche, appel }){
+  const [f, setF] = useState(null);
+  const [edit, setEdit] = useState(false);
+  useEffect(() => { if (fiche) setF({ ...fiche }); }, [fiche]);
+  if (!fiche || !f) return html`<div class="vide">Chargement…</div>`;
+
+  const pts = fiche.points || {};
+  const ETAT_T = { projet:['Projet','or'], constitution:['En constitution','or'],
+    active:['Active','vert'], sommeil:['En sommeil',''], dissoute:['Dissoute','rouge'] };
+
+  return html`
+    <div>
+      <div class="chiffres" style="margin-bottom:24px">
+        <div><div class="n" style="font-size:28px">${fiche.effectif}</div>
+          <div class="l">Adhérents actifs</div></div>
+        <div><div class="n" style="font-size:28px">${fiche.encadrants}</div>
+          <div class="l">Encadrants</div></div>
+        <div><div class="n" style="font-size:28px">${pts.disponible ?? 0}</div>
+          <div class="l">Points disponibles</div></div>
+        <div><div class="n" style="font-size:28px">${fiche.actes_locaux}</div>
+          <div class="l">Actes locaux en vigueur</div></div>
+      </div>
+
+      ${fiche.en_attente > 0 && html`
+        <div class="alerte" style="margin-bottom:24px">
+          ${fiche.en_attente} inscription(s) en attente de vérification sur votre
+          périmètre. <a href="#/espace/parcours">Les accompagner</a>
+        </div>`}
+
+      <div class="panneau" style="margin-bottom:24px">
+        <div class="tete spread">
+          <h3 style="font-size:17px">Identité</h3>
+          <div class="row" style="gap:8px">
+            <span class=${'tag '+(ETAT_T[fiche.etat]||['',''])[1]}>
+              ${(ETAT_T[fiche.etat]||[fiche.etat])[0]}</span>
+            <button class="btn sm light" onClick=${()=>setEdit(!edit)}>
+              ${edit ? 'Fermer' : 'Modifier'}</button>
+          </div>
+        </div>
+        ${edit
+          ? html`<form class="corps stack" onSubmit=${async e=>{
+              e.preventDefault();
+              const ok = await appel('regler_territoire',
+                { p_territoire: fiche.id, d: {
+                  nom: f.nom, academie: f.academie, siege: f.siege,
+                  courriel: f.courriel, telephone: f.telephone,
+                  population: f.population, note: f.note, creee_le: f.creee_le } },
+                'Fiche mise à jour.');
+              if (ok) setEdit(false);
+            }}>
+              <div class="row" style="gap:16px;align-items:flex-start">
+                <div class="field" style="flex:2;min-width:200px;margin:0">
+                  <label>Nom</label>
+                  <input value=${f.nom||''}
+                    onInput=${e=>setF(o=>({...o,nom:e.target.value}))} /></div>
+                <div class="field" style="flex:1;min-width:150px;margin:0">
+                  <label>Académie</label>
+                  <input value=${f.academie||''} placeholder="Toulouse, Créteil…"
+                    onInput=${e=>setF(o=>({...o,academie:e.target.value}))} /></div>
+                <div class="field" style="flex:0 0 140px;margin:0">
+                  <label>Constituée le</label>
+                  <input type="date" value=${f.creee_le||''}
+                    onInput=${e=>setF(o=>({...o,creee_le:e.target.value}))} /></div>
+              </div>
+              <div class="field"><label>Siège</label>
+                <input value=${f.siege||''}
+                  onInput=${e=>setF(o=>({...o,siege:e.target.value}))} /></div>
+              <div class="row" style="gap:16px;align-items:flex-start">
+                <div class="field" style="flex:1;margin:0"><label>Courriel</label>
+                  <input value=${f.courriel||''}
+                    onInput=${e=>setF(o=>({...o,courriel:e.target.value}))} /></div>
+                <div class="field" style="flex:1;margin:0"><label>Téléphone</label>
+                  <input value=${f.telephone||''}
+                    onInput=${e=>setF(o=>({...o,telephone:e.target.value}))} /></div>
+                <div class="field" style="flex:0 0 140px;margin:0">
+                  <label>Population</label>
+                  <input type="number" value=${f.population||''}
+                    onInput=${e=>setF(o=>({...o,population:e.target.value}))} /></div>
+              </div>
+              <div class="field"><label>Note interne</label>
+                <textarea value=${f.note||''} style="min-height:60px"
+                  onInput=${e=>setF(o=>({...o,note:e.target.value}))}></textarea></div>
+              <div><button class="btn">Enregistrer</button></div>
+            </form>`
+          : html`
+            <div class="ligne"><span class="muted">Code</span>
+              <span class="mono">${fiche.code}</span></div>
+            <div class="ligne"><span class="muted">Rattachement</span>
+              <span>${fiche.parent || '—'}</span></div>
+            <div class="ligne"><span class="muted">Académie</span>
+              <span>${fiche.academie || '—'}</span></div>
+            <div class="ligne"><span class="muted">Siège</span>
+              <span>${fiche.siege || '—'}</span></div>
+            <div class="ligne"><span class="muted">Contact</span>
+              <span>${[fiche.courriel, fiche.telephone].filter(Boolean).join(' · ') || '—'}</span></div>
+            <div class="ligne"><span class="muted">Constituée le</span>
+              <span>${fiche.creee_le ? jour(fiche.creee_le) : '—'}</span></div>
+            ${fiche.note && html`<div class="corps small muted">${fiche.note}</div>`}`}
+      </div>
+
+      <div class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">Bureau</h3></div>
+        ${(fiche.bureau||[]).length === 0
+          ? html`<div class="corps muted">
+              Aucun mandat en cours. Une structure sans bureau ne peut ni
+              engager de dépense ni se faire représenter.
+              <a href="#/espace/comite">Constituer le bureau</a></div>`
+          : fiche.bureau.map((b,i) => html`
+            <div class="ligne" key=${i}>
+              <div style="flex:1;min-width:200px">
+                <div>${b.membre}</div>
+                <div class="small muted">${b.poste}</div>
+              </div>
+              <span class="small muted">depuis le ${jour(b.depuis)}</span>
+            </div>`)}
+      </div>
+
+      ${(fiche.enfants||[]).length > 0 && html`
+        <div class="panneau">
+          <div class="tete"><h3 style="font-size:17px">Structures rattachées</h3>
+            <span class="tag">${fiche.enfants.length}</span></div>
+          ${fiche.enfants.map(e => html`
+            <div class="ligne" key=${e.id}>
+              <div style="flex:1">${e.nom}</div>
+              <span class=${'tag '+(ETAT_T[e.etat]||['',''])[1]}>
+                ${(ETAT_T[e.etat]||[e.etat])[0]}</span>
+            </div>`)}
+        </div>`}
+    </div>`;
+}
+
+/* --- Les accès du périmètre --------------------------------------------- */
+function GlAcces({ p, territoire, appel, setMsg }){
+  const [gens, setGens] = useState([]);
+  const [apps, setApps] = useState([]);
+  const [ouvert, setOuvert] = useState(null);
+  const [q, setQ] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      db.rpc('acces_du_perimetre', { p_territoire: territoire }),
+      db.rpc('applications_delegables')
+    ]);
+    setGens(a.data||[]); setApps(b.data||[]);
+  }, [territoire]);
+  useEffect(() => { charger(); }, [charger]);
+
+  const ouvrables = apps.filter(a => a.ouvrable);
+  const liste = gens.filter(g => q === '' ||
+    (g.membre + ' ' + g.matricule).toLowerCase().includes(q.toLowerCase()));
+
+  async function ouvrir(g, code){
+    const { data, error } = await db.rpc('accorder_acces', {
+      p_profil: g.profil_id, p_app: code,
+      p_motif: 'Ouvert par la structure', p_expire: null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Accès ouvert à ' + g.membre + '.'); charger();
+  }
+
+  return html`
+    <div>
+      <div class="panneau" style="margin-bottom:24px">
+        <div class="tete"><h3 style="font-size:17px">Ce que la fédération vous délègue</h3></div>
+        <div class="corps">
+          <p class="small muted" style="margin:0 0 14px">
+            Le national décide de la liste, vous décidez des personnes. Une
+            application non déléguée reste demandable au guichet, par le membre
+            lui-même.
+          </p>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            ${apps.map(a => html`
+              <span key=${a.code} class=${'tag '+(a.ouvrable?'vert':'')}
+                title=${a.motif}>${a.nom_court || a.nom}</span>`)}
+          </div>
+        </div>
+      </div>
+
+      <input value=${q} placeholder="Rechercher un membre" style="margin-bottom:16px"
+        onInput=${e=>setQ(e.target.value)} />
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">Membres du périmètre</h3>
+          <span class="tag">${liste.length}</span></div>
+        ${liste.length === 0
+          ? html`<div class="corps muted">Aucun membre.</div>`
+          : liste.map(g => html`
+            <div key=${g.profil_id}>
+              <div class="ligne" style="align-items:flex-start">
+                <div style="flex:1;min-width:240px">
+                  <div class="row" style="gap:8px;flex-wrap:wrap">
+                    <span style="font-weight:600">${g.membre}</span>
+                    <span class="mono muted small">${g.matricule}</span>
+                    ${g.statut !== 'actif' && html`<span class="tag or">${g.statut}</span>`}
+                  </div>
+                  <div class="small muted" style="margin-top:3px">
+                    ${g.fonction} · ${g.echelon}${g.territoire ? ' · ' + g.territoire : ''}
+                  </div>
+                  <div class="row" style="gap:5px;margin-top:6px;flex-wrap:wrap">
+                    ${(g.postes||[]).map((x,i) => html`
+                      <span class="tag bleu" key=${'p'+i}>${x}</span>`)}
+                    ${(g.applications||[]).map((x,i) => html`
+                      <span class="tag" key=${'a'+i}>${x}</span>`)}
+                    ${(g.applications||[]).length === 0 && html`
+                      <span class="small muted">Aucune application ouverte</span>`}
+                  </div>
+                </div>
+                ${ouvrables.length > 0 && g.profil_id !== p.id && html`
+                  <button class="btn sm light"
+                    onClick=${()=>setOuvert(ouvert===g.profil_id?null:g.profil_id)}>
+                    ${ouvert===g.profil_id ? 'Fermer' : 'Ouvrir un accès'}</button>`}
+              </div>
+              ${ouvert === g.profil_id && html`
+                <div class="corps" style="background:var(--papier);
+                  border-bottom:1px solid var(--filet)">
+                  <div class="small muted" style="margin-bottom:8px">
+                    Applications que vous pouvez lui ouvrir</div>
+                  <div class="row" style="gap:6px;flex-wrap:wrap">
+                    ${ouvrables.map(a => html`
+                      <button class="btn sm light" key=${a.code}
+                        onClick=${()=>ouvrir(g, a.code)}>${a.nom_court || a.nom}</button>`)}
+                  </div>
+                  <div class="small muted" style="margin-top:10px">
+                    On ne donne que ce qu\u2019on a : cette liste se limite aux
+                    applications dont vous disposez vous-même.
+                  </div>
+                </div>`}
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- Les actes locaux ---------------------------------------------------- */
+function GlActes({ p, territoire, appel, setMsg }){
+  const [actes, setActes] = useState([]);
+  const [postes, setPostes] = useState([]);
+  const [gens, setGens] = useState([]);
+  const [ouvert, setOuvert] = useState(false);
+  const [f, setF] = useState({ type:'decision', objet:'', visas:'', considerants:'',
+                               destinataire:'', poste:'', effet:'' });
+  const [articles, setArticles] = useState(['']);
+  const [texte, setTexte] = useState(null);
+  const [lu, setLu] = useState(null);
+
+  const charger = useCallback(async () => {
+    const [a, b, c] = await Promise.all([
+      db.rpc('recueil_actes', { p_filtre: 'locaux' }),
+      db.rpc('postes_conferables', { p_territoire: territoire }),
+      db.from('v_annuaire').select('id,prenom,nom,fonction_nom')
+        .eq('statut','actif').order('nom')
+    ]);
+    setActes(a.data||[]); setPostes(b.data||[]); setGens(c.data||[]);
+  }, [territoire]);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function enregistrer(e){
+    e.preventDefault();
+    const arts = articles.map(a => a.trim()).filter(Boolean);
+    if (arts.length === 0)
+      return setMsg('Erreur : un acte sans article ne décide rien.');
+    const { data, error } = await db.rpc('prendre_acte', {
+      p_type: f.type, p_objet: f.objet, p_visas: f.visas || null,
+      p_considerants: f.considerants || null, p_articles: arts,
+      p_destinataire: f.destinataire || null, p_poste: f.poste || null,
+      p_effet: f.effet || null, p_territoire: territoire
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({ type:'decision', objet:'', visas:'', considerants:'',
+           destinataire:'', poste:'', effet:'' });
+    setArticles(['']); setOuvert(false);
+    setMsg('Projet d\u2019acte enregistré. Il ne produit effet qu\u2019à la signature.');
+    charger();
+  }
+
+  async function lire(a){
+    if (lu === a.id){ setLu(null); setTexte(null); return; }
+    const { data } = await db.rpc('texte_acte', { p_id: a.id });
+    setLu(a.id); setTexte(data);
+  }
+
+  const projets = actes.filter(a => a.statut === 'projet');
+
+  return html`
+    <div>
+      <div class="alerte" style="margin-bottom:24px;border-left:3px solid var(--bordeaux)">
+        <strong>Un acte local n\u2019est lu que dans son ressort.</strong>
+        Il apparaît au recueil des adhérents de votre périmètre, sous bannière
+        locale, et nulle part ailleurs. La présidence de structure, elle, ne se
+        confère pas localement : elle est annoncée par l\u2019échelon supérieur.
+      </div>
+
+      <div class="spread" style="margin-bottom:16px">
+        <h3 style="font-size:17px;margin:0">Actes de la structure</h3>
+        <button class="btn sm" onClick=${()=>setOuvert(!ouvert)}>
+          ${ouvert ? 'Fermer' : 'Prendre un acte'}</button>
+      </div>
+
+      ${ouvert && html`
+        <form class="panneau" style="margin-bottom:24px" onSubmit=${enregistrer}>
+          <div class="tete"><h3 style="font-size:17px">Nouvel acte local</h3></div>
+          <div class="corps stack">
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:1;min-width:170px;margin:0">
+                <label>Nature</label>
+                <select value=${f.type} onChange=${e=>setF(o=>({...o,type:e.target.value}))}>
+                  ${Object.entries(TYPE_ACTE).filter(([k]) => k !== 'abrogation')
+                    .map(([k,v]) => html`<option value=${k}>${v}</option>`)}
+                </select></div>
+              <div class="field" style="flex:0 0 160px;margin:0">
+                <label>Prend effet le</label>
+                <input type="date" value=${f.effet}
+                  onInput=${e=>setF(o=>({...o,effet:e.target.value}))} /></div>
+            </div>
+            <div class="field"><label>Objet</label>
+              <input value=${f.objet} placeholder="Désignation du référent du parcours"
+                onInput=${e=>setF(o=>({...o,objet:e.target.value}))} /></div>
+            <div class="row" style="gap:16px;align-items:flex-start">
+              <div class="field" style="flex:2;min-width:200px;margin:0">
+                <label>${f.type === 'nomination' ? 'Personne nommée' : 'Destinataire'}</label>
+                <select value=${f.destinataire}
+                  onChange=${e=>setF(o=>({...o,destinataire:e.target.value}))}>
+                  <option value="">— Aucun —</option>
+                  ${gens.map(g => html`<option value=${g.id}>
+                    ${nomComplet(g)} · ${g.fonction_nom}</option>`)}
+                </select></div>
+              ${f.type === 'nomination' && html`
+                <div class="field" style="flex:1;min-width:180px;margin:0">
+                  <label>Poste conféré</label>
+                  <select value=${f.poste} onChange=${e=>setF(o=>({...o,poste:e.target.value}))}>
+                    <option value="">— Choisir —</option>
+                    ${postes.map(x => html`<option value=${x.code}>${x.nom}</option>`)}
+                  </select>
+                  ${postes.length === 0 && html`<div class="small muted">
+                    Aucun poste conférable à votre niveau.</div>`}
+                </div>`}
+            </div>
+            <div class="field"><label>Visas</label>
+              <textarea value=${f.visas} style="min-height:60px"
+                placeholder="Vu les statuts, vu la délibération du bureau du…"
+                onInput=${e=>setF(o=>({...o,visas:e.target.value}))}></textarea></div>
+            <div class="field"><label>Considérants</label>
+              <textarea value=${f.considerants} style="min-height:60px"
+                onInput=${e=>setF(o=>({...o,considerants:e.target.value}))}></textarea></div>
+            <div class="field">
+              <label>Articles</label>
+              ${articles.map((a,i) => html`
+                <div class="row" style="gap:10px;margin-bottom:8px;align-items:flex-start" key=${i}>
+                  <span class="mono muted small" style="padding-top:11px;white-space:nowrap">
+                    Art. ${i+1}</span>
+                  <textarea value=${a} style="min-height:60px"
+                    onInput=${e=>{const c=[...articles]; c[i]=e.target.value; setArticles(c)}}
+                  ></textarea>
+                  ${articles.length > 1 && html`
+                    <button type="button" class="btn sm light"
+                      onClick=${()=>setArticles(articles.filter((_,j)=>j!==i))}>—</button>`}
+                </div>`)}
+              <button type="button" class="btn sm light"
+                onClick=${()=>setArticles([...articles,''])}>Ajouter un article</button>
+            </div>
+            <div><button class="btn">Enregistrer le projet</button></div>
+          </div>
+        </form>`}
+
+      ${projets.length > 0 && html`
+        <div class="panneau" style="margin-bottom:24px;border-color:var(--laiton)">
+          <div class="tete" style="border-bottom-color:var(--laiton)">
+            <h3 style="font-size:17px">En attente de signature</h3></div>
+          ${projets.map(a => html`
+            <div class="ligne" key=${a.id} style="align-items:flex-start">
+              <div style="flex:1;min-width:240px">
+                <div class="row" style="gap:8px;flex-wrap:wrap">
+                  <span class="mono muted small">${a.reference}</span>
+                  <span class="tag">${TYPE_ACTE[a.type] || a.type}</span>
+                </div>
+                <div style="margin-top:4px">${a.objet}</div>
+                ${a.destinataire && html`<div class="small muted" style="margin-top:3px">
+                  ${a.destinataire}${a.poste_nom ? ' · ' + a.poste_nom : ''}</div>`}
+              </div>
+              <div class="row" style="gap:6px">
+                <button class="btn sm" onClick=${()=>appel('signer_acte', { p_id:a.id },
+                  'Acte signé et notifié.')}>Signer</button>
+                <button class="btn sm light" onClick=${()=>{
+                  const m = prompt('Motif du retrait');
+                  if (m) appel('abroger_acte', { p_id:a.id, p_motif:m }, 'Projet retiré.');
+                }}>Retirer</button>
+              </div>
+            </div>`)}
+        </div>`}
+
+      <${RecueilListe} actes=${actes.filter(a => a.statut !== 'projet')}
+        ouvert=${lu} texte=${texte} lire=${lire}
+        telecharger=${()=>{}} abroger=${(id)=>{
+          const m = prompt('Motif de l\u2019abrogation (obligatoire)');
+          if (m) appel('abroger_acte', { p_id:id, p_motif:m }, 'Acte abrogé.');
+        }} />
+    </div>`;
+}
+
+/* --- Le plan du réseau ---------------------------------------------------
+   Ni carte ni dessin : un arbre, avec ce qui sert à décider. Le
+   rattachement et la fusion s'y font, parce que c'est là qu'on voit ce
+   qu'on déplace.
+   --------------------------------------------------------------------- */
+function GlPlan({ appel, setMsg, ouvrir }){
+  const [l, setL] = useState([]);
+  const [q, setQ] = useState('');
+  const [choix, setChoix] = useState(null);
+
+  const charger = useCallback(() =>
+    db.rpc('plan_territoires').then(({data}) => setL(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  const liste = l.filter(t => q === '' ||
+    (t.nom + ' ' + (t.code||'') + ' ' + (t.academie||''))
+      .toLowerCase().includes(q.toLowerCase()));
+
+  const ETAT_T = { projet:['Projet','or'], constitution:['Constitution','or'],
+    active:['Active','vert'], sommeil:['Sommeil',''], dissoute:['Dissoute','rouge'] };
+
+  async function rattacher(t){
+    const cible = prompt('Identifiant du nouveau territoire parent '
+      + '(laisser vide pour détacher)');
+    if (cible === null) return;
+    await appel('rattacher_territoire',
+      { p_territoire: t.id, p_parent: cible || null }, 'Rattachement modifié.');
+    charger();
+  }
+  async function fusionner(t){
+    if (!choix){ setChoix(t); return setMsg('Choisissez maintenant le territoire qui absorbe « '
+      + t.nom + ' ».'); }
+    if (choix.id === t.id){ setChoix(null); return setMsg(''); }
+    const m = prompt('Motif de la fusion de « ' + choix.nom + ' » dans « ' + t.nom + ' »');
+    if (!m) return;
+    if (!confirm('Fusionner « ' + choix.nom + ' » dans « ' + t.nom + ' » ? '
+      + 'Tous les membres, mandats, commandes et documents seront reportés. '
+      + 'Cette opération ne se défait pas.')) return;
+    await appel('fusionner_territoires',
+      { p_source: choix.id, p_cible: t.id, p_motif: m }, 'Fusion effectuée.');
+    setChoix(null); charger();
+  }
+
+  return html`
+    <div>
+      <p class="muted" style="max-width:60ch;margin:0 0 16px">
+        L\u2019arbre du réseau, avec ce qui sert à décider : effectif, encadrement,
+        bureau constitué, dotation. Une structure sans président ni trésorier
+        est signalée — c\u2019est ce qui l\u2019empêche de fonctionner.
+      </p>
+
+      ${choix && html`
+        <div class="alerte" style="margin-bottom:16px;border-left:3px solid var(--bordeaux)">
+          Fusion en cours : « ${choix.nom} » sera absorbée. Choisissez le
+          territoire qui l\u2019accueille, ou
+          <a href="#" onClick=${e=>{e.preventDefault();setChoix(null);setMsg('')}}>annulez</a>.
+        </div>`}
+
+      <input value=${q} placeholder="Rechercher un territoire, un code, une académie"
+        style="margin-bottom:16px" onInput=${e=>setQ(e.target.value)} />
+
+      <div class="panneau">
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th style="min-width:240px">Territoire</th>
+              <th>Académie</th>
+              <th style="text-align:right">Membres</th>
+              <th>Bureau</th>
+              <th style="text-align:right">Points</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              ${liste.map(t => html`
+                <tr key=${t.id}>
+                  <td>
+                    <div style=${'padding-left:'+(t.profondeur*16)+'px'}>
+                      <a href="#" onClick=${e=>{e.preventDefault();ouvrir(t.id)}}>${t.nom}</a>
+                      <span class=${'tag '+(ETAT_T[t.etat]||['',''])[1]}
+                        style="margin-left:6px">${(ETAT_T[t.etat]||[t.etat])[0]}</span>
+                    </div>
+                    <div class="mono muted small" style=${'padding-left:'+(t.profondeur*16)+'px'}>
+                      ${t.echelle} · ${t.code}</div>
+                  </td>
+                  <td class="small muted">${t.academie || '—'}</td>
+                  <td class="mono" style="text-align:right">${t.effectif}
+                    <div class="small muted">${t.encadrants} encadrant(s)</div></td>
+                  <td class="small">
+                    ${t.president
+                      ? html`<div>${t.president}</div>`
+                      : t.echelle !== 'national'
+                        ? html`<div style="color:var(--rouge)">Sans président</div>` : ''}
+                    ${t.tresorier
+                      ? html`<div class="muted">${t.tresorier}</div>`
+                      : t.echelle !== 'national'
+                        ? html`<div style="color:var(--rouge)">Sans trésorier</div>` : ''}
+                  </td>
+                  <td class="mono" style="text-align:right">${t.dotation}</td>
+                  <td style="text-align:right;white-space:nowrap">
+                    <button class="btn sm light" onClick=${()=>rattacher(t)}>Rattacher</button>
+                    ${t.enfants === 0 && t.echelle !== 'national' && html`
+                      <button class=${'btn sm '+(choix && choix.id===t.id ? '' : 'light')}
+                        onClick=${()=>fusionner(t)}>
+                        ${choix && choix.id===t.id ? 'À fusionner' : 'Fusionner'}</button>`}
+                  </td>
+                </tr>`)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* =====================================================================
+   LE BARÈME DES ÉCHELONS
+   Nom, seuil et ce que l'échelon ouvre étaient figés dans la migration
+   du socle. Ils se règlent ici. Les seuils doivent rester croissants :
+   la base refuse de créer un échelon inatteignable ou un palier qui
+   doublerait le précédent.
+   ===================================================================== */
+function BaremeEchelons({ setMsg }){
+  const [l, setL] = useState([]);
+  const [edit, setEdit] = useState(null);
+  const [f, setF] = useState({});
+
+  const charger = useCallback(() =>
+    db.rpc('bareme_echelons').then(({data}) => setL(data||[])), []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function enregistrer(e){
+    e.preventDefault();
+    const { data, error } = await db.rpc('regler_echelon', {
+      p_niveau: edit, p_nom: f.nom, p_points: Number(f.points) || 0,
+      p_ouvre: f.ouvre || null, p_description: f.description || null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Échelon mis à jour.'); setEdit(null); charger();
+  }
+
+  return html`
+    <div class="panneau" style="margin-bottom:24px">
+      <div class="tete"><h3 style="font-size:17px">Barème des échelons</h3></div>
+      <div class="corps small muted" style="padding-bottom:0">
+        La terminologie de la progression appartient à la fédération, pas au
+        code. Changer un nom ici le change partout — passeport, engagement,
+        annuaire, promotions.
+      </div>
+      ${l.map(e => html`
+        <div key=${e.niveau}>
+          <div class="ligne" style="align-items:flex-start">
+            <div style="flex:1;min-width:220px">
+              <div class="row" style="gap:8px;flex-wrap:wrap">
+                <span class="mono muted small">${e.niveau}</span>
+                <span style="font-weight:600">${e.nom}</span>
+                <span class="tag">${e.points} pts</span>
+                <span class="small muted">${e.membres} membre(s)</span>
+              </div>
+              ${e.ouvre && html`<div class="small muted" style="margin-top:3px">
+                Ouvre : ${e.ouvre}</div>`}
+              ${e.description && html`<div class="small" style="margin-top:3px">
+                ${e.description}</div>`}
+            </div>
+            <button class="btn sm light" onClick=${()=>{
+              setEdit(edit===e.niveau ? null : e.niveau);
+              setF({ nom:e.nom, points:e.points, ouvre:e.ouvre||'',
+                     description:e.description||'' });
+            }}>${edit===e.niveau ? 'Fermer' : 'Modifier'}</button>
+          </div>
+          ${edit === e.niveau && html`
+            <form class="corps stack" onSubmit=${enregistrer}
+              style="background:var(--papier);border-bottom:1px solid var(--filet)">
+              <div class="row" style="gap:16px;align-items:flex-start">
+                <div class="field" style="flex:2;min-width:180px;margin:0">
+                  <label>Nom</label>
+                  <input value=${f.nom}
+                    onInput=${ev=>setF(o=>({...o,nom:ev.target.value}))} /></div>
+                <div class="field" style="flex:0 0 130px;margin:0">
+                  <label>Seuil (points)</label>
+                  <input type="number" min="0" value=${f.points}
+                    onInput=${ev=>setF(o=>({...o,points:ev.target.value}))} /></div>
+              </div>
+              <div class="field" style="margin:0"><label>Ce que l\u2019échelon ouvre</label>
+                <input value=${f.ouvre}
+                  onInput=${ev=>setF(o=>({...o,ouvre:ev.target.value}))} /></div>
+              <div class="field"><label>Description</label>
+                <input value=${f.description}
+                  onInput=${ev=>setF(o=>({...o,description:ev.target.value}))} /></div>
+              <div><button class="btn sm">Enregistrer</button></div>
+            </form>`}
+        </div>`)}
+    </div>`;
+}
+
 function Espace({ session, sous }){
   const [p, setP] = useState(null);
   const [apps, setApps] = useState([]);
@@ -16169,6 +16841,8 @@ function Espace({ session, sous }){
     case 'mandats':    vue = html`<${MesMandats} p=${p} recharger=${charger} />`; break;
     case 'cabinet':    vue = acces('cabinet') ? html`<${Cabinet} p=${p} />` : refus; break;
     case 'recueil':    vue = html`<${Recueil} />`; break;
+    case 'gestion_locale': vue = acces('gestion_locale')
+                       ? html`<${GestionLocale} p=${p} />` : refus; break;
     case 'affaires_publiques': vue = acces('affaires_publiques')
                        ? html`<${AffairesPubliques} p=${p} />` : refus; break;
     case 'compte':     vue = html`<${MonCompte} p=${p} recharger=${charger} />`; break;
