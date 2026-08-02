@@ -1,11 +1,9 @@
 import { EquipesLocales, Groupes } from './collectif.js';
-import { Habilitations, Publier, RecueilListe } from './direction.js';
+import { Habilitations, Postes, Publier, RecueilListe } from './direction.js';
 import { BilansMission, FicheOuverture, MesAlertesParcours, MesCreneaux, Tunnel } from './membre.js';
 import { Info, Portrait, STATUT_PROJET, STATUT_PROP, TYPE_ACTE, db, h, html, jour, nomComplet, urlPublique, useCallback, useEffect, useState } from './socle.js';
 import { Contact, Rejoindre } from './vitrine.js';
 
-
-/* --- Les structures : où le réseau tient, où il manque du monde ------- */
 export function Structures({ setMsg, ouvrir }){
   const [echelle, setEchelle] = useState('departement');
   const [liste, setListe] = useState(null);
@@ -97,6 +95,12 @@ export function Structures({ setMsg, ouvrir }){
     </div>`;
 }
 
+/* --- Postes et droits, réunis ----------------------------------------- */
+
+/* =====================================================================
+   PARCOURS ADHÉRENT
+   Six marches, de l'inscription à la première mission. Chacune est
+   datée par le système quand il peut la constater.
    ===================================================================== */
 
 export function ParcoursAdherent({ p }){
@@ -209,6 +213,8 @@ export function ParcoursAdherent({ p }){
    une semaine remonte en tête, et on peut agir sur plusieurs personnes
    d'un coup : le suivi ne doit pas coûter plus cher que le geste qu'il
    enregistre.
+   --------------------------------------------------------------------- */
+/* --- Ce que les échelons supérieurs me signalent ---------------------- */
 
 
 export function FileAccueil({ liste, recharger, setMsg }){
@@ -386,6 +392,10 @@ export function FileAccueil({ liste, recharger, setMsg }){
     </div>`;
 }
 
+
+/* =====================================================================
+   PILOTAGE DU RÉSEAU
+   Trois vues selon l'échelon : local, territorial, national.
    ===================================================================== */
 export function Pilotage({ p }){
   const national = p.niveau >= 80;
@@ -415,8 +425,8 @@ export function Pilotage({ p }){
     </div>`;
 }
 
-
 /* --- Local : quatre choses, pas une de plus --------------------------- */
+
 export function BordLocal(){
   const [b, setB] = useState(null);
   useEffect(() => { db.rpc('bord_local').then(({data}) => setB(data)); }, []);
@@ -551,8 +561,8 @@ export function BordTunnel({ p }){
     </div>`;
 }
 
-
 /* --- National : on ne regarde que ce qui va mal ----------------------- */
+
 export function BordNational(){
   const [b, setB] = useState(null);
   const [exc, setExc] = useState([]);
@@ -654,6 +664,8 @@ export function BordNational(){
       </div>
     </div>`;
 }
+
+/* --- Prendre rendez-vous, côté nouvel adhérent ------------------------ */
 
 
 export function MonComite({ p, apps }){
@@ -1087,8 +1099,8 @@ export function PropositionsComite({ c, recharger, setMsg }){
     </div>`;
 }
 
-
 /* --- Ce qui remonte, côté national ------------------------------------ */
+
 export function PropositionsNationales({ setMsg }){
   const [liste, setListe] = useState([]);
   const charger = useCallback(() =>
@@ -1126,14 +1138,6 @@ export function PropositionsNationales({ setMsg }){
     </div>`;
 }
 
-
-/* =====================================================================
-   BUDGET ET COMPTES
-   Ce que la plateforme sait déjà, elle le compte. La direction ne
-   saisit que ce qu'elle ignore : subventions, cotisations, dons.
-
-
-/* --- Répartition des nouveaux adhérents -------------------------------- */
 export function RepartirNouveaux({ setMsg }){
   const [liste, setListe] = useState([]);
   const [gens, setGens] = useState([]);
@@ -1198,6 +1202,12 @@ export function RepartirNouveaux({ setMsg }){
     </div>`;
 }
 
+/* --- Ma chaîne : qui dépend de qui ------------------------------------- */
+
+
+/* --- Nommer dans sa structure ------------------------------------------
+   La liste des postes vient de `postes_conferables` : l'écran ne peut
+   pas proposer ce que la base refusera. Si elle est vide, on le dit.
    --------------------------------------------------------------------- */
 export function NommerLocal({ p, territoire, setMsg }){
   const [postes, setPostes] = useState([]);
@@ -1322,15 +1332,16 @@ export function NommerLocal({ p, territoire, setMsg }){
     </div>`;
 }
 
+
 /* =====================================================================
-   LE CABINET DE LA PRÉSIDENCE
-   La présidence est nationale : ce cabinet est unique. Tout ce que le
-   réseau lui adresse arrive ici sans filtre de périmètre, et tout ce
-   qu'elle décide en repart sous forme d'acte.
+   LA GESTION LOCALE
+   Voir avant de décider. Quatre volets : la fiche du territoire, les
+   accès du périmètre, les actes locaux, et — pour qui pilote le réseau
+   — le plan d'ensemble.
 
-   La séparation qui structure l'écran est celle qui structure la base :
-   le cabinet rédige les projets, la présidence seule signe.
-
+   Ce que le national délègue est une donnée, pas une règle codée :
+   l'écran affiche la liste et dit, pour chaque application, pourquoi
+   elle est ouvrable ou non.
    ===================================================================== */
 export function GestionLocale({ p }){
   const [onglet, setOnglet] = useState('fiche');
@@ -1397,8 +1408,8 @@ export function GestionLocale({ p }){
     </div>`;
 }
 
-
 /* --- La fiche d'identité ------------------------------------------------ */
+
 export function GlFiche({ fiche, appel }){
   const [f, setF] = useState(null);
   const [edit, setEdit] = useState(false);
@@ -1530,8 +1541,8 @@ export function GlFiche({ fiche, appel }){
     </div>`;
 }
 
-
 /* --- Les accès du périmètre --------------------------------------------- */
+
 export function GlAcces({ p, territoire, appel, setMsg }){
   const [gens, setGens] = useState([]);
   const [apps, setApps] = useState([]);
@@ -1632,8 +1643,8 @@ export function GlAcces({ p, territoire, appel, setMsg }){
     </div>`;
 }
 
-
 /* --- Les actes locaux ---------------------------------------------------- */
+
 export function GlActes({ p, territoire, appel, setMsg }){
   const [actes, setActes] = useState([]);
   const [postes, setPostes] = useState([]);
@@ -1800,11 +1811,11 @@ export function GlActes({ p, territoire, appel, setMsg }){
     </div>`;
 }
 
+
 /* --- Le plan du réseau ---------------------------------------------------
    Ni carte ni dessin : un arbre, avec ce qui sert à décider. Le
    rattachement et la fusion s'y font, parce que c'est là qu'on voit ce
    qu'on déplace.
-
    --------------------------------------------------------------------- */
 export function GlPlan({ appel, setMsg, ouvrir }){
   const [l, setL] = useState([]);
@@ -1927,13 +1938,18 @@ export function GlPlan({ appel, setMsg, ouvrir }){
     </div>`;
 }
 
-/* =====================================================================
-   LE BARÈME DES ÉCHELONS
-   Nom, seuil et ce que l'échelon ouvre étaient figés dans la migration
-   du socle. Ils se règlent ici. Les seuils doivent rester croissants :
-   la base refuse de créer un échelon inatteignable ou un palier qui
-   doublerait le précédent.
 
+/* =====================================================================
+   LA CARTE DU RÉSEAU
+   Le fond de carte pèse trop lourd pour vivre dans ce fichier : il est
+   chargé à la demande depuis un dépôt public, et mis en cache pour la
+   session. Si le chargement échoue — réseau coupé, dépôt déplacé — le
+   tableau reste, et le dit. La carte est un confort, jamais le seul
+   moyen d'atteindre un territoire.
+
+   Les codes INSEE du fond correspondent aux nôtres : « 31 » pour un
+   département, « R76 » pour une région une fois le préfixe ajouté.
+   L'outre-mer n'y figure pas et se lit sous la carte.
    ===================================================================== */
 export const FOND = 'https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/';
 
@@ -1952,9 +1968,9 @@ export async function chargerFond(echelle){
   return j;
 }
 
+
 /* Projection conique simple, suffisante à l'échelle d'un pays : on
    corrige la longitude par le cosinus de la latitude moyenne, sans quoi
-
    la France paraît écrasée en largeur. */
 export function projeter(coords, b, L, H){
   const lat0 = (b.minY + b.maxY) / 2 * Math.PI / 180;
@@ -2096,13 +2112,13 @@ export function CarteReseau({ territoires, ouvrir, indicateur }){
     </div>`;
 }
 
-/* =====================================================================
-   MES ENVELOPPES
-   Une direction ou un responsable qui détient des points ne les
-   consomme pas : il les répartit. L'écran ne propose donc qu'un geste,
-   affecter à un projet — et il montre, pour chaque projet, ce qu'il a
-   déjà reçu et de qui.
 
+/* =====================================================================
+   L'ORGANIGRAMME
+   Qui appartient à quoi. Ce n'est pas une donnée à part : il se déduit
+   des postes occupés, donc il ne peut pas être périmé. Les postes qui
+   engagent les points de leur direction sont signalés — c'est à eux
+   qu'on adresse une demande de validation.
    ===================================================================== */
 export function Organigramme(){
   const [l, setL] = useState([]);
