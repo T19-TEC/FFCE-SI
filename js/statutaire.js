@@ -2,8 +2,6 @@ import { Postes } from './direction.js';
 import { FilDossier } from './membre.js';
 import { ETAPE_NOM, GRAVITE, MESURES, PHASES, PHASE_NOM, TYPE_AG, db, html, jour, nomComplet, useCallback, useEffect, useState } from './socle.js';
 
-
-/* --- L'application Discipline ---------------------------------------- */
 export function Discipline({ p }){
   const [onglet, setOnglet] = useState('ouverts');
   const [dossiers, setDossiers] = useState([]);
@@ -174,10 +172,10 @@ export function Discipline({ p }){
     </div>`;
 }
 
+
 /* --- Suivi des usages, agrégé par membre -------------------------------
    Une liste d'événements bruts ne se suit pas. On regroupe par
    personne, avec la dernière activité et ce qui reste à examiner.
-
    --------------------------------------------------------------------- */
 export function SuiviUsages({ recharger }){
   const [liste, setListe] = useState(null);
@@ -595,12 +593,6 @@ export function DossierDetail({ p, d, gens, fermer }){
         </div>`}
     </div>`;
 }
-
-
-/* =====================================================================
-   LISIBILITÉ DES DROITS
-   Une infobulle, une fiche membre graduée, un référentiel ouvert, et
-   la matrice des accès.
 
 
 export function Assemblees({ p }){
@@ -1088,8 +1080,8 @@ export function Assemblee({ p, id, fermer }){
     </div>`;
 }
 
-
 /* --- L'appel public, hors connexion ----------------------------------- */
+
 export function AppelPublic({ token }){
   const [a, setA] = useState(undefined);
   useEffect(() => {
@@ -1186,14 +1178,6 @@ export function AppelPublic({ token }){
     </section>`;
 }
 
-
-/* =====================================================================
-   PARCOURS ADHÉRENT
-   Six marches, de l'inscription à la première mission. Chacune est
-   datée par le système quand il peut la constater.
-
-
-/* --- Conformité des élections ----------------------------------------- */
 export function Conformite({ p }){
   const [cands, setCands] = useState([]);
   const [scrutins, setScrutins] = useState([]);
@@ -1381,7 +1365,3 @@ export function ArchivesElectorales({ archives }){
       </div>
     </div>`;
 }
-
-
-/* --- Mes délégations en cours ------------------------------------------
-   Agir au nom d'un autre doit toujours se voir.
