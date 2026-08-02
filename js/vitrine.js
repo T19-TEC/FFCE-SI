@@ -69,8 +69,8 @@ export function Pied({ txt }){
     </footer>`;
 }
 
-
 /* Un jeu de blocs administrables, pour n'importe quelle page. */
+
 export function Blocs({ page }){
   const [b, setB] = useState([]);
   useEffect(() => {
@@ -92,8 +92,8 @@ export function Blocs({ page }){
     </div>`;
 }
 
-
 /* Les actualités, sur l'accueil et sur leur page. */
+
 export function Actualites({ limite = 3, titre = true }){
   const [a, setA] = useState([]);
   useEffect(() => {
@@ -396,9 +396,9 @@ export function PageTexte({ titre, corps }){
     </section>`;
 }
 
+
 /* =====================================================================
    4. CONNEXION ET INSCRIPTION
-
    ===================================================================== */
 export function Connexion(){
   const [email, setEmail] = useState('');
@@ -528,9 +528,9 @@ export function Inscription(){
     </section>`;
 }
 
+
 /* =====================================================================
    5. ESPACE MEMBRE
-
    ===================================================================== */
 
 export function CarteFederale({ p, chemin }){
@@ -557,10 +557,9 @@ export function CarteFederale({ p, chemin }){
     </div>`;
 }
 
-/* --- Portrait ----------------------------------------------------------
-   Les portraits vivent dans un dépôt privé : on signe une adresse
-   temporaire plutôt que de les rendre publics.
 
+/* =====================================================================
+   6. RACINE
    ===================================================================== */
 export function Site(){
   const route = useRoute();
