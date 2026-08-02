@@ -987,39 +987,14 @@ export function Assemblee({ p, id, fermer }){
       </div>
 
       ${a.statut === 'scrutin' && a.electeur && !a.a_vote && postesOuverts.length > 0 && html`
-        <div class="panneau" style="margin-top:24px;border-color:var(--bordeaux)">
-          <div class="tete" style="border-bottom-color:var(--bordeaux)">
-            <h3 style="font-size:17px">Votre bulletin</h3>
-          </div>
-          <div class="corps">
-            <p class="small muted" style="margin:0 0 16px">
-              Votre vote est secret : la plateforme enregistre que vous avez voté,
-              et ce qui a été voté, mais jamais le lien entre les deux.
-            </p>
-            ${postesOuverts.map(po => html`
-              <div style="margin-bottom:20px;padding-bottom:16px;
-                   border-bottom:1px solid var(--filet)">
-                <div class="eyebrow" style="margin-bottom:10px">${nomPoste(po)}</div>
-                ${recevables.filter(c => c.poste === po).map(c => html`
-                  <label class="row" style="text-transform:none;letter-spacing:0;
-                      font-size:15px;color:var(--nuit);padding:7px 0;margin:0;cursor:pointer">
-                    <input type="radio" style="width:auto" name=${'p_'+po}
-                      checked=${choix[po] === c.id}
-                      onChange=${()=>setChoix(o=>({...o,[po]:c.id}))} />
-                    <span>${c.personne ? nomComplet(c.personne) : 'Candidat'}</span>
-                  </label>`)}
-                <label class="row" style="text-transform:none;letter-spacing:0;
-                    font-size:15px;color:var(--gris);padding:7px 0;margin:0;cursor:pointer">
-                  <input type="radio" style="width:auto" name=${'p_'+po}
-                    checked=${choix[po] === 'blanc'}
-                    onChange=${()=>setChoix(o=>({...o,[po]:'blanc'}))} />
-                  <span>Voter blanc</span>
-                </label>
-              </div>`)}
-            <button class="btn" onClick=${envoyerVote}>Déposer mon bulletin</button>
-            <p class="small muted" style="margin:10px 0 0">Le vote est définitif.</p>
-          </div>
-        </div>`}
+        <${Isoloir} id=${id} postes=${postesOuverts} nomPoste=${nomPoste}
+          recevables=${recevables} recharger=${charger} />`}
+
+      ${a.statut === 'scrutin' && a.electeur && a.a_vote && html`
+        <${Recepisse} id=${id} />`}
+
+      ${organise && ['scrutin','depouillement','proclamee'].includes(a.statut) && html`
+        <${BureauDeVote} id=${id} statut=${a.statut} setMsg=${setMsg} />`}
 
       ${dep && (a.statut === 'depouillement' || a.statut === 'proclamee' || organise) && html`
         <div class="panneau" style="margin-top:24px">
@@ -1365,3 +1340,463 @@ export function ArchivesElectorales({ archives }){
       </div>
     </div>`;
 }
+
+/* =====================================================================
+   L'ISOLOIR
+   Un écran, une question à la fois, et rien d'autre à l'écran. On
+   choisit, on relit ce qu'on a choisi, on confirme. Le pas de trop —
+   la relecture — est délibéré : c'est le seul moment où l'on peut
+   encore revenir en arrière.
+
+   Ce que porte l'électeur est affiché avant : sa voix, et celles qu'on
+   lui a confiées. Un mandataire doit savoir combien de bulletins il
+   dépose.
+   ===================================================================== */
+export function Isoloir({ id, postes, nomPoste, recevables, recharger }){
+  const [etape, setEtape] = useState(0);
+  const [choix, setChoix] = useState({});
+  const [voix, setVoix] = useState(null);
+  const [envoi, setEnvoi] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [fait, setFait] = useState(null);
+
+  useEffect(() => {
+    db.rpc('mes_voix', { p_assemblee: id }).then(({data}) => setVoix(data));
+  }, [id]);
+
+  const total = postes.length;
+  const relecture = etape >= total;
+  const complet = postes.every(po => choix[po]);
+
+  async function deposer(){
+    setEnvoi(true); setMsg('');
+    const { data, error } = await db.rpc('voter', { p_assemblee: id, p_choix: choix });
+    setEnvoi(false);
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setFait(data);
+  }
+
+  const nomCandidat = cid => {
+    if (cid === 'blanc') return 'Bulletin blanc';
+    const c = recevables.find(x => x.id === cid);
+    return c && c.personne ? nomComplet(c.personne) : 'Candidat';
+  };
+
+  if (fait) return html`
+    <div class="panneau" style="margin-top:24px;border-color:var(--vert)">
+      <div class="corps" style="text-align:center;padding:40px 24px">
+        <div style=${'width:64px;height:64px;border-radius:50%;margin:0 auto 18px;'
+          + 'background:var(--vert);color:#fff;display:flex;align-items:center;'
+          + 'justify-content:center;font-size:32px'}>✓</div>
+        <h3 style="font-size:20px;margin:0 0 8px">Votre vote est enregistré</h3>
+        <p class="muted" style="margin:0 0 6px">
+          ${fait.voix > 1
+            ? fait.voix + ' voix déposées : la vôtre et celles que vous portiez.'
+            : 'Une voix déposée.'}
+        </p>
+        <p class="small muted" style="max-width:44ch;margin:14px auto 0">
+          Conservez cette empreinte : elle atteste que vous avez voté, sans
+          rien dire de votre choix.
+        </p>
+        <div class="mono" style=${'margin-top:12px;font-size:17px;letter-spacing:2px;'
+          + 'padding:12px;background:var(--papier);border-radius:6px;display:inline-block'}>
+          ${fait.empreinte}</div>
+        <div style="margin-top:22px">
+          <button class="btn light" onClick=${recharger}>Revenir à l\u2019assemblée</button>
+        </div>
+      </div>
+    </div>`;
+
+  return html`
+    <div class="panneau" style="margin-top:24px;border-color:var(--bordeaux)">
+      <div class="tete spread" style="border-bottom-color:var(--bordeaux)">
+        <h3 style="font-size:17px">Isoloir</h3>
+        <span class="small muted">${relecture ? 'Relecture' : (etape + 1) + ' sur ' + total}</span>
+      </div>
+
+      <div class="corps">
+        <div class="jauge" style="margin-bottom:20px">
+          <i style=${'width:' + Math.round((Math.min(etape, total) / total) * 100) + '%'}></i>
+        </div>
+
+        ${voix && voix.mandants && voix.mandants.length > 0 && etape === 0 && html`
+          <div class="alerte" style="margin-bottom:20px">
+            Vous portez ${voix.mandants.length + 1} voix : la vôtre, et celle
+            de ${voix.mandants.map(m => m.nom).join(', ')}. Votre bulletin sera
+            déposé autant de fois.
+          </div>`}
+
+        ${voix && voix.mon_mandataire && html`
+          <div class="alerte" style="margin-bottom:20px;border-left:3px solid var(--laiton)">
+            Vous avez donné pouvoir à ${voix.mon_mandataire}. Si vous votez
+            maintenant, votre voix sera la vôtre et le pouvoir deviendra sans objet.
+          </div>`}
+
+        ${msg && html`<div class="alerte err" style="margin-bottom:16px">${msg}</div>`}
+
+        ${!relecture
+          ? html`
+            <div class="eyebrow" style="margin-bottom:6px">Vous élisez</div>
+            <h2 style="font-size:22px;margin:0 0 22px">${nomPoste(postes[etape])}</h2>
+
+            ${recevables.filter(c => c.poste === postes[etape]).map(c => html`
+              <button key=${c.id} type="button"
+                class=${'btn ' + (choix[postes[etape]] === c.id ? '' : 'light')}
+                style="display:block;width:100%;text-align:left;margin-bottom:10px;
+                  padding:16px 18px;font-size:16px"
+                onClick=${()=>setChoix(o => ({...o, [postes[etape]]: c.id}))}>
+                ${c.personne ? nomComplet(c.personne) : 'Candidat'}
+                ${c.profession_foi && html`<div class="small"
+                  style="opacity:.7;margin-top:4px;font-weight:400">
+                  ${c.profession_foi.slice(0, 130)}${c.profession_foi.length > 130 ? '…' : ''}
+                </div>`}
+              </button>`)}
+
+            <button type="button"
+              class=${'btn ' + (choix[postes[etape]] === 'blanc' ? '' : 'light')}
+              style="display:block;width:100%;text-align:left;padding:16px 18px;font-size:16px"
+              onClick=${()=>setChoix(o => ({...o, [postes[etape]]: 'blanc'}))}>
+              Voter blanc
+              <div class="small" style="opacity:.7;margin-top:4px;font-weight:400">
+                Un vote blanc est compté et figure au procès-verbal.</div>
+            </button>
+
+            <div class="row" style="gap:10px;margin-top:24px">
+              ${etape > 0 && html`
+                <button class="btn light" onClick=${()=>setEtape(etape - 1)}>Précédent</button>`}
+              <button class="btn" disabled=${!choix[postes[etape]]}
+                onClick=${()=>setEtape(etape + 1)}>
+                ${etape + 1 === total ? 'Relire mon bulletin' : 'Suivant'}</button>
+            </div>`
+
+          : html`
+            <div class="eyebrow" style="margin-bottom:6px">Avant de déposer</div>
+            <h2 style="font-size:22px;margin:0 0 8px">Relisez votre bulletin</h2>
+            <p class="muted" style="margin:0 0 22px">
+              C\u2019est le dernier moment où vous pouvez revenir en arrière.
+              Une fois déposé, un bulletin ne se retrouve plus : il n\u2019est
+              relié à personne.
+            </p>
+
+            ${postes.map(po => html`
+              <div class="ligne" key=${po} style="align-items:flex-start">
+                <div style="flex:1">
+                  <div class="small muted">${nomPoste(po)}</div>
+                  <div style="font-weight:600;margin-top:2px">${nomCandidat(choix[po])}</div>
+                </div>
+                <button class="btn sm light"
+                  onClick=${()=>setEtape(postes.indexOf(po))}>Modifier</button>
+              </div>`)}
+
+            <div class="row" style="gap:10px;margin-top:24px">
+              <button class="btn light" onClick=${()=>setEtape(total - 1)}>Revenir</button>
+              <button class="btn" disabled=${!complet || envoi} onClick=${deposer}>
+                ${envoi ? 'Dépôt en cours…' : 'Déposer mon bulletin'}</button>
+            </div>`}
+      </div>
+    </div>`;
+}
+
+/* --- Le récépissé, une fois qu'on a voté --------------------------------
+   Ce que l'électeur peut opposer si l'on prétend qu'il n'a pas voté. Il
+   n'atteste que d'une participation : un récépissé opposable sur le
+   contenu du vote rendrait l'achat de voix vérifiable, donc possible.
+   --------------------------------------------------------------------- */
+export function Recepisse({ id }){
+  const [r, setR] = useState(null);
+  useEffect(() => {
+    db.rpc('mon_recepisse', { p_assemblee: id }).then(({data}) => setR(data));
+  }, [id]);
+  if (!r || !r.ok) return null;
+
+  function telecharger(){
+    const l = ['FÉDÉRATION FRANÇAISE POUR LA CITOYENNETÉ ET L\u2019ÉGALITÉ DES CHANCES',
+      '', 'RÉCÉPISSÉ D\u2019ÉMARGEMENT', '',
+      'Assemblée : ' + r.assemblee + ' (' + r.reference + ')',
+      'Date : ' + jour(r.date),
+      'Électeur : ' + r.electeur + ' — ' + r.matricule,
+      'Émargé le : ' + new Date(r.emarge_le).toLocaleString('fr-FR'),
+      r.pouvoirs_exerces > 0 ? 'Pouvoirs exercés : ' + r.pouvoirs_exerces : '',
+      '', 'Empreinte : ' + r.empreinte, '', r.mention];
+    const url = URL.createObjectURL(new Blob([l.filter(Boolean).join('\n')],
+      { type: 'text/plain;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'recepisse-' + r.reference + '.txt'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return html`
+    <div class="panneau" style="margin-top:24px;border-color:var(--vert)">
+      <div class="tete spread" style="border-bottom-color:var(--vert)">
+        <h3 style="font-size:17px">Vous avez voté</h3>
+        <button class="btn sm light" onClick=${telecharger}>Télécharger le récépissé</button>
+      </div>
+      <div class="corps">
+        <div class="ligne" style="padding-left:0;padding-right:0;border:0">
+          <span class="muted">Émargé le</span>
+          <span>${new Date(r.emarge_le).toLocaleString('fr-FR')}</span>
+        </div>
+        ${r.pouvoirs_exerces > 0 && html`
+          <div class="ligne" style="padding-left:0;padding-right:0;border:0">
+            <span class="muted">Pouvoirs exercés</span>
+            <span class="mono">${r.pouvoirs_exerces}</span>
+          </div>`}
+        <div class="ligne" style="padding-left:0;padding-right:0;border:0">
+          <span class="muted">Empreinte</span>
+          <span class="mono" style="letter-spacing:1px">${r.empreinte}</span>
+        </div>
+        <p class="small muted" style="margin:14px 0 0">${r.mention}</p>
+      </div>
+    </div>`;
+}
+
+/* =====================================================================
+   LE BUREAU DE VOTE
+   Ce que tiennent les organisateurs : les pouvoirs, l'émargement par
+   scan, la feuille de présence, les deux signatures du dépouillement,
+   et le procès-verbal.
+
+   La double clé n'est pas décorative : la proclamation la vérifie. Une
+   signature qui n'engage rien n'engage personne.
+   ===================================================================== */
+export function BureauDeVote({ id, statut, setMsg }){
+  const [onglet, setOnglet] = useState('presence');
+  const [feuille, setFeuille] = useState([]);
+  const [part, setPart] = useState(null);
+  const [pouvoirs, setPouvoirs] = useState([]);
+  const [cles, setCles] = useState([]);
+  const [pv, setPv] = useState(null);
+  const [jeton, setJeton] = useState('');
+  const [dernier, setDernier] = useState(null);
+
+  const charger = useCallback(async () => {
+    const [f, p, po, c] = await Promise.all([
+      db.rpc('feuille_presence', { p_assemblee: id }),
+      db.rpc('participation', { p_assemblee: id }),
+      db.rpc('pouvoirs_assemblee', { p_assemblee: id }),
+      db.rpc('cles_du_depouillement', { p_assemblee: id })
+    ]);
+    setFeuille(f.data || []); setPart(p.data);
+    setPouvoirs(po.data || []); setCles(c.data || []);
+  }, [id]);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function emarger(e){
+    e.preventDefault();
+    if (!jeton.trim()) return;
+    const { data, error } = await db.rpc('emarger_par_carte',
+      { p_jeton: jeton.trim(), p_assemblee: id });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setDernier(data);
+    if (data.ok){ setJeton(''); charger(); }
+  }
+
+  async function signer(){
+    const role = prompt('Votre rôle au bureau de vote (président, assesseur, scrutateur…)');
+    const { data, error } = await db.rpc('signer_depouillement',
+      { p_assemblee: id, p_role: role || null });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg(data.message); charger();
+  }
+
+  async function voirPv(){
+    const { data } = await db.rpc('projet_pv', { p_assemblee: id });
+    setPv(data);
+  }
+
+  function exporterFeuille(){
+    const cols = ['Membre','Matricule','Fonction','Territoire','État','Représenté par','Émargé le'];
+    const ech = v => { const t = String(v ?? '').replace(/"/g,'""');
+                       return /[";\n]/.test(t) ? '"'+t+'"' : t; };
+    const csv = '\ufeff' + cols.join(';') + '\n' + feuille.map(x => [
+      x.membre, x.matricule, x.fonction, x.territoire, ETAT_PRESENCE[x.etat] || x.etat,
+      x.mandataire || '', x.emarge_le ? new Date(x.emarge_le).toLocaleString('fr-FR') : ''
+    ].map(ech).join(';')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'feuille-presence.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function imprimerPv(){
+    if (!pv || !pv.ok) return;
+    const l = [];
+    l.push('FÉDÉRATION FRANÇAISE POUR LA CITOYENNETÉ ET L\u2019ÉGALITÉ DES CHANCES');
+    l.push(pv.territoire); l.push('');
+    l.push('PROCÈS-VERBAL — ' + pv.reference);
+    l.push(pv.titre); l.push('');
+    l.push('Tenue le ' + jour(pv.date) + (pv.lieu ? ' à ' + pv.lieu : ''));
+    l.push('');
+    const p = pv.participation || {};
+    l.push('PARTICIPATION');
+    l.push('  Inscrits : ' + p.inscrits);
+    l.push('  Présents : ' + p.presents);
+    l.push('  Représentés : ' + p.representes);
+    l.push('  Votants : ' + p.votants);
+    l.push('  Participation : ' + p.participation + ' % (quorum requis ' +
+           p.quorum_requis + ' %) — ' +
+           (p.quorum_atteint ? 'quorum atteint' : 'QUORUM NON ATTEINT'));
+    l.push('');
+    l.push('RÉSULTATS');
+    (pv.resultats || []).forEach(r =>
+      l.push('  ' + r.poste + ' — ' + r.candidat + ' : ' + r.voix + ' voix'));
+    l.push('');
+    l.push('FEUILLE DE PRÉSENCE (' + (pv.presents || []).length + ')');
+    (pv.presents || []).forEach(x => l.push('  ' + x.membre + ' — ' + x.matricule +
+      ' — ' + (ETAT_PRESENCE[x.etat] || x.etat) +
+      (x.mandataire ? ' par ' + x.mandataire : '')));
+    l.push('');
+    l.push('SIGNATAIRES DU DÉPOUILLEMENT');
+    (pv.signataires || []).forEach(s => l.push('  ' + s.membre +
+      (s.role ? ', ' + s.role : '') + ' — ' + new Date(s.signe_le).toLocaleString('fr-FR')));
+    if (pv.proces_verbal){ l.push(''); l.push('DÉLIBÉRATIONS'); l.push(pv.proces_verbal); }
+    const url = URL.createObjectURL(new Blob([l.join('\n')],
+      { type:'text/plain;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'pv-' + pv.reference + '.txt'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const tabs = [['presence','Feuille de présence'], ['emargement','Émargement'],
+                ['pouvoirs','Pouvoirs'], ['depouillement','Dépouillement']];
+
+  return html`
+    <div class="panneau" style="margin-top:24px">
+      <div class="tete"><h3 style="font-size:17px">Bureau de vote</h3></div>
+
+      <div class="corps" style="padding-bottom:0">
+        ${part && html`
+          <div class="chiffres" style="margin-bottom:18px">
+            <div><div class="n" style="font-size:26px">${part.inscrits}</div>
+              <div class="l">Inscrits</div></div>
+            <div><div class="n" style="font-size:26px">${part.presents}</div>
+              <div class="l">Présents</div></div>
+            <div><div class="n" style="font-size:26px">${part.representes}</div>
+              <div class="l">Représentés</div></div>
+            <div><div class="n" style="font-size:26px">${part.participation} %</div>
+              <div class="l">Participation${part.quorum_requis > 0
+                ? ' · quorum ' + part.quorum_requis + ' %' : ''}</div></div>
+          </div>`}
+
+        <div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:4px">
+          ${tabs.map(([k,t]) => html`
+            <button key=${k} class=${'btn sm ' + (onglet===k ? '' : 'light')}
+              onClick=${()=>setOnglet(k)}>${t}</button>`)}
+        </div>
+      </div>
+
+      ${onglet === 'presence' && html`
+        <div>
+          <div class="corps spread" style="padding-top:14px;padding-bottom:8px">
+            <span class="small muted">${feuille.length} inscrit(s)</span>
+            <button class="btn sm light" onClick=${exporterFeuille}>Exporter en CSV</button>
+          </div>
+          ${feuille.map(x => html`
+            <div class="ligne" key=${x.profil_id}>
+              <div style="flex:1;min-width:220px">
+                <div>${x.membre}</div>
+                <div class="small muted"><span class="mono">${x.matricule}</span>
+                  · ${x.fonction}${x.territoire ? ' · ' + x.territoire : ''}</div>
+              </div>
+              <div class="row" style="gap:10px">
+                ${x.mandataire && html`<span class="small muted">par ${x.mandataire}</span>`}
+                <span class=${'tag ' + (COULEUR_PRESENCE[x.etat] || '')}>
+                  ${ETAT_PRESENCE[x.etat] || x.etat}</span>
+              </div>
+            </div>`)}
+        </div>`}
+
+      ${onglet === 'emargement' && html`
+        <div class="corps">
+          <p class="small muted" style="margin:0 0 14px">
+            Scannez la carte d\u2019adhérent, ou collez le code qu\u2019elle porte.
+            L\u2019émargement constate une présence : il ne fait pas voter.
+          </p>
+          <form onSubmit=${emarger} class="row" style="gap:10px">
+            <input value=${jeton} placeholder="Code de la carte" style="flex:1;min-width:220px"
+              onInput=${e=>setJeton(e.target.value)} autofocus />
+            <button class="btn">Émarger</button>
+          </form>
+          ${dernier && html`
+            <div class=${'alerte ' + (dernier.ok ? 'ok' : 'err')} style="margin-top:14px">
+              ${dernier.ok ? 'Présence constatée : ' + dernier.membre : dernier.message}
+            </div>`}
+        </div>`}
+
+      ${onglet === 'pouvoirs' && html`
+        <div>
+          ${pouvoirs.length === 0
+            ? html`<div class="corps muted">Aucun pouvoir enregistré.</div>`
+            : pouvoirs.map(x => html`
+              <div class="ligne" key=${x.id}>
+                <div style="flex:1;min-width:240px">
+                  <div>${x.mandant} <span class="muted">donne pouvoir à</span>
+                    ${x.mandataire}</div>
+                  <div class="small muted">
+                    <span class="mono">${x.mandant_matricule}</span> →
+                    <span class="mono">${x.mandataire_matricule}</span>
+                    · ${jour(x.cree_le)}</div>
+                </div>
+                <div class="row" style="gap:8px">
+                  ${x.mandant_a_vote && html`<span class="tag vert">Voix exprimée</span>`}
+                  <span class=${'tag ' + (x.statut === 'valide' ? 'bleu' : '')}>${x.statut}</span>
+                </div>
+              </div>`)}
+        </div>`}
+
+      ${onglet === 'depouillement' && html`
+        <div class="corps">
+          <p class="small muted" style="margin:0 0 14px">
+            Deux personnes distinctes du bureau doivent signer avant que les
+            résultats puissent être proclamés. C\u2019est une condition, pas une
+            formalité : la proclamation la vérifie.
+          </p>
+          ${cles.length === 0
+            ? html`<div class="muted" style="margin-bottom:14px">Aucune signature.</div>`
+            : cles.map(c => html`
+              <div class="ligne" key=${c.profil_id} style="padding-left:0;padding-right:0">
+                <div style="flex:1">
+                  <div>${c.membre}</div>
+                  <div class="small muted">${c.role || 'Membre du bureau'}
+                    · ${new Date(c.signe_le).toLocaleString('fr-FR')}</div>
+                </div>
+                <span class="tag vert">Signé</span>
+              </div>`)}
+
+          <div class="row" style="gap:10px;margin-top:16px;flex-wrap:wrap">
+            <button class="btn" disabled=${cles.length >= 2 &&
+              !!cles.find(c => c.profil_id)} onClick=${signer}>
+              Signer le dépouillement</button>
+            <button class="btn light" onClick=${voirPv}>Composer le procès-verbal</button>
+          </div>
+          <div class="small muted" style="margin-top:10px">
+            ${cles.length}/2 signature(s). ${cles.length >= 2
+              ? 'Les résultats peuvent être proclamés.'
+              : 'Il en manque ' + (2 - cles.length) + '.'}
+          </div>
+
+          ${pv && pv.ok && html`
+            <div class="panneau" style="margin-top:20px">
+              <div class="tete spread">
+                <h3 style="font-size:17px">Projet de procès-verbal</h3>
+                <button class="btn sm light" onClick=${imprimerPv}>Télécharger</button>
+              </div>
+              <div class="corps small">
+                <div style="margin-bottom:10px"><strong>${pv.reference}</strong> —
+                  ${pv.titre}, ${jour(pv.date)}${pv.lieu ? ', ' + pv.lieu : ''}</div>
+                ${(pv.resultats || []).map((r,i) => html`
+                  <div key=${i}>${r.poste} — ${r.candidat} : ${r.voix} voix</div>`)}
+                <div class="muted" style="margin-top:10px">
+                  ${(pv.presents || []).length} présent(s) ou représenté(s) ·
+                  ${(pv.signataires || []).length} signataire(s)</div>
+              </div>
+            </div>`}
+        </div>`}
+    </div>`;
+}
+
+const ETAT_PRESENCE = { present:'Présent', represente:'Représenté',
+                        a_vote:'A voté', absent:'Absent' };
+const COULEUR_PRESENCE = { present:'vert', represente:'bleu', a_vote:'vert', absent:'' };
