@@ -10,12 +10,12 @@ export { h, render, useState, useEffect, useCallback, createClient };
 
 export const html = htm.bind(h);
 
+
 /* =====================================================================
    1. CONNEXION À LA BASE
    Ces deux valeurs sont publiques par conception : elles sont faites
    pour vivre dans le navigateur. La clé « secret » ne quitte jamais
    le tableau de bord Supabase.
-
    ===================================================================== */
 export const SUPABASE_URL = 'https://ibxydmtqdyynteiopjiv.supabase.co';
 
@@ -24,8 +24,8 @@ export const SUPABASE_KEY = 'sb_publishable_A-2UHxGyxQ1--eEnsULBlQ_eyebc9dh';
 
 export const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-
 /* Liens externes de la fédération -------------------------------------- */
+
 export const EXTERNE = {
   webmail:   'https://mail.google.com/a/ffce-asso.fr',
   drive:     'https://drive.google.com/drive/u/0/',
@@ -33,9 +33,9 @@ export const EXTERNE = {
   adhesion:  ''   // adresse de la campagne HelloAsso, à coller ici
 };
 
+
 /* =====================================================================
    2. PETITS OUTILS
-
    ===================================================================== */
 export const jour = d => d ? new Date(d).toLocaleDateString('fr-FR',
   {day:'numeric',month:'long',year:'numeric'}) : '—';
@@ -57,9 +57,9 @@ export function useRoute(){
 
 export const aller = r => { location.hash = r; };
 
+
 /* =====================================================================
    3. VITRINE PUBLIQUE
-
    ===================================================================== */
 
 /* Le maillage : la fédération est un réseau de territoires. Le motif du
@@ -79,13 +79,11 @@ export function Maillage(){
     </svg>`;
 }
 
-
 /* --- Logo -------------------------------------------------------------
    La charte interdit toute modification du logo. On affiche donc le
    fichier officiel (logo.png, à déposer à la racine du dépôt). S'il est
    absent, repli sur le sigle composé en Raleway Black — jamais sur une
    imitation du symbole.
-
    --------------------------------------------------------------------- */
 export function Logo({ href = '#/', baseline = true, clair = false }){
   const [image, setImage] = useState(true);
@@ -107,6 +105,10 @@ export function Logo({ href = '#/', baseline = true, clair = false }){
     </a>`;
 }
 
+
+/* --- Portrait ----------------------------------------------------------
+   Les portraits vivent dans un dépôt privé : on signe une adresse
+   temporaire plutôt que de les rendre publics.
    --------------------------------------------------------------------- */
 export function Portrait({ chemin, nom, taille = 40 }){
   const [url, setUrl] = useState(null);
@@ -128,20 +130,6 @@ export function Portrait({ chemin, nom, taille = 40 }){
     </span>`;
 }
 
-/* --- Menu latéral ------------------------------------------------------
-   Trois blocs et pas un de plus : qui je suis, ce que je fais, ce que
-   j'administre. Le guichet et le référentiel ne sont plus des onglets
-   permanents — on y accède au moment où on en a besoin.
-   --------------------------------------------------------------------- */
-/* --- Menu latéral ------------------------------------------------------
-   Le menu suit l'organigramme, pas la liste des tables. Trois strates :
-   qui je suis, mon activité de membre, puis les directions dont je
-   relève — chacune avec ses outils. C'est ainsi que s'organisent les
-   grandes fédérations : on n'appartient pas à « des responsabilités »
-   en vrac, on appartient à une direction.
-
-
-/* --- Progression : les points d'échelon ------------------------------- */
 export function Progression(){
   const [x, setX] = useState(null);
   const [ouvert, setOuvert] = useState(false);
@@ -194,11 +182,10 @@ export function Progression(){
     </div>`;
 }
 
-
-/* --- Ce qui attend : la file de travail personnelle -------------------
-   Les alertes se perdaient au fond des onglets. Elles remontent ici,
-   en tête du tableau de bord, triées par urgence.
-
+/* =====================================================================
+   5 quinquies. NOTES DE FRAIS ET DIRECTION FINANCIÈRE
+   Circuit à trois temps : le membre dépose, son encadrement instruit,
+   le trésorier valide puis paie.
    ===================================================================== */
 
 export const EURO = n => (Number(n)||0).toLocaleString('fr-FR',
@@ -246,6 +233,12 @@ export const ETAPE_NOM = {
   recours:'Recours en examen', clos:'Dossier clos'
 };
 
+/* --- Le fil du dossier, vu par l'intéressé ---------------------------- */
+
+/* =====================================================================
+   LISIBILITÉ DES DROITS
+   Une infobulle, une fiche membre graduée, un référentiel ouvert, et
+   la matrice des accès.
    ===================================================================== */
 
 /* Une explication brève, à la demande. Pas un long texte : une phrase
@@ -267,10 +260,10 @@ export function Info({ texte }){
     </span>`;
 }
 
-/* --- Fiche membre ------------------------------------------------------
-   Trois paliers. Les coordonnées ne sortent que si on les demande, et
-   la demande est tracée — c'est ce qui rend la trace honnête.
-
+/* =====================================================================
+   MON ENGAGEMENT
+   La première chose qu'on voit. Ce que je donne ce mois-ci, ce qu'on
+   attend de moi, et ce que je peux rejoindre.
    ===================================================================== */
 
 export const MOIS = ['janvier','février','mars','avril','mai','juin','juillet',
@@ -278,6 +271,12 @@ export const MOIS = ['janvier','février','mars','avril','mai','juin','juillet',
 
 export const nomMois = d => { const x = new Date(d); return MOIS[x.getMonth()] + ' ' + x.getFullYear(); };
 
+/* Le curseur d'engagement, en tête du tableau de bord. */
+
+
+/* --- Le dossier d'adhésion --------------------------------------------
+   Quatre sections courtes plutôt qu'un formulaire d'un mètre. Ce qui
+   manque est dit en tête, avec le nombre exact.
    --------------------------------------------------------------------- */
 export const SECTIONS_DOSSIER = [
   ['identite',    'Vous',            'Nom, téléphone, rattachement'],
@@ -286,8 +285,6 @@ export const SECTIONS_DOSSIER = [
   ['consentement','Vos accords',     'Statuts et données personnelles']
 ];
 
-   --------------------------------------------------------------------- */
-/* --- Complétude d'un dossier ------------------------------------------ */
 export function Completude({ id }){
   const [c, setC] = useState(null);
   useEffect(() => {
@@ -308,6 +305,9 @@ export function Completude({ id }){
     </div>`;
 }
 
+/* =====================================================================
+   COMMUNICATION
+   Un chargé de com rédige, la direction valide, puis publie.
    ===================================================================== */
 
 export const CANAUX = { instagram:'Instagram', linkedin:'LinkedIn', facebook:'Facebook',
@@ -319,13 +319,13 @@ export const ETAT_PUB = {
   refusee:['À reprendre','rouge'], archivee:['Archivée','']
 };
 
-
 /* Adresse publique d'une image du dépôt vitrine. */
+
 export const urlPublique = chemin => chemin
   ? SUPABASE_URL + '/storage/v1/object/public/public/' + chemin : null;
 
-
 /* Dépôt d'image partagé par la vitrine et la communication. */
+
 export async function deposerImage(fichier, prefixe){
   if (!fichier) return null;
   if (fichier.size > 5 * 1024 * 1024)
@@ -337,6 +337,11 @@ export async function deposerImage(fichier, prefixe){
   return chemin;
 }
 
+/* =====================================================================
+   VIE STATUTAIRE
+   Un mandat électif n'est pas une fonction opérationnelle. Le mandat
+   vient du vote et a un terme ; la fonction vient de la nomination et
+   se retire par décision.
    ===================================================================== */
 
 export const PHASES = ['annoncee','candidatures','scrutin','depouillement','proclamee'];
@@ -348,8 +353,6 @@ export const PHASE_NOM = { annoncee:'Convoquée', candidatures:'Appel à candida
 export const TYPE_AG = { constitutive:'Constitutive', ordinaire:'Ordinaire',
                   extraordinaire:'Extraordinaire' };
 
-
-/* --- Assistance : signaler, proposer ---------------------------------- */
 export const NATURES_TICKET = { probleme:'Un problème', amelioration:'Une amélioration',
                          question:'Une question', donnee:'Une donnée erronée' };
 
@@ -357,6 +360,11 @@ export const ETAT_TICKET = { ouvert:['Reçu',''], pris_en_compte:['Pris en compt
   en_cours:['En cours','bleu'], resolu:['Résolu','vert'],
   refuse:['Écarté','rouge'], differe:['Différé','or'] };
 
+/* =====================================================================
+   MON COMITÉ
+   La vie locale directe. Un adhérent n'a pas à comprendre
+   l'organigramme fédéral pour agir : il a besoin de savoir ce qui se
+   passe près de chez lui, qui l'anime, et comment proposer.
    ===================================================================== */
 
 export const STATUT_PROJET = {
@@ -370,11 +378,20 @@ export const STATUT_PROP = {
   nationale:['Reprise au national','or'], ecartee:['Écartée','rouge']
 };
 
+/* =====================================================================
+   BUDGET ET COMPTES
+   Ce que la plateforme sait déjà, elle le compte. La direction ne
+   saisit que ce qu'elle ignore : subventions, cotisations, dons.
    ===================================================================== */
 
 export const STATUT_EX = { prevision:['Prévision',''], vote:['Voté','bleu'],
   en_cours:['En cours','vert'], arrete:['Arrêté','or'], clos:['Clos',''] };
 
+/* =====================================================================
+   PUBLIER LOCALEMENT
+   Le national prépare, le local adapte et publie. Les [crochets] sont
+   délibérés : une publication identique partout sonne faux, une
+   publication entièrement libre dérive.
    ===================================================================== */
 
 export const RESEAUX = {
@@ -385,16 +402,37 @@ export const RESEAUX = {
   presse:['Presse',''], newsletter:['Infolettre','']
 };
 
+/* =====================================================================
+   ÉDITEUR DE FORMATIONS
+   Une formation en cours de rédaction ne doit jamais casser le
+   parcours de quelqu'un : supprimer une leçon achevée est refusé,
+   déplacer échange les rangs sans toucher à la progression acquise.
    ===================================================================== */
 
 export const TYPES_LECON = { lecture:'Texte', video:'Vidéo',
                       document:'Document', quiz:'Quiz' };
 
+/* =====================================================================
+   PASSEPORT D'ENGAGEMENT
+   Le relevé qu'un bénévole peut présenter ailleurs — CV, VAE, dossier
+   de candidature. C'est la contrepartie de ce qu'il donne.
    ===================================================================== */
 
 export const MERITES = { a_progresser:['À consolider',''], satisfaisant:['Satisfaisant','bleu'],
   remarquable:['Remarquable','or'], exemplaire:['Exemplaire','or'] };
 
+
+/* =====================================================================
+   RESSOURCES ET MATÉRIEL
+   Le pendant d'interface de la migration 28. Six volets, qui suivent le
+   trajet réel d'un objet : on le choisit au catalogue, on le commande
+   avec des points, on le reçoit, il entre à l'inventaire. Ce que le
+   catalogue ne propose pas se demande en investissement, et passe alors
+   par l'ordonnateur comme toute dépense.
+
+   Aucun droit n'est vérifié ici : les fonctions de la base refusent
+   elles-mêmes ce qui n'est pas permis, avec leurs propres mots. Les
+   volets d'administration ne sont masqués que pour ne pas encombrer.
    ===================================================================== */
 
 export const ETAT_INV = { neuf:'Neuf', bon:'Bon état', usage:'Usagé',
@@ -403,8 +441,8 @@ export const ETAT_INV = { neuf:'Neuf', bon:'Bon état', usage:'Usagé',
 export const ORIGINE_INV = { catalogue:'Catalogue fédéral', achat_local:'Achat local',
                       don:'Don', investissement:'Investissement' };
 
-
 /* Les états d'une commande et d'un investissement, avec leur couleur. */
+
 export const etatCmd = s => {
   const t = { brouillon:['Panier',''], a_valider:['En validation','or'],
               deposee:['Déposée','bleu'],
@@ -422,6 +460,15 @@ export const etatInv = s => {
   return html`<span class=${'tag '+t[1]}>${t[0]}</span>`;
 };
 
+
+/* =====================================================================
+   LE CABINET DE LA PRÉSIDENCE
+   La présidence est nationale : ce cabinet est unique. Tout ce que le
+   réseau lui adresse arrive ici sans filtre de périmètre, et tout ce
+   qu'elle décide en repart sous forme d'acte.
+
+   La séparation qui structure l'écran est celle qui structure la base :
+   le cabinet rédige les projets, la présidence seule signe.
    ===================================================================== */
 export const NATURE_REMONTEE = { information:'Information', alerte:'Alerte',
   proposition:'Proposition', arbitrage:'Demande d\u2019arbitrage', contact:'Contact' };
@@ -430,6 +477,13 @@ export const TYPE_ACTE = { nomination:'Nomination', delegation:'Délégation',
   decision:'Décision', convocation:'Convocation', motion:'Motion',
   note:'Note de service', abrogation:'Abrogation' };
 
+
+/* =====================================================================
+   AFFAIRES PUBLIQUES
+   Le fichier des relations extérieures. Trois principes visibles à
+   l'écran : le fichier est fédéral et le partage est gradué ; les
+   personnes sont séparées des organismes ; ce qui mérite la présidence
+   remonte par le canal du cabinet, pas par un second.
    ===================================================================== */
 export const TYPE_CONTACT = { collectivite:'Collectivité', institution:'Institution',
   entreprise:'Entreprise', fondation:'Fondation', association:'Association',
@@ -442,6 +496,12 @@ export const STATUT_CONTACT = { prospect:['Prospect',''], contact_pris:['Contact
 export const NATURE_ECHANGE = { rendez_vous:'Rendez-vous', appel:'Appel',
   courriel:'Courriel', courrier:'Courrier', evenement:'Événement', echange:'Échange' };
 
+
+/* =====================================================================
+   LE FIL D'ACTUALITÉ
+   Ce qu'on attend de la personne passe avant ce qui s'est passé. Un fil
+   qui commencerait par des nouvelles laisserait les demandes en attente
+   sous la ligne de flottaison.
    ===================================================================== */
 export const NATURE_FIL = {
   attente:     ['À traiter',     'var(--rouge)'],
