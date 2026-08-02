@@ -1,10 +1,10 @@
 # FFCE — Abrégé du schéma en vigueur
 
-> Généré par `schema.py` à partir des 46 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
+> Généré par `schema.py` à partir des 47 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
 
 > Ce fichier remplace le recueil des migrations pour écrire du code. N'ouvrir le recueil que pour comprendre le *pourquoi* d'une règle.
 
-**110 tables · 386 fonctions · 46 droits · 16 applications**
+**114 tables · 399 fonctions · 49 droits · 17 applications**
 
 ---
 
@@ -106,6 +106,12 @@
 
 **`engagements`** — `id`, `profil_id`, `mois`, `heures_visees`, `heures_realisees`, `commentaire`, `maj_le`
 
+**`entrees_evenement`** — `id`, `inscription_id`, `categorie`, `scanne_le`, `scanne_par`
+
+**`evenement_categories`** — `id`, `evenement_id`, `code`, `nom`, `description`, `capacite`, `horaire`, `externe_admis`, `ordre`
+
+**`evenements`** — `id`, `reference`, `titre`, `objet`, `nature`, `ouverture`, `territoire_id`, `groupe_id`, `partenaire_id`, `organisateur_id`, `lieu`, `adresse`, `debut`, `fin`, `capacite`, `validation_requise`, `cloture_inscriptions`, `statut`, `motif_annulation`, `jeton_public`, `conservation_jours`, `cree_le`
+
 **`exercices`** — `id`, `annee`, `territoire_id`, `debut`, `fin`, `statut`, `vote_le`, `arrete_le`, `arrete_par`, `observations`, `taux_benevolat`, `cree_le`
 
 **`fonctions`** — `code`, `nom`, `famille`, `niveau`, `echelle_requise`
@@ -123,6 +129,8 @@
 **`gt_membres`** — `id`, `groupe_id`, `profil_id`, `role`, `statut`, `invite_par`, `cree_le`
 
 **`gt_taches`** — `id`, `groupe_id`, `titre`, `description`, `assigne_a`, `echeance`, `priorite`, `statut`, `cree_par`, `cree_le`, `faite_le`
+
+**`inscriptions_evenement`** — `id`, `evenement_id`, `profil_id`, `nom`, `prenom`, `email`, `telephone`, `organisme`, `besoin`, `categories`, `statut`, `motif`, `valide_par`, `valide_le`, `jeton`, `efface_le`, `cree_le`
 
 **`interims`** — `id`, `titulaire_id`, `interimaire_id`, `poste`, `debut`, `fin`, `motif`, `accepte_le`, `refuse_le`, `clos_le`, `decide_par`, `cree_le`
 
@@ -384,6 +392,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`changer_phase_assemblee(p_assemblee uuid, p_statut text)`** → `jsonb` · plpgsql · 19_coherence_distinctions.sql
 
+**`changer_statut_evenement(p_id uuid, p_statut text, p_motif text default null)`** → `jsonb` · plpgsql · 47_evenements.sql
+
 **`changer_statut_exercice(p_id uuid, p_statut text, p_observations text default null)`** → `jsonb` · plpgsql · 23_budget_rapport.sql
 
 **`checklist_ouverture(p_profil uuid default null)`** → `table (code text, libelle text, etat text, detail text, lien` · sql · 31_nominations.sql
@@ -435,6 +445,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`contact_visible(p_contact uuid)`** → `boolean` · sql · 37_affaires_publiques.sql
 
 **`controler_acte(p_acte uuid, p_confirmer boolean, p_observation text default null)`** → `jsonb` · plpgsql · 34_gardes.sql
+
+**`controler_entree(p_jeton text, p_categorie text default 'general')`** → `jsonb` · plpgsql · 47_evenements.sql
 
 **`conversation_groupe(p_groupe uuid)`** → `jsonb` · plpgsql · 04_messagerie.sql
 
@@ -536,6 +548,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`enregistrer_contact(d jsonb)`** → `jsonb` · plpgsql · 37_affaires_publiques.sql
 
+**`enregistrer_evenement(d jsonb)`** → `jsonb` · plpgsql · 47_evenements.sql
+
 **`enregistrer_formation(p_id uuid, p_code text, p_titre text, p_resume text, p_description text, p_niveau_min integer, p_duree integer, p_seuil integer, p_publiee boolean, p_ordre integer default 100, p_image text default null, p_prerequis text default null)`** → `jsonb` · plpgsql · 26_editeur_formations.sql
 
 **`enregistrer_interlocuteur(d jsonb)`** → `jsonb` · plpgsql · 37_affaires_publiques.sql
@@ -590,6 +604,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`etat_sauvegardes()`** → `jsonb` · sql · 23_budget_rapport.sql
 
+**`evenement_public(p_jeton text)`** → `jsonb` · sql · 47_evenements.sql
+
 **`examiner_candidature(p_id uuid, p_recevable boolean, p_motif text default null)`** → `jsonb` · plpgsql · 19_coherence_distinctions.sql
 
 **`exceptions_reseau()`** → `table (territoire_id uuid, territoire text, echelle text, pa` · sql · 18_parcours_pilotage.sql
@@ -640,6 +656,10 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`iban_plausible(p text)`** → `boolean` · sql · 09_finances.sql
 
+**`inscription_publique(p_jeton text, d jsonb)`** → `jsonb` · plpgsql · 47_evenements.sql
+
+**`inscrire_a_evenement(p_evenement uuid, p_categories text[] default '{}', p_besoin text default null)`** → `jsonb` · plpgsql · 47_evenements.sql
+
 **`inscrire_acte(p_cible uuid, p_nature text, p_libelle text, p_avant jsonb default null, p_apres jsonb default null, p_reversible boolean default true)`** → `uuid` · sql · 16_garde_chancellerie.sql
 
 **`insigne_membre(p_profil uuid)`** → `jsonb` · sql · 21_interim_suppleance.sql
@@ -679,6 +699,10 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`liste_directions()`** → `table (code text, nom text, nom_court text, ordre integer)` · sql · 30_menu.sql
   
   colonnes : `code`, `nom`, `nom_court`, `ordre`
+
+**`liste_inscrits(p_evenement uuid, p_filtre text default 'tous')`** → `table (id uuid, nom text, matricule text, courriel text, tel` · sql · 47_evenements.sql
+  
+  colonnes : `id`, `nom`, `matricule`, `courriel`, `telephone`, `organisme`, `externe`, `categories`, `besoin`, `statut`, `entrees`, `cree_le`
 
 **`liste_tickets(p_filtre text default 'ouverts')`** → `table (id uuid, reference text, nature text, titre text, des` · sql · 19_coherence_distinctions.sql
   
@@ -747,6 +771,10 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`mes_enveloppes(p_annee integer default null)`** → `table (nature text, ref text, libelle text, recu integer, re` · sql · 40_enveloppes.sql
   
   colonnes : `nature`, `ref`, `libelle`, `recu`, `redistribue`, `disponible`
+
+**`mes_evenements(p_filtre text default 'a_venir')`** → `table (id uuid, reference text, titre text, objet text, natu` · sql · 47_evenements.sql
+  
+  colonnes : `id`, `reference`, `titre`, `objet`, `nature`, `ouverture`, `lieu`, `debut`, `fin`, `statut`, `territoire`, `partenaire`, `organisateur`, `jeton_public`, `capacite`, `inscrits`, `presents`, `mon_inscription`, `je_tiens`
 
 **`mes_exercices()`** → `table (id uuid, annee integer, territoire text, territoire_i` · sql · 23_budget_rapport.sql
   
@@ -884,6 +912,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
   
   colonnes : `profil_id`, `membre`, `matricule`, `fonction_nom`, `territoire_nom`, `application`, `app_nom`, `origine`, `accorde_le`, `expire_le`, `derniere_utilisation`, `nb_ouvertures`, `statut`
 
+**`places_restantes(p_evenement uuid, p_categorie text default null)`** → `integer` · sql · 47_evenements.sql
+
 **`plan_engagement(p_points integer)`** → `jsonb` · plpgsql · 42_engagement.sql
 
 **`plan_territoires()`** → `table (id uuid, parent_id uuid, echelle text, code text, nom` · sql · 40_enveloppes.sql
@@ -960,6 +990,10 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`puis_je_signer_acte()`** → `boolean` · sql · 39_gestion_locale.sql
 
+**`puis_je_tenir_evenement(p_evenement uuid)`** → `boolean` · sql · 47_evenements.sql
+
+**`purger_inscriptions_echues()`** → `jsonb` · plpgsql · 47_evenements.sql
+
 **`qui_ma_consulte()`** → `table (observateur text, fonction text, contexte text, cree_` · sql · 11_lisibilite_droits.sql
   
   colonnes : `observateur`, `fonction`, `contexte`, `cree_le`
@@ -1001,6 +1035,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`regler_application(p_code text, p_nom text, p_nom_court text, p_description text, p_accroche text, p_couleur text, p_logo text, p_direction text default null, p_direction_locale text default null, p_ordre integer default null)`** → `jsonb` · plpgsql · 30_menu.sql
 
 **`regler_bareme(p_cle text, p_points integer)`** → `jsonb` · plpgsql · 16_garde_chancellerie.sql
+
+**`regler_categorie(d jsonb)`** → `jsonb` · plpgsql · 47_evenements.sql
 
 **`regler_dotation(p_cle text, p_valeur numeric)`** → `jsonb` · plpgsql · 28_ressources.sql
 
@@ -1138,6 +1174,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`tableau_cabinet()`** → `jsonb` · sql · 32_cabinet.sql
 
+**`tableau_evenement(p_evenement uuid)`** → `jsonb` · sql · 47_evenements.sql
+
 **`tableau_ordonnancement()`** → `jsonb` · sql · 38_ressources_budget.sql
 
 **`telephone_valide(t text)`** → `boolean` · sql · 19_coherence_distinctions.sql
@@ -1190,7 +1228,7 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`valider_equipe(p_groupe uuid, p_ok boolean, p_motif text default null)`** → `jsonb` · plpgsql · 35_equipes.sql
 
-**`valider_inscription(p_profil uuid, p_accepter boolean, p_forcer boolean default false)`** → `jsonb` · plpgsql · 15_pilotage_unifie.sql
+**`valider_inscription(p_id uuid, p_ok boolean, p_motif text default null)`** → `jsonb` · plpgsql · 47_evenements.sql
 
 **`valider_note(p_note uuid, p_ok boolean, p_motif text default null)`** → `jsonb` · plpgsql · 06_notes_frais.sql
 
@@ -1240,6 +1278,9 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 - `donnees.protegees` — Consulter un dossier protégé *(Données, sensible)*
 - `election.archives` — Consulter toutes les archives électorales *(Structures)*
 - `election.conformite` — Statuer sur la recevabilité des candidatures *(Structures, sensible)*
+- `evenements.controler` — Contrôler les entrées à un événement *(Événements)*
+- `evenements.inscrits` — Accéder à la liste nominative des inscrits *(Événements, sensible)*
+- `evenements.tenir` — Créer et tenir des événements *(Événements)*
 - `finance.bareme` — Fixer le barème et les plafonds *(Finances)*
 - `finance.instruire` — Instruire une note de frais *(Finances)*
 - `finance.ordonnancer` — Ordonnancer une dépense *(Finances, sensible)*
@@ -1278,6 +1319,7 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 - `communication` — Communication
 - `discipline` — Discipline et recours
 - `engagement` — Mon engagement
+- `evenements` — Événements
 - `gestion_locale` — Gestion de la structure
 - `ordonnancement` — Ordonnancement
 - `parcours` — Parcours adhérent
