@@ -1,6 +1,10 @@
 import { Publier } from './direction.js';
 import { TYPES_LECON, db, h, html, jour, useCallback, useEffect, useState } from './socle.js';
 
+/* =====================================================================
+   5 bis. FORMATIONS
+   Le catalogue, le parcours, la leçon, le quiz. Les bonnes réponses
+   ne descendent jamais dans le navigateur : la correction se fait en base.
    ===================================================================== */
 
 export function Formations({ p }){
@@ -292,12 +296,9 @@ export function Lecon({ lecon, suivante, dejaFaite, fermer, allerSuivante }){
 }
 
 
-/* =====================================================================
-   5 ter. GROUPES DE TRAVAIL
-   Le catalogue, l'entrée dans un groupe, les documents, les tâches.
-   Un groupe peut exiger une certification : la formation conditionne
-   alors l'accès au projet.
-
+/* --- Chancellerie ------------------------------------------------------
+   Reconnaître ce qui est donné. Le barème, les classements, les
+   promotions.
    --------------------------------------------------------------------- */
 export function Chancellerie({ p }){
   const [onglet, setOnglet] = useState('synthese');
@@ -520,13 +521,9 @@ export function Chancellerie({ p }){
     </div>`;
 }
 
-
-/* =====================================================================
-   VIE STATUTAIRE
-   Un mandat électif n'est pas une fonction opérationnelle. Le mandat
-   vient du vote et a un terme ; la fonction vient de la nomination et
-   se retire par décision.
-
+/* --- Distinctions -------------------------------------------------------
+   Reconnaître un engagement sans attendre un palier. Une lettre de
+   félicitations n'a pas besoin d'un barème.
    --------------------------------------------------------------------- */
 export function Distinctions({ classement, recharger, setMsg }){
   const [types, setTypes] = useState([]);
@@ -630,6 +627,8 @@ export function Distinctions({ classement, recharger, setMsg }){
       </div>
     </div>`;
 }
+
+/* --- Mes distinctions, sur la fiche du membre ------------------------- */
 
 
 export function EditeurFormations({ p }){
@@ -1151,10 +1150,11 @@ export function EditeurLecon({ lecon, fermer }){
 
 
 /* =====================================================================
-   PASSEPORT D'ENGAGEMENT
-   Le relevé qu'un bénévole peut présenter ailleurs — CV, VAE, dossier
-   de candidature. C'est la contrepartie de ce qu'il donne.
-
+   LE BARÈME DES ÉCHELONS
+   Nom, seuil et ce que l'échelon ouvre étaient figés dans la migration
+   du socle. Ils se règlent ici. Les seuils doivent rester croissants :
+   la base refuse de créer un échelon inatteignable ou un palier qui
+   doublerait le précédent.
    ===================================================================== */
 export function BaremeEchelons({ setMsg }){
   const [l, setL] = useState([]);
@@ -1228,15 +1228,3 @@ export function BaremeEchelons({ setMsg }){
         </div>`)}
     </div>`;
 }
-
-/* =====================================================================
-   LA CARTE DU RÉSEAU
-   Le fond de carte pèse trop lourd pour vivre dans ce fichier : il est
-   chargé à la demande depuis un dépôt public, et mis en cache pour la
-   session. Si le chargement échoue — réseau coupé, dépôt déplacé — le
-   tableau reste, et le dit. La carte est un confort, jamais le seul
-   moyen d'atteindre un territoire.
-
-   Les codes INSEE du fond correspondent aux nôtres : « 31 » pour un
-   département, « R76 » pour une région une fois le préfixe ajouté.
-   L'outre-mer n'y figure pas et se lit sous la carte.
