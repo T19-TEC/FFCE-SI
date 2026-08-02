@@ -8,6 +8,16 @@ import { Discipline } from './statutaire.js';
 import { Pilotage, Structures } from './structure.js';
 import { Accueil, Blocs, CarteFederale, Contact, Site } from './vitrine.js';
 
+/* =====================================================================
+   5 sexies. HABILITATIONS
+   Un droit ouvre une action. Un poste regroupe des droits. Une
+   nomination confie un poste, avec un périmètre et un terme.
+   ===================================================================== */
+
+/* =====================================================================
+   RÉSEAU ET HABILITATIONS
+   Réorganisé autour de deux objets, pas de cinq tables : la PERSONNE
+   et la STRUCTURE. On ouvre une fiche, et tout se fait là.
    ===================================================================== */
 export function Habilitations({ p }){
   const [onglet, setOnglet] = useState('membres');
@@ -48,8 +58,8 @@ export function Habilitations({ p }){
     </div>`;
 }
 
-
 /* --- Liste des membres, une seule porte d'entrée ---------------------- */
+
 export function ListeMembres({ ouvrir }){
   const [m, setM] = useState(null);
   const [q, setQ] = useState('');
@@ -115,8 +125,8 @@ export function ListeMembres({ ouvrir }){
     </div>`;
 }
 
-
 /* --- La fiche unique : tout se règle ici ------------------------------ */
+
 export function FicheAdmin({ p, id, fermer, setMsg }){
   const [f, setF] = useState(null);
   const [ref, setRef] = useState({fonctions:[], terr:[], postes:[], apps:[]});
@@ -407,8 +417,8 @@ export function FicheAdmin({ p, id, fermer, setMsg }){
     </div>`;
 }
 
+/* --- Les structures : où le réseau tient, où il manque du monde ------- */
 
-/* --- Postes et droits, réunis ----------------------------------------- */
 export function PostesEtDroits({ setMsg }){
   const [vue, setVue] = useState('postes');
   const [postes, setPostes] = useState([]);
@@ -437,8 +447,8 @@ export function PostesEtDroits({ setMsg }){
     </div>`;
 }
 
-
 /* --- Identité des applications ---------------------------------------- */
+
 export function IdentiteApplications({ setMsg }){
   const [apps, setApps] = useState([]);
   const [dirs, setDirs] = useState([]);
@@ -835,9 +845,9 @@ export function Communication({ p }){
     </div>`;
 }
 
+
 /* --- La charte, sous la main -------------------------------------------
    Une charte qu'il faut rouvrir en PDF n'est pas appliquée.
-
    --------------------------------------------------------------------- */
 export function RappelCharte(){
   const couleurs = [
@@ -1080,13 +1090,6 @@ export function EditionPublication({ p, pub, campagnes, modeles, fermer }){
     </div>`;
 }
 
-
-/* --- Dossier incomplet : on ne va pas plus loin ------------------------
-   Ni un mur ni une fenêtre qu'on referme : la page qui suit la
-   connexion, tant qu'il manque l'essentiel.
-
-
-/* --- Intérim -------------------------------------------------------- */
 export function Interims({ p, setMsg }){
   const [liste, setListe] = useState([]);
   const [gens, setGens] = useState([]);
@@ -1225,8 +1228,8 @@ export function Interims({ p, setMsg }){
     </div>`;
 }
 
-
 /* --- Conformité des postes -------------------------------------------- */
+
 export function ConformitePostes({ setMsg }){
   const [liste, setListe] = useState([]);
   useEffect(() => {
@@ -1260,6 +1263,8 @@ export function ConformitePostes({ setMsg }){
       </div>
     </div>`;
 }
+
+/* --- Suivi des virements, côté direction financière ------------------- */
 
 
 export function Publier({ p }){
@@ -1472,8 +1477,8 @@ export function Suggestion({ s, outils, fermer }){
     </div>`;
 }
 
-
 /* --- Suggestions, côté direction -------------------------------------- */
+
 export function SuggestionsAdmin({ setMsg }){
   const [liste, setListe] = useState([]);
   const [ouvert, setOuvert] = useState(false);
@@ -1615,15 +1620,6 @@ export function SuggestionsAdmin({ setMsg }){
     </div>`;
 }
 
-
-/* =====================================================================
-   ÉDITEUR DE FORMATIONS
-   Une formation en cours de rédaction ne doit jamais casser le
-   parcours de quelqu'un : supprimer une leçon achevée est refusé,
-   déplacer échange les rangs sans toucher à la progression acquise.
-
-
-/* --- Direction générale : vérifications ------------------------------ */
 export function Validation({ p }){
   const [attente, setAttente] = useState([]);
   const [demandes, setDemandes] = useState([]);
@@ -1961,10 +1957,10 @@ export function Validation({ p }){
     </div>`;
 }
 
+
 /* --- Direction générale : le site public ------------------------------
    Textes, blocs répétables et actualités. Plus une ligne de contenu
    public n'est écrite dans le code.
-
    --------------------------------------------------------------------- */
 export function VitrineAdmin(){
   const [onglet, setOnglet] = useState('textes');
@@ -2277,8 +2273,8 @@ export function VitrineArticles({ setMsg }){
     </div>`;
 }
 
-
 /* --- Coquille de l'espace membre ------------------------------------- */
+
 export function EnAttente({ p }){
   return html`
     <section class="bloc blanc">
@@ -2298,18 +2294,6 @@ export function EnAttente({ p }){
       </div>
     </section>`;
 }
-
-/* =====================================================================
-   RESSOURCES ET MATÉRIEL
-   Le pendant d'interface de la migration 28. Six volets, qui suivent le
-   trajet réel d'un objet : on le choisit au catalogue, on le commande
-   avec des points, on le reçoit, il entre à l'inventaire. Ce que le
-   catalogue ne propose pas se demande en investissement, et passe alors
-   par l'ordonnateur comme toute dépense.
-
-   Aucun droit n'est vérifié ici : les fonctions de la base refusent
-   elles-mêmes ce qui n'est pas permis, avec leurs propres mots. Les
-   volets d'administration ne sont masqués que pour ne pas encombrer.
 
 
 export function Cabinet({ p }){
@@ -2382,8 +2366,8 @@ export function Cabinet({ p }){
     </div>`;
 }
 
-
 /* --- L'état de la fédération, vu d'en haut ------------------------------ */
+
 export function CabinetEtat({ tb }){
   const alerte = (cond, texte, lien) => cond && html`
     <div class="ligne">
@@ -2439,8 +2423,8 @@ export function CabinetEtat({ tb }){
     </div>`;
 }
 
-
 /* --- Les remontées du réseau -------------------------------------------- */
+
 export function CabinetRemontees({ remontees, appel }){
   return html`
     <div class="panneau">
@@ -2481,8 +2465,8 @@ export function CabinetRemontees({ remontees, appel }){
     </div>`;
 }
 
-
 /* --- Préparer, signer, abroger ------------------------------------------ */
+
 export function CabinetActes({ p, actes, projets, signataire, appel, setMsg }){
   const vierge = { type:'decision', objet:'', visas:'', considerants:'',
                    destinataire:'', poste:'', effet:'', territoire:'' };
@@ -2668,8 +2652,8 @@ export function CabinetActes({ p, actes, projets, signataire, appel, setMsg }){
     </div>`;
 }
 
-
 /* --- Le recueil : la même liste pour le cabinet et pour les adhérents --- */
+
 export function RecueilListe({ actes, ouvert, texte, lire, telecharger, abroger }){
   return html`
     <div class="panneau">
@@ -2729,8 +2713,8 @@ export function RecueilListe({ actes, ouvert, texte, lire, telecharger, abroger 
     </div>`;
 }
 
-
 /* --- Le recueil, application ouverte à tous ----------------------------- */
+
 export function Recueil(){
   const [actes, setActes] = useState([]);
   const [ouvert, setOuvert] = useState(null);
@@ -2780,8 +2764,8 @@ export function Recueil(){
     </div>`;
 }
 
-
 /* --- Porter au cabinet, depuis n'importe où ----------------------------- */
+
 export function VersLeCabinet(){
   const [ouvert, setOuvert] = useState(false);
   const [f, setF] = useState({ nature:'information', objet:'', corps:'' });
@@ -2832,13 +2816,6 @@ export function VersLeCabinet(){
             \u2014 elle ne se perd pas en conversation.</div>`}
     </div>`;
 }
-
-/* =====================================================================
-   LE PROFIL INTERNE
-   Ce que la fédération montre d'un membre à un autre. Ni courriel, ni
-   téléphone, ni adresse : ceux-là relèvent de la fiche membre, dont la
-   consultation se journalise et déclenche une alerte si le dossier est
-   protégé. Ici, rien de plus que ce qui est déjà interne-public.
 
 
 export function AffairesPubliques({ p }){
@@ -2927,8 +2904,8 @@ export function AffairesPubliques({ p }){
     </div>`;
 }
 
-
 /* --- Le fichier --------------------------------------------------------- */
+
 export function ApFichier({ p, contacts, service, appel, setMsg, recharger }){
   const [q, setQ] = useState('');
   const [filtre, setFiltre] = useState('tous');
@@ -3114,8 +3091,8 @@ export function ApFichier({ p, contacts, service, appel, setMsg, recharger }){
     </div>`;
 }
 
-
 /* --- Le détail d'un contact -------------------------------------------- */
+
 export function ApContact({ contact, service, appel, recharger }){
   const [gens, setGens] = useState([]);
   const [echanges, setEchanges] = useState([]);
@@ -3257,8 +3234,8 @@ export function ApContact({ contact, service, appel, recharger }){
     </div>`;
 }
 
-
 /* --- Les sollicitations du réseau -------------------------------------- */
+
 export function ApSollicitations({ demandes, contacts, service, appel }){
   const [ouvert, setOuvert] = useState(false);
   const [f, setF] = useState({ objet:'', besoin:'', echeance:'' });
@@ -3373,8 +3350,8 @@ export function ApSollicitations({ demandes, contacts, service, appel }){
     </div>`;
 }
 
-
 /* --- La prospection ----------------------------------------------------- */
+
 export function ApProspection({ contacts, appel }){
   const [l, setL] = useState([]);
   const [ouvert, setOuvert] = useState(false);
@@ -3482,9 +3459,3 @@ export function ApProspection({ contacts, appel }){
       </div>
     </div>`;
 }
-
-/* =====================================================================
-   LES INVESTISSEMENTS À ORDONNANCER
-   Ils n'apparaissaient que dans Ressources, alors qu'ordonnancer est le
-   métier de l'ordonnateur, qui travaille dans son écran. Même fonction,
-   deux endroits — pas deux circuits.
