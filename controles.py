@@ -118,6 +118,18 @@ def ctrl_17():
             if src == m or n in imp: continue
             if re.search(r'(?<![\w.$])' + re.escape(n) + r'\s*\(', s):
                 ko.append(f"{m}.js appelle `{n}()` sans import (défini dans {src}.js)")
+    # Et la seule vérification qui tranche : les charger pour de bon.
+    # `node --check` analyse en mode script et laisse passer des fichiers
+    # invalides en mode module — un commentaire de bloc coupé en deux,
+    # par exemple. Il ne suffit pas.
+    if os.path.exists('verifier_modules.py'):
+        import subprocess
+        r = subprocess.run([sys.executable, 'verifier_modules.py'],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            ko.append("chargement réel : " + r.stdout.strip().replace('\n', ' ')[:200])
+    else:
+        ko.append("verifier_modules.py absent : le chargement réel n'est pas vérifié")
     yield "17. Résolution des modules ES", sorted(set(ko))
 
 def ctrl_4_5():
