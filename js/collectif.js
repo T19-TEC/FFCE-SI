@@ -2,6 +2,11 @@ import { ProfilInterne } from './membre.js';
 import { aller, db, html, jour, nomComplet, useCallback, useEffect, useState } from './socle.js';
 import { Rejoindre } from './vitrine.js';
 
+/* =====================================================================
+   5 ter. GROUPES DE TRAVAIL
+   Le catalogue, l'entrée dans un groupe, les documents, les tâches.
+   Un groupe peut exiger une certification : la formation conditionne
+   alors l'accès au projet.
    ===================================================================== */
 
 export function Groupes({ p }){
@@ -572,12 +577,10 @@ export function GtMembres({ p, groupe, membres, gens, responsable, recharger }){
     </div>`;
 }
 
-
 /* =====================================================================
    5 quater. MESSAGERIE
    Conversations privées et de groupe. La supervision hiérarchique est
    annoncée à l'écran, toujours — c'est une obligation, pas une option.
-
    ===================================================================== */
 
 export function Messagerie({ p, ouvrir }){
@@ -1000,11 +1003,9 @@ export function Conversation({ p, id, fermer }){
 }
 
 
-/* =====================================================================
-   5 quinquies. NOTES DE FRAIS ET DIRECTION FINANCIÈRE
-   Circuit à trois temps : le membre dépose, son encadrement instruit,
-   le trésorier valide puis paie.
-
+/* --- Le journal des envois ---------------------------------------------
+   Qui, quand, vers qui, quel nom, quelle taille. Ni le message, ni le
+   fichier : c'est une trace, pas une clé.
    --------------------------------------------------------------------- */
 export function JournalPieces({ setMsg }){
   const [l, setL] = useState([]);
@@ -1063,6 +1064,7 @@ export function JournalPieces({ setMsg }){
     </div>`;
 }
 
+
 /* =====================================================================
    LES ÉQUIPES
    Un groupe ne se rejoint plus d'un clic : on postule, on est retenu.
@@ -1071,7 +1073,6 @@ export function JournalPieces({ setMsg }){
 
    Une équipe n'hérite d'aucun droit. Elle reçoit une fiche, comme un
    poste, remplie par qui valide et bornée à ce qu'il détient lui-même.
-
    ===================================================================== */
 export function GroupesOuverts({ setMsg }){
   const [l, setL] = useState([]);
@@ -1132,8 +1133,8 @@ export function GroupesOuverts({ setMsg }){
     </div>`;
 }
 
-
 /* --- Les candidatures reçues, côté responsable de groupe --------------- */
+
 export function CandidaturesGroupe({ setMsg }){
   const [l, setL] = useState([]);
   const charger = useCallback(() =>
@@ -1178,11 +1179,11 @@ export function CandidaturesGroupe({ setMsg }){
     </div>`;
 }
 
+
 /* --- Constituer une équipe locale --------------------------------------
    La fiche ne peut contenir que des applications que le proposant
    détient. Au moment de valider, elle est ramenée à ce que le
    validateur détient : il engage sa signature, pas celle du proposant.
-
    --------------------------------------------------------------------- */
 export function EquipesLocales({ p, apps, territoire, setMsg }){
   const [aValider, setAValider] = useState([]);
@@ -1322,9 +1323,3 @@ export function EquipesLocales({ p, apps, territoire, setMsg }){
       </div>
     </div>`;
 }
-
-/* =====================================================================
-   LE SUIVI D'UNE NOTE
-   Le déposant ne voyait qu'un mot. Il voit maintenant les quatre
-   étapes, laquelle est franchie, par qui, et ce qui reste. Un dossier
-   arrêté s'arrête visiblement plutôt que de rester en suspens.
