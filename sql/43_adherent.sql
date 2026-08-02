@@ -166,15 +166,16 @@ language sql stable security definer set search_path = public as $$
     union all
     -- Les assemblées à venir de mon corps électoral.
     select 'assemblee', a.titre,
-           'Le ' || to_char(a.date_assemblee, 'DD/MM/YYYY') ||
+           'Le ' || to_char(a.date_tenue, 'DD/MM/YYYY') ||
+           coalesce(' · ' || a.lieu, '') ||
            case when a.statut = 'scrutin' then ' — scrutin ouvert' else '' end,
-           a.date_assemblee::timestamptz, '#/espace/assemblees',
+           a.date_tenue, '#/espace/assemblees',
            case when a.statut = 'scrutin' and not a.a_vote then 'Voter'
                 else 'Consulter' end,
            'Vie statutaire',
            a.statut = 'scrutin' and a.electeur and not a.a_vote
     from mes_assemblees() a
-    where a.date_assemblee >= current_date - 7
+    where a.date_tenue >= now() - interval '7 days'
 
     union all
     -- Les missions ouvertes que je peux rejoindre.
