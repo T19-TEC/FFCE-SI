@@ -1,5 +1,5 @@
 """Contrôles de livraison FFCE — les douze familles."""
-import re, sys, glob
+import re, sys, glob, os
 
 FS = sorted(glob.glob('sql/SQL/*.sql'))
 SRC = "\n".join(open(f, encoding='utf-8').read() for f in FS)
@@ -46,29 +46,37 @@ def definitions_en_vigueur():
     return vig
 
 def js_du_html(path='index.html'):
+    """L'interface vit désormais dans js/*.js, chargés en modules ES par
+    index.html. Les contrôles 1, 2, 3 et 16 portent sur l'ensemble."""
     h = open(path, encoding='utf-8').read()
-    return re.search(r'<script type="module">(.*)</script>', h, re.S).group(1), h
+    parts = [open(f, encoding='utf-8').read() for f in sorted(glob.glob('js/*.js'))]
+    return "\n".join(parts), h + "\n".join(parts)
 
 def ctrl_1_2_3(js):
     a = set(re.findall(r'<\$\{(\w+)\}', js))
-    d = (set(re.findall(r'^function (\w+)', js, re.M))
-         | set(re.findall(r'^const (\w+)\s*=\s*\(', js, re.M)))
+    d = (set(re.findall(r'^(?:export )?(?:async )?function (\w+)', js, re.M))
+         | set(re.findall(r'^(?:export )?const (\w+)\s*=', js, re.M))
+         # ce qu'un module importe lui est disponible
+         | set(x.strip() for l in re.findall(r'^import \{([^}]*)\} from', js, re.M)
+               for x in l.split(',') if x.strip()))
     yield "1. Composants appelés non définis", sorted(a - d)
     rpc = set(re.findall(r"(?:rpc|appel)\('(\w+)'", js))
     yield "2. Fonctions SQL absentes", [f for f in sorted(rpc) if ('function '+f+'(') not in SRC]
-    noms = re.findall(r'^function (\w+)', js, re.M) + re.findall(r'^const (\w+)\s*=', js, re.M)
+    noms = (re.findall(r'^(?:export )?(?:async )?function (\w+)', js, re.M)
+            + re.findall(r'^(?:export )?const (\w+)\s*=', js, re.M))
     yield "3. Définitions en double", [n for n in sorted(set(noms)) if noms.count(n) > 1]
 
     # 16 — composant défini mais jamais appelé. C'est le symptôme d'une
     # livraison à moitié appliquée : le composant existe, la page ne le
     # montre pas, et rien ne signale l'anomalie. Les composants racines
     # (montés par le routeur) sont exclus par la liste ci-dessous.
-    RACINES = {'App','Site','Espace','Entete','Pied','Flanc','Accueil'}
-    orphelins = sorted(d - a - RACINES - set(re.findall(r'html`<\$\{(\w+)', js)))
-    # Un composant nommé dans le routeur est monté, même sans balise htm.
-    monte = set(re.findall(r'\$\{(\w+)\}\s', js)) | set(re.findall(r'<\$\{(\w+)\}', js))
-    yield "16. Composants définis mais jamais montés", [
-        n for n in orphelins if n not in monte and n[0].isupper()]
+    RACINES = {'App','Site','Espace'}
+    # Seules les FONCTIONS à initiale majuscule sont des composants : une
+    # constante n'est pas montée, elle est employée.
+    composants = set(re.findall(r'^(?:export )?(?:async )?function ([A-Z]\w+)', js, re.M))
+    monte = set(re.findall(r'<\$\{(\w+)\}', js)) | set(re.findall(r'\$\{(\w+)\}\s', js))
+    yield "16. Composants définis mais jamais montés", sorted(
+        composants - monte - RACINES)
 
 def ctrl_6():
     ko = []
@@ -77,6 +85,40 @@ def ctrl_6():
                              open(f, encoding='utf-8').read()):
             ko.append(f.split('/')[-1] + ' : ' + re.sub(r'\s+',' ',m.group(0))[:60])
     yield "6. Jointures mêlées", ko
+
+def ctrl_17():
+    """Résolution des modules ES : tout identifiant employé par un module
+    doit y être défini ou importé, et tout import doit viser un export
+    réel. Sans build, c'est le seul filet — une erreur d'import ne se
+    voit qu'à l'exécution, par un écran blanc."""
+    mods = {os.path.basename(f)[:-3]: open(f, encoding='utf-8').read()
+            for f in sorted(glob.glob('js/*.js'))}
+    if not mods:
+        yield "17. Résolution des modules ES", []
+        return
+    exp = {}
+    for m, s in mods.items():
+        exp[m] = (set(re.findall(r'^export (?:async )?function (\w+)', s, re.M))
+                  | set(re.findall(r'^export (?:const|let) (\w+)', s, re.M))
+                  | set(re.findall(r'^export \{([^}]*)\}', s, re.M) and
+                        [x.strip() for l in re.findall(r'^export \{([^}]*)\};', s, re.M)
+                         for x in l.split(',')] or []))
+    tous = {n: m for m, ns in exp.items() for n in ns}
+    ko = []
+    for m, s in mods.items():
+        imp = {x.strip() for l in re.findall(r"^import \{([^}]*)\} from '\./", s, re.M)
+               for x in l.split(',') if x.strip()}
+        for n in imp:
+            if n not in tous:
+                ko.append(f"{m}.js importe `{n}` : aucun module ne l'exporte")
+        for n in set(re.findall(r'<\$\{(\w+)\}', s)):
+            if n not in exp[m] and n not in imp:
+                ko.append(f"{m}.js monte `{n}` sans le définir ni l'importer")
+        for n, src in tous.items():
+            if src == m or n in imp: continue
+            if re.search(r'(?<![\w.$])' + re.escape(n) + r'\s*\(', s):
+                ko.append(f"{m}.js appelle `{n}()` sans import (défini dans {src}.js)")
+    yield "17. Résolution des modules ES", sorted(set(ko))
 
 def ctrl_4_5():
     """4 — une fonction `returns table` redéfinie exige un `drop` préalable
@@ -299,7 +341,7 @@ def ctrl_12(nouvelles):
 if __name__ == '__main__':
     nouvelles = sys.argv[1:]
     js, h = js_du_html()
-    flux = list(ctrl_1_2_3(js)) + list(ctrl_4_5()) + list(ctrl_6()) + list(ctrl_9()) \
+    flux = list(ctrl_1_2_3(js)) + list(ctrl_17()) + list(ctrl_4_5()) + list(ctrl_6()) + list(ctrl_9()) \
          + list(ctrl_10()) + list(ctrl_11()) + list(ctrl_13()) + list(ctrl_15()) + list(ctrl_14()) \
          + list(ctrl_12(nouvelles))
     dur = 0
