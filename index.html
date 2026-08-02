@@ -1137,8 +1137,14 @@ function Flanc({ p, apps, page, directions, ouvert, fermer, attentes }){
   const groupes = (directions||[]).map(d => ({
     ...d, apps: ouvertes.filter(a => a.direction === d.code)
   }));
-  const dirs = groupes.filter(d => d.apps.length > 1);
-  const solitaires = groupes.filter(d => d.apps.length === 1).flatMap(d => d.apps);
+  // Une direction qui n'ouvre qu'une application ne forme pas un bloc —
+  // sauf celles dont l'existence même est signifiante, marquées
+  // `bloc_permanent` en base. La Présidence en est une : la voir sous
+  // « Mon activité » dirait le contraire de ce qu'elle est.
+  const dirs = groupes.filter(d => d.apps.length > 1
+    || (d.bloc_permanent && d.apps.length === 1));
+  const solitaires = groupes.filter(d => d.apps.length === 1 && !d.bloc_permanent)
+    .flatMap(d => d.apps);
   const perso = ouvertes.filter(a => a.personnelle).concat(solitaires);
 
   const nom = a => a.nom_court || a.nom;
