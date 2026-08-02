@@ -8,6 +8,18 @@ import { Assemblees, Conformite, Discipline } from './statutaire.js';
 import { GestionLocale, MonComite, ParcoursAdherent, Pilotage } from './structure.js';
 import { CarteFederale } from './vitrine.js';
 
+
+/* --- Menu latéral ------------------------------------------------------
+   Trois blocs et pas un de plus : qui je suis, ce que je fais, ce que
+   j'administre. Le guichet et le référentiel ne sont plus des onglets
+   permanents — on y accède au moment où on en a besoin.
+   --------------------------------------------------------------------- */
+/* --- Menu latéral ------------------------------------------------------
+   Le menu suit l'organigramme, pas la liste des tables. Trois strates :
+   qui je suis, mon activité de membre, puis les directions dont je
+   relève — chacune avec ses outils. C'est ainsi que s'organisent les
+   grandes fédérations : on n'appartient pas à « des responsabilités »
+   en vrac, on appartient à une direction.
    --------------------------------------------------------------------- */
 export function Flanc({ p, apps, page, directions, ouvert, fermer, attentes }){
   const item = (r, t, marque, pivot) => html`
@@ -85,6 +97,11 @@ export function Flanc({ p, apps, page, directions, ouvert, fermer, attentes }){
     </aside>`;
 }
 
+/* --- Progression : les points d'échelon ------------------------------- */
+
+/* --- Ce qui attend : la file de travail personnelle -------------------
+   Les alertes se perdaient au fond des onglets. Elles remontent ici,
+   en tête du tableau de bord, triées par urgence.
    --------------------------------------------------------------------- */
 export function CeQuiAttend({ items }){
   if (!items || items.length === 0) return null;
@@ -214,12 +231,6 @@ export function TableauDeBord({ p, apps, chemin, demandes, attentes }){
     </div>`;
 }
 
-/* --- Mon portrait ------------------------------------------------------
-   Deux mégaoctets, dépôt privé, dossier nommé par l'identifiant : nul
-   ne peut déposer chez un autre.
-
-
-/* --- L'écran d'un compte suspendu ------------------------------------ */
 export function EspaceSuspendu({ p }){
   return html`
     <div style="min-height:100vh;background:var(--papier)">
@@ -269,8 +280,8 @@ export function EspaceSuspendu({ p }){
     </div>`;
 }
 
+/* --- L'application Discipline ---------------------------------------- */
 
-/* --- Le référentiel, ouvert à tous ------------------------------------ */
 export function Referentiel(){
   const [r, setR] = useState(null);
   const [onglet, setOnglet] = useState('fonctions');
@@ -407,8 +418,8 @@ export function Referentiel(){
     </div>`;
 }
 
-
 /* --- La matrice des accès, côté pilotage ------------------------------ */
+
 export function Matrice({ setMsg }){
   const [m, setM] = useState([]);
   const charger = useCallback(async () => {
@@ -487,12 +498,6 @@ export function Matrice({ setMsg }){
       </div>
     </div>`;
 }
-
-
-/* =====================================================================
-   MON ENGAGEMENT
-   La première chose qu'on voit. Ce que je donne ce mois-ci, ce qu'on
-   attend de moi, et ce que je peux rejoindre.
 
 
 export function Assistance({ p }){
@@ -671,8 +676,8 @@ export function Assistance({ p }){
     </div>`;
 }
 
-
 /* --- Assistance, côté pilotage ---------------------------------------- */
+
 export function AssistanceAdmin({ setMsg }){
   const [liste, setListe] = useState([]);
   const [filtre, setFiltre] = useState('ouverts');
@@ -779,6 +784,10 @@ export function AssistanceAdmin({ setMsg }){
     </div>`;
 }
 
+/* --- Conformité des élections ----------------------------------------- */
+
+/* --- Mes délégations en cours ------------------------------------------
+   Agir au nom d'un autre doit toujours se voir.
    --------------------------------------------------------------------- */
 export function Delegations(){
   const [d, setD] = useState([]);
@@ -791,6 +800,8 @@ export function Delegations(){
           jusqu\u2019au ${jour(x.jusqu_au)}.</div>`)}
     </div>`;
 }
+
+/* --- Intérim -------------------------------------------------------- */
 
 
 export function FilActualite({ p }){
@@ -856,12 +867,6 @@ export function FilActualite({ p }){
           </div>`}
     </div>`;
 }
-
-/* --- La carte d'adhérent -------------------------------------------------
-   Le QR est dessiné à la main : un code de version fixe suffit pour un
-   identifiant, et cela évite une bibliothèque de plus. Le jeton qu'il
-   porte n'est pas l'identifiant du compte — le photographier ne donne
-   accès à rien.
 
 
 export function Espace({ session, sous }){
@@ -1056,6 +1061,3 @@ export function Espace({ session, sous }){
       <main class="contenu">${vue}</main>
     </div>`;
 }
-
-/* =====================================================================
-   6. RACINE
