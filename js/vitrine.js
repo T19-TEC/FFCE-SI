@@ -1,8 +1,20 @@
+/* =====================================================================
+   VITRINE
+   Tout ce qui se voit sans compte : accueil, présentation de la
+   fédération, actions, réseau, actualités, pages de texte, adhésion,
+   connexion et inscription. Plus le routeur public, qui décide entre le
+   site et l'espace membre.
+
+   Les pages atteignables par un lien seul — appel public à
+   candidatures, inscription à un événement — vivent ici, parce
+   qu'elles doivent fonctionner avant toute authentification.
+   ===================================================================== */
 import { Espace } from './espace.js';
 import { Formations } from './formation.js';
 import { EXTERNE, Info, Logo, Maillage, Portrait, aller, db, html, jour, nomComplet, render, urlPublique, useEffect, useRoute, useState } from './socle.js';
 import { AppelPublic } from './statutaire.js';
 
+import { EvenementPublic } from './evenements.js';
 
 export function EntetePublique({ route, session }){
   const [ouvert, setOuvert] = useState(false);
@@ -594,6 +606,14 @@ export function Site(){
     return html`
       <${EntetePublique} route=${route} session=${session} />
       <${AppelPublic} token=${route.slice('/appel/'.length)} />
+      <${Pied} txt=${txt} />`;
+  }
+
+  // L'inscription à un événement ouvert : accessible sans compte.
+  if (route.startsWith('/evenement/')){
+    return html`
+      <${EntetePublique} route=${route} session=${session} />
+      <${EvenementPublic} jeton=${route.slice('/evenement/'.length)} />
       <${Pied} txt=${txt} />`;
   }
 
