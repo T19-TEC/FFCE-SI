@@ -1,3 +1,11 @@
+/* =====================================================================
+   ESPACE
+   La charpente de l'intranet : le menu latéral, le routeur des
+   applications, le tableau de bord, le fil d'actualité, la file de
+   travail, le guichet des demandes et le référentiel des droits.
+
+   C'est ici qu'on ajoute la route d'une nouvelle application.
+   ===================================================================== */
 import { Groupe, Groupes, Messagerie } from './collectif.js';
 import { AffairesPubliques, Cabinet, Communication, EnAttente, Habilitations, Postes, Publier, Recueil, Validation, VersLeCabinet, VitrineAdmin } from './direction.js';
 import { Budget, Finances, NotesFrais, Rapport, Ressources } from './finances.js';
@@ -133,6 +141,7 @@ export function CeQuiAttend({ items }){
     </div>`;
 }
 
+import { Evenements } from './evenements.js';
 
 export function TableauDeBord({ p, apps, chemin, demandes, attentes }){
   const ouvertes = demandes.filter(d => d.statut === 'ouverte' || d.statut === 'en_cours');
@@ -971,6 +980,8 @@ export function Espace({ session, sous }){
     case 'mandats':    vue = html`<${MesMandats} p=${p} recharger=${charger} />`; break;
     case 'cabinet':    vue = acces('cabinet') ? html`<${Cabinet} p=${p} />` : refus; break;
     case 'recueil':    vue = html`<${Recueil} />`; break;
+    case 'evenements': vue = acces('evenements')
+                       ? html`<${Evenements} p=${p} />` : refus; break;
     case 'gestion_locale': vue = acces('gestion_locale')
                        ? html`<${GestionLocale} p=${p} />` : refus; break;
     case 'affaires_publiques': vue = acces('affaires_publiques')
