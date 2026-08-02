@@ -111,11 +111,15 @@ def ctrl_17():
         for n in imp:
             if n not in tous:
                 ko.append(f"{m}.js importe `{n}` : aucun module ne l'exporte")
+        # Un composant peut être défini dans le module sans être exporté :
+        # il n'a alors pas à être importé.
+        locaux = (set(re.findall(r'^(?:export )?(?:async )?function (\w+)', s, re.M))
+                  | set(re.findall(r'^(?:export )?(?:const|let) (\w+)', s, re.M)))
         for n in set(re.findall(r'<\$\{(\w+)\}', s)):
-            if n not in exp[m] and n not in imp:
+            if n not in locaux and n not in imp:
                 ko.append(f"{m}.js monte `{n}` sans le définir ni l'importer")
         for n, src in tous.items():
-            if src == m or n in imp: continue
+            if src == m or n in imp or n in locaux: continue
             if re.search(r'(?<![\w.$])' + re.escape(n) + r'\s*\(', s):
                 ko.append(f"{m}.js appelle `{n}()` sans import (défini dans {src}.js)")
     # Et la seule vérification qui tranche : les charger pour de bon.
