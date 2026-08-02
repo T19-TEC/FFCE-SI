@@ -2740,6 +2740,12 @@ function Conversation({ p, id, fermer }){
   const [piece, setPiece] = useState(null);
   const [profilOuvert, setProfilOuvert] = useState(null);
   const [liens, setLiens] = useState({});
+  const [organes, setOrganes] = useState([]);
+  const [auNom, setAuNom] = useState(false);
+
+  useEffect(() => {
+    db.rpc('mes_organes').then(({data}) => { setOrganes(data || []); });
+  }, []);
 
   const charger = useCallback(async () => {
     const [{ data: cs }, { data: ps }, { data: ms }] = await Promise.all([
@@ -2785,7 +2791,10 @@ function Conversation({ p, id, fermer }){
       p_conv: id, p_contenu: texte || null, p_piece: chemin,
       p_piece_nom: piece ? piece.name : null,
       p_taille: piece ? piece.size : null,
-      p_type: piece ? (piece.type || null) : null
+      p_type: piece ? (piece.type || null) : null,
+      // On ne signe d'un organe que si l'on en est un servant, et que
+      // la conversation lui appartient.
+      p_au_nom_de: (auNom && entete && entete.organe) ? entete.organe : null
     });
     setEnvoi(false);
     if (error) return setMsg(error.message);
@@ -2803,6 +2812,9 @@ function Conversation({ p, id, fermer }){
     setLiens(l => ({ ...l, [m.id]: data.signedUrl }));
     window.open(data.signedUrl, '_blank');
   }
+
+  const sertOrgane = !!(entete?.organe
+    && organes.some(o => o.code === entete.organe));
 
   async function retirer(m){
     if (!confirm('Retirer ce message ? La pièce jointe sera effacée.')) return;
@@ -2844,6 +2856,26 @@ function Conversation({ p, id, fermer }){
         <h1 style="font-size:28px">${entete?.titre || 'Conversation'}</h1>
         ${entete?.type === 'groupe' && html`<span class="tag">Groupe de travail</span>`}
       </div>
+      ${entete?.organe && html`
+        <div class="row" style="gap:12px;align-items:center;margin-top:10px;
+          padding:12px 14px;background:var(--papier);border-radius:6px">
+          ${entete.organe_logo
+            ? html`<img src=${entete.organe_logo} alt=${entete.organe_nom}
+                style="height:34px;width:auto" />`
+            : html`<div style=${'width:34px;height:34px;border-radius:50%;flex:0 0 34px;'
+                + 'background:var(--nuit);color:#fff;display:flex;align-items:center;'
+                + 'justify-content:center;font-weight:700;font-size:13px'}>FFCE</div>`}
+          <div style="min-width:0">
+            <div style="font-weight:600">${entete.organe_nom}</div>
+            <div class="small muted">
+              ${sertOrgane
+                ? 'Vous servez cet organe : ce que vous écrivez peut être signé de son nom.'
+                : 'Une boîte de l\u2019institution, non d\u2019une personne. Votre réponse '
+                  + 'parvient à tous ceux qui en ont la charge.'}
+            </div>
+          </div>
+        </div>`}
+
       <div class="small muted" style="margin-top:6px">
         ${gens.map((g,i) => html`${i>0 ? ' · ' : ''}<a href="#"
           onClick=${e=>{e.preventDefault();
@@ -2881,6 +2913,17 @@ function Conversation({ p, id, fermer }){
                     'padding:10px 14px;border:1px solid var(--filet);border-radius:2px;'+
                     'white-space:pre-wrap;'+
                     (moi ? 'background:var(--bleu-clair);border-color:#C9D8EC' : 'background:#fff')}>
+                    ${m.organe && html`
+                      <div class="row" style="gap:8px;align-items:center;
+                        margin-bottom:8px;padding-bottom:8px;
+                        border-bottom:1px solid var(--filet)">
+                        <div style=${'width:22px;height:22px;border-radius:50%;'
+                          + 'flex:0 0 22px;background:var(--nuit);color:#fff;'
+                          + 'display:flex;align-items:center;justify-content:center;'
+                          + 'font-weight:700;font-size:9px'}>FFCE</div>
+                        <span class="small" style="font-weight:600">
+                          ${entete?.organe_nom || 'Organe de la fédération'}</span>
+                      </div>`}
                     ${m.retire
                       ? html`<span class="muted"><em>Message retiré</em></span>`
                       : m.contenu}
@@ -2911,6 +2954,14 @@ function Conversation({ p, id, fermer }){
                 placeholder="Votre message" style="min-height:80px"
                 onKeyDown=${e => { if (e.key==='Enter' && (e.metaKey||e.ctrlKey)) envoyer(e); }} />
             </div>
+            ${sertOrgane && html`
+              <label class="row" style="gap:8px;align-items:center;margin-top:10px">
+                <input type="checkbox" style="width:auto" checked=${auNom}
+                  onChange=${e=>setAuNom(e.target.checked)} />
+                <span class="small">Répondre au nom du ${entete.organe_nom}
+                  \u2014 votre nom reste enregistré, la signature est celle de
+                  l\u2019institution</span>
+              </label>`}
             <div class="row" style="gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
               <input type="file" style="width:auto;font-size:13px;padding:4px 0;border:0"
                 onChange=${e=>setPiece(e.target.files[0] || null)} />
@@ -17219,7 +17270,11 @@ function Espace({ session, sous }){
     case 'publier':    vue = acces('publier') ? html`<${Publier} p=${p} />` : refus; break;
     case 'editeur':    vue = (admin || (p.postes||[]).length > 0)
                        ? html`<${EditeurFormations} p=${p} />` : refus; break;
-    case 'rapport':    vue = acces('rapport') ? html`<${Rapport} p=${p} />` : refus; break;
+    // Le rapport n'a plus d'entrée de menu : il est un onglet du
+    // cabinet. Sa route reste ouverte pour que les liens existants
+    // continuent de fonctionner.
+    case 'rapport':    vue = (acces('rapport') || acces('cabinet'))
+                       ? html`<${Rapport} p=${p} />` : refus; break;
     case 'passeport':  vue = html`<${Passeport} p=${p} />`; break;
     case 'conformite': vue = html`<${Conformite} p=${p} />`; break;
     case 'parcours':   vue = acces('parcours')
