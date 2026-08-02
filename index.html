@@ -12774,6 +12774,8 @@ function Ressources({ p }){
 
       <${ResSolde} solde=${solde} />
 
+      <div style="margin-top:28px"><${MesEnveloppes} setMsg=${setMsg} /></div>
+
       <div class="row" style="margin:28px 0 24px;gap:0;border-bottom:1px solid var(--filet);
         flex-wrap:wrap">
         ${tabs.map(([k,t]) => html`
@@ -13623,17 +13625,23 @@ function ResDotations({ regles, dotations, p, appel, setMsg }){
   const [exc, setExc] = useState(false);
   const [excs, setExcs] = useState([]);
   const [terr, setTerr] = useState([]);
+  const [dirs, setDirs] = useState([]);
+  const [cadres, setCadres] = useState([]);
   const [fe, setFe] = useState({ points:'', portee:'territoires', echelle:'departement',
-                                 cibles:[], motif:'', campagne:'' });
+                                 cibles:[], dirs:[], profils:[], motif:'', campagne:'' });
   const annee = new Date().getFullYear();
 
   const chargerExc = useCallback(async () => {
-    const [a, b] = await Promise.all([
+    const [a, b, c, d] = await Promise.all([
       db.rpc('dotations_exceptionnelles_recentes', { p_annee: annee }),
       db.from('territoires').select('id,nom,echelle')
-        .in('echelle',['region','departement','local']).order('nom')
+        .in('echelle',['region','departement','local']).order('nom'),
+      db.rpc('liste_directions'),
+      db.from('v_annuaire').select('id,prenom,nom,fonction_nom,niveau')
+        .eq('statut','actif').gte('niveau', 40).order('nom')
     ]);
     setExcs(a.data || []); setTerr(b.data || []);
+    setDirs(c.data || []); setCadres(d.data || []);
   }, [annee]);
   useEffect(() => { chargerExc(); }, [chargerExc]);
 
@@ -13643,10 +13651,13 @@ function ResDotations({ regles, dotations, p, appel, setMsg }){
       p_points: Number(fe.points) || 0, p_motif: fe.motif, p_portee: fe.portee,
       p_territoires: fe.portee === 'territoires' ? fe.cibles : [],
       p_echelle: fe.portee === 'echelle' ? fe.echelle : null,
-      p_campagne: fe.campagne || null, p_annee: annee
+      p_campagne: fe.campagne || null, p_annee: annee,
+      p_directions: fe.portee === 'directions' ? fe.dirs : [],
+      p_profils: fe.portee === 'responsables' ? fe.profils : []
     }, 'Dotation exceptionnelle attribuée.');
     if (ok){ setFe({ points:'', portee:'territoires', echelle:'departement',
-      cibles:[], motif:'', campagne:'' }); setExc(false); chargerExc(); }
+      cibles:[], dirs:[], profils:[], motif:'', campagne:'' });
+      setExc(false); chargerExc(); }
   }
 
   async function simuler(){
@@ -13706,6 +13717,8 @@ function ResDotations({ regles, dotations, p, appel, setMsg }){
                   <option value="territoires">Des structures choisies</option>
                   <option value="echelle">Toutes celles d\u2019une échelle</option>
                   <option value="reseau">Tout le réseau</option>
+                  <option value="directions">Des directions</option>
+                  <option value="responsables">Des responsables</option>
                 </select></div>
               ${fe.portee === 'echelle' && html`
                 <div class="field" style="flex:1;min-width:150px;margin:0">
@@ -13717,6 +13730,38 @@ function ResDotations({ regles, dotations, p, appel, setMsg }){
                     <option value="local">Structures locales</option>
                   </select></div>`}
             </div>
+            ${fe.portee === 'directions' && html`
+              <div class="field">
+                <label>Directions dotées</label>
+                <div class="row" style="gap:6px;flex-wrap:wrap">
+                  ${dirs.map(d => html`
+                    <button type="button" key=${d.code}
+                      class=${'btn sm ' + (fe.dirs.includes(d.code) ? '' : 'light')}
+                      onClick=${()=>setFe(o=>({...o, dirs: o.dirs.includes(d.code)
+                        ? o.dirs.filter(x=>x!==d.code) : [...o.dirs, d.code]}))}>
+                      ${d.nom_court || d.nom}</button>`)}
+                </div>
+                <div class="small muted">Une direction répartit ensuite son
+                  enveloppe sur les projets qu\u2019elle retient.</div>
+              </div>`}
+
+            ${fe.portee === 'responsables' && html`
+              <div class="field">
+                <label>Responsables dotés</label>
+                <div class="row" style="gap:6px;flex-wrap:wrap;max-height:150px;
+                  overflow-y:auto;padding:4px 0">
+                  ${cadres.map(g => html`
+                    <button type="button" key=${g.id}
+                      class=${'btn sm ' + (fe.profils.includes(g.id) ? '' : 'light')}
+                      onClick=${()=>setFe(o=>({...o, profils: o.profils.includes(g.id)
+                        ? o.profils.filter(x=>x!==g.id) : [...o.profils, g.id]}))}>
+                      ${nomComplet(g)}</button>`)}
+                </div>
+                <div class="small muted">Une enveloppe personnelle sert à
+                  répartir, jamais à consommer : son porteur l\u2019affecte à des
+                  projets, il ne commande pas avec.</div>
+              </div>`}
+
             ${fe.portee === 'territoires' && html`
               <div class="field">
                 <label>Structures visées</label>
@@ -16555,6 +16600,8 @@ function GlPlan({ appel, setMsg, ouvrir }){
   const [l, setL] = useState([]);
   const [q, setQ] = useState('');
   const [choix, setChoix] = useState(null);
+  const [indicateur, setIndicateur] = useState('effectif');
+  const [carte, setCarte] = useState(true);
 
   const charger = useCallback(() =>
     db.rpc('plan_territoires').then(({data}) => setL(data||[])), []);
@@ -16603,6 +16650,15 @@ function GlPlan({ appel, setMsg, ouvrir }){
           territoire qui l\u2019accueille, ou
           <a href="#" onClick=${e=>{e.preventDefault();setChoix(null);setMsg('')}}>annulez</a>.
         </div>`}
+
+      <div class="spread" style="margin-bottom:12px">
+        <span class="small muted">${l.length} territoire(s)</span>
+        <button class="btn sm light" onClick=${()=>setCarte(!carte)}>
+          ${carte ? 'Masquer la carte' : 'Afficher la carte'}</button>
+      </div>
+
+      ${carte && html`<${CarteReseau} territoires=${l} indicateur=${indicateur}
+        ouvrir=${(id, ind) => { if (ind) setIndicateur(ind); else if (id) ouvrir(id); }} />`}
 
       <input value=${q} placeholder="Rechercher un territoire, un code, une académie"
         style="margin-bottom:16px" onInput=${e=>setQ(e.target.value)} />
@@ -16736,6 +16792,314 @@ function BaremeEchelons({ setMsg }){
               <div><button class="btn sm">Enregistrer</button></div>
             </form>`}
         </div>`)}
+    </div>`;
+}
+
+/* =====================================================================
+   LA CARTE DU RÉSEAU
+   Le fond de carte pèse trop lourd pour vivre dans ce fichier : il est
+   chargé à la demande depuis un dépôt public, et mis en cache pour la
+   session. Si le chargement échoue — réseau coupé, dépôt déplacé — le
+   tableau reste, et le dit. La carte est un confort, jamais le seul
+   moyen d'atteindre un territoire.
+
+   Les codes INSEE du fond correspondent aux nôtres : « 31 » pour un
+   département, « R76 » pour une région une fois le préfixe ajouté.
+   L'outre-mer n'y figure pas et se lit sous la carte.
+   ===================================================================== */
+const FOND = 'https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/';
+const cacheFond = {};
+
+async function chargerFond(echelle){
+  if (cacheFond[echelle]) return cacheFond[echelle];
+  const f = echelle === 'region'
+    ? 'regions-version-simplifiee.geojson'
+    : 'departements-version-simplifiee.geojson';
+  const r = await fetch(FOND + f);
+  if (!r.ok) throw new Error('fond indisponible');
+  const j = await r.json();
+  cacheFond[echelle] = j;
+  return j;
+}
+
+/* Projection conique simple, suffisante à l'échelle d'un pays : on
+   corrige la longitude par le cosinus de la latitude moyenne, sans quoi
+   la France paraît écrasée en largeur. */
+function projeter(coords, b, L, H){
+  const lat0 = (b.minY + b.maxY) / 2 * Math.PI / 180;
+  const k = Math.cos(lat0);
+  const x0 = b.minX * k, x1 = b.maxX * k;
+  const ex = (x1 - x0) || 1, ey = (b.maxY - b.minY) || 1;
+  const e = Math.min((L - 20) / ex, (H - 20) / ey);
+  const dx = (L - ex * e) / 2, dy = (H - ey * e) / 2;
+  return coords.map(([lon, lat]) => [
+    (lon * k - x0) * e + dx,
+    H - ((lat - b.minY) * e + dy)
+  ]);
+}
+
+function bornes(features){
+  let minX = 180, maxX = -180, minY = 90, maxY = -90;
+  const voir = c => { if (c[0] < minX) minX = c[0]; if (c[0] > maxX) maxX = c[0];
+                      if (c[1] < minY) minY = c[1]; if (c[1] > maxY) maxY = c[1]; };
+  features.forEach(f => anneaux(f).forEach(a => a.forEach(voir)));
+  return { minX, maxX, minY, maxY };
+}
+
+function anneaux(f){
+  const g = f.geometry;
+  if (!g) return [];
+  return g.type === 'Polygon' ? g.coordinates
+       : g.type === 'MultiPolygon' ? g.coordinates.flat() : [];
+}
+
+function CarteReseau({ territoires, ouvrir, indicateur }){
+  const [echelle, setEchelle] = useState('departement');
+  const [geo, setGeo] = useState(null);
+  const [erreur, setErreur] = useState(null);
+  const [survol, setSurvol] = useState(null);
+  const L = 640, H = 620;
+
+  useEffect(() => {
+    setGeo(null); setErreur(null);
+    chargerFond(echelle).then(setGeo)
+      .catch(() => setErreur('Le fond de carte n\u2019a pas pu être chargé.'));
+  }, [echelle]);
+
+  // On rapproche les codes du fond de ceux de la fédération.
+  const par = {};
+  (territoires || []).forEach(t => {
+    if (t.echelle === echelle) par[t.code] = t;
+  });
+  const cle = c => echelle === 'region' ? 'R' + c : c;
+
+  const valeur = t => !t ? null
+    : indicateur === 'effectif' ? t.effectif
+    : indicateur === 'dotation' ? t.dotation
+    : (t.president ? 1 : 0) + (t.tresorier ? 1 : 0);
+
+  const vals = Object.values(par).map(valeur).filter(v => v !== null);
+  const haut = Math.max(1, ...vals);
+
+  const teinte = t => {
+    if (!t) return 'var(--papier)';
+    if (indicateur === 'bureau')
+      return valeur(t) === 2 ? 'var(--vert)'
+           : valeur(t) === 1 ? 'var(--laiton)' : 'var(--rouge-clair)';
+    const p = valeur(t) / haut;
+    return p === 0 ? 'var(--papier)'
+         : 'color-mix(in srgb, var(--bleu) ' + Math.round(12 + p * 78) + '%, white)';
+  };
+
+  const outreMer = (territoires || []).filter(t =>
+    t.echelle === echelle && !Object.keys(par).some(c => false)
+      && ['971','972','973','974','976','R01','R02','R03','R04','R06'].includes(t.code));
+
+  return html`
+    <div class="panneau" style="margin-bottom:24px">
+      <div class="tete spread">
+        <h3 style="font-size:17px">Carte du réseau</h3>
+        <div class="row" style="gap:8px">
+          <select value=${echelle} style="width:auto;padding:5px 8px;font-size:13px"
+            onChange=${e=>setEchelle(e.target.value)}>
+            <option value="departement">Départements</option>
+            <option value="region">Régions</option>
+          </select>
+        </div>
+      </div>
+
+      ${erreur
+        ? html`<div class="corps small muted">
+            ${erreur} Le tableau ci-dessous reste utilisable : la carte n\u2019est
+            qu\u2019un confort, jamais le seul moyen d\u2019atteindre un territoire.</div>`
+        : !geo
+          ? html`<div class="corps muted">Chargement du fond de carte…</div>`
+          : html`
+            <div class="corps" style="padding-top:12px">
+              <svg viewBox=${'0 0 ' + L + ' ' + H} style="width:100%;height:auto;
+                max-height:640px;display:block">
+                ${(() => {
+                  const b = bornes(geo.features);
+                  return geo.features.map((f,i) => {
+                    const t = par[cle(f.properties.code)];
+                    const d = anneaux(f).map(a =>
+                      'M' + projeter(a, b, L, H).map(p =>
+                        p[0].toFixed(1) + ',' + p[1].toFixed(1)).join('L') + 'Z').join(' ');
+                    return html`<path key=${i} d=${d}
+                      fill=${teinte(t)}
+                      stroke=${survol === f.properties.code ? 'var(--nuit)' : 'var(--filet)'}
+                      stroke-width=${survol === f.properties.code ? 1.6 : 0.6}
+                      style=${'cursor:' + (t ? 'pointer' : 'default')}
+                      onMouseEnter=${()=>setSurvol(f.properties.code)}
+                      onMouseLeave=${()=>setSurvol(null)}
+                      onClick=${()=>{ if (t) ouvrir(t.id); }}>
+                      <title>${f.properties.nom}${t
+                        ? ' — ' + t.effectif + ' membre(s)'
+                          + (t.president ? '' : ' · sans président')
+                          + (t.tresorier ? '' : ' · sans trésorier')
+                        : ' — aucune structure'}</title>
+                    </path>`;
+                  });
+                })()}
+              </svg>
+
+              <div class="row" style="gap:16px;margin-top:12px;flex-wrap:wrap;
+                align-items:center">
+                <span class="small muted">Colorer par</span>
+                ${[['effectif','Effectif'],['bureau','Bureau constitué'],
+                   ['dotation','Dotation']].map(([k,t]) => html`
+                  <button class=${'btn sm ' + (indicateur===k ? '' : 'light')} key=${k}
+                    onClick=${()=>ouvrir(null, k)}>${t}</button>`)}
+              </div>
+              <div class="small muted" style="margin-top:8px">
+                ${indicateur === 'bureau'
+                  ? 'Vert : président et trésorier. Ambre : l\u2019un des deux. Rouge : aucun.'
+                  : 'Plus le bleu est soutenu, plus la valeur est élevée. Blanc : aucune structure.'}
+                Les territoires d\u2019outre-mer ne figurent pas sur ce fond de carte ;
+                ils restent dans le tableau.
+              </div>
+            </div>`}
+    </div>`;
+}
+
+/* =====================================================================
+   MES ENVELOPPES
+   Une direction ou un responsable qui détient des points ne les
+   consomme pas : il les répartit. L'écran ne propose donc qu'un geste,
+   affecter à un projet — et il montre, pour chaque projet, ce qu'il a
+   déjà reçu et de qui.
+   ===================================================================== */
+function MesEnveloppes({ setMsg }){
+  const [env, setEnv] = useState([]);
+  const [projets, setProjets] = useState([]);
+  const [source, setSource] = useState(null);
+  const [choisi, setChoisi] = useState(null);
+  const [f, setF] = useState({ points:'', motif:'' });
+  const [soutiens, setSoutiens] = useState({});
+
+  const charger = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      db.rpc('mes_enveloppes', { p_annee: null }),
+      db.rpc('projets_a_soutenir', { p_filtre: 'tous' })
+    ]);
+    setEnv(a.data || []); setProjets(b.data || []);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function voirSoutiens(p){
+    if (soutiens[p.id]) return setSoutiens(s => { const c={...s}; delete c[p.id]; return c; });
+    const { data } = await db.rpc('soutiens_projet', { p_projet: p.id });
+    setSoutiens(s => ({ ...s, [p.id]: data || [] }));
+  }
+
+  async function affecter(e){
+    e.preventDefault();
+    if (!source) return setMsg('Erreur : choisissez d\u2019abord une enveloppe.');
+    const { data, error } = await db.rpc('affecter_points_projet', {
+      p_nature: source.nature, p_ref: source.ref, p_projet: choisi.id,
+      p_points: Number(f.points) || 0, p_motif: f.motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg(data.points + ' points affectés. Il vous en reste ' + data.restant + '.');
+    setF({ points:'', motif:'' }); setChoisi(null); charger();
+  }
+
+  if (env.length === 0) return null;
+
+  return html`
+    <div style="margin-bottom:28px">
+      <h3 style="font-size:17px;margin-bottom:12px">Mes enveloppes</h3>
+      <div class="panneau" style="margin-bottom:20px">
+        <div class="corps small muted" style="padding-bottom:0">
+          Une enveloppe se répartit, elle ne se dépense pas. Vous l\u2019affectez
+          aux projets que vous retenez ; les points arrivent alors à la
+          structure qui les porte, et servent à commander au catalogue.
+        </div>
+        ${env.map(x => html`
+          <div class="ligne" key=${x.nature + x.ref} style="align-items:flex-start">
+            <div style="flex:1;min-width:200px">
+              <div style="font-weight:600">${x.libelle}</div>
+              <div class="small muted" style="margin-top:3px">
+                ${x.recu} reçus · ${x.redistribue} redistribués
+              </div>
+            </div>
+            <div class="row" style="gap:10px;align-items:center">
+              <span class="mono" style="font-size:16px">${x.disponible} pts</span>
+              <button class=${'btn sm ' + (source && source.ref === x.ref ? '' : 'light')}
+                disabled=${x.disponible <= 0}
+                onClick=${()=>setSource(source && source.ref === x.ref ? null : x)}>
+                ${source && source.ref === x.ref ? 'Sélectionnée' : 'Répartir'}</button>
+            </div>
+          </div>`)}
+      </div>
+
+      ${source && html`
+        <div class="panneau">
+          <div class="tete"><h3 style="font-size:17px">
+            Projets à soutenir — ${source.libelle}</h3>
+            <span class="mono">${source.disponible} pts disponibles</span></div>
+          ${projets.length === 0
+            ? html`<div class="corps muted">
+                Aucun projet en préparation ou en cours dans votre ressort.</div>`
+            : projets.map(p => html`
+              <div key=${p.id}>
+                <div class="ligne" style="align-items:flex-start">
+                  <div style="flex:1;min-width:250px">
+                    <div class="row" style="gap:8px;flex-wrap:wrap">
+                      <span style="font-weight:600">${p.titre}</span>
+                      <span class="mono muted small">${p.reference}</span>
+                      ${p.points_recus > 0 && html`
+                        <span class="tag vert">${p.points_recus} pts reçus</span>`}
+                    </div>
+                    <div class="small muted" style="margin-top:3px">
+                      ${p.territoire}${p.responsable ? ' · ' + p.responsable : ''}
+                      ${p.debut ? ' · à partir du ' + jour(p.debut) : ''}
+                      ${p.budget_estime ? ' · budget ' + EURO(p.budget_estime) : ''}
+                    </div>
+                    ${p.objet && html`<div class="small" style="margin-top:5px">${p.objet}</div>`}
+                  </div>
+                  <div class="row" style="gap:6px">
+                    ${p.points_recus > 0 && html`
+                      <button class="btn sm light" onClick=${()=>voirSoutiens(p)}>
+                        ${soutiens[p.id] ? 'Masquer' : 'D\u2019où viennent les points'}</button>`}
+                    <button class="btn sm"
+                      onClick=${()=>setChoisi(choisi && choisi.id === p.id ? null : p)}>
+                      ${choisi && choisi.id === p.id ? 'Fermer' : 'Affecter'}</button>
+                  </div>
+                </div>
+
+                ${soutiens[p.id] && html`
+                  <div class="corps" style="background:var(--papier);
+                    border-bottom:1px solid var(--filet)">
+                    ${soutiens[p.id].length === 0
+                      ? html`<div class="small muted">Aucun soutien enregistré.</div>`
+                      : soutiens[p.id].map((s,i) => html`
+                        <div class="small" key=${i} style="margin-bottom:6px">
+                          <strong>${-s.points} pts</strong> — ${s.origine}
+                          <span class="muted"> · ${jour(s.cree_le)}</span>
+                          <div class="muted">${s.motif}</div>
+                        </div>`)}
+                  </div>`}
+
+                ${choisi && choisi.id === p.id && html`
+                  <form class="corps stack" onSubmit=${affecter}
+                    style="background:var(--papier);border-bottom:1px solid var(--filet)">
+                    <div class="row" style="gap:16px;align-items:flex-start">
+                      <div class="field" style="flex:0 0 130px;margin:0">
+                        <label>Points affectés</label>
+                        <input type="number" min="1" max=${source.disponible}
+                          value=${f.points}
+                          onInput=${e=>setF(o=>({...o,points:e.target.value}))} /></div>
+                      <div class="field" style="flex:1;min-width:220px;margin:0">
+                        <label>Pourquoi ce projet</label>
+                        <input value=${f.motif}
+                          placeholder="Ce qui justifie l\u2019affectation"
+                          onInput=${e=>setF(o=>({...o,motif:e.target.value}))} /></div>
+                    </div>
+                    <div><button class="btn sm">Affecter à ${p.titre}</button></div>
+                  </form>`}
+              </div>`)}
+        </div>`}
     </div>`;
 }
 
