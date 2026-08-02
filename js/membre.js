@@ -1,10 +1,14 @@
 import { Groupes } from './collectif.js';
-import { Postes, Publier } from './direction.js';
+import { Habilitations, Postes, Publier } from './direction.js';
 import { Assistance } from './espace.js';
-import { Chancellerie, Distinctions, Formations } from './formation.js';
+import { Distinctions, Formations } from './formation.js';
 import { ETAPES, ETAPE_NOM, EURO, Info, MERITES, MESURES, Portrait, SECTIONS_DOSSIER, db, h, html, jour, nomComplet, nomMois, useCallback, useEffect, useState } from './socle.js';
 import { Rejoindre } from './vitrine.js';
 
+
+/* --- Mon portrait ------------------------------------------------------
+   Deux mégaoctets, dépôt privé, dossier nommé par l'identifiant : nul
+   ne peut déposer chez un autre.
    --------------------------------------------------------------------- */
 export function MonPortrait({ p, recharger }){
   const [msg, setMsg] = useState('');
@@ -185,9 +189,9 @@ export function MonCompte({ p, recharger }){
     </div>`;
 }
 
+
 /* --- Qui a consulté mon dossier ---------------------------------------
    Droit RGPD, exercé en un clic plutôt que par courrier.
-
    --------------------------------------------------------------------- */
 export function QuiMaConsulte(){
   const [v, setV] = useState(null);
@@ -374,14 +378,6 @@ export function Annuaire({ p }){
     </div>`;
 }
 
-
-/* =====================================================================
-   5 bis. FORMATIONS
-   Le catalogue, le parcours, la leçon, le quiz. Les bonnes réponses
-   ne descendent jamais dans le navigateur : la correction se fait en base.
-
-
-/* --- Mes coordonnées bancaires ---------------------------------------- */
 export function MonRib(){
   const [r, setR] = useState(null);
   const [f, setF] = useState({titulaire:'', iban:'', bic:''});
@@ -447,20 +443,6 @@ export function MonRib(){
     </div>`;
 }
 
-
-/* =====================================================================
-   5 sexies. HABILITATIONS
-   Un droit ouvre une action. Un poste regroupe des droits. Une
-   nomination confie un poste, avec un périmètre et un terme.
-   ===================================================================== */
-
-/* =====================================================================
-   RÉSEAU ET HABILITATIONS
-   Réorganisé autour de deux objets, pas de cinq tables : la PERSONNE
-   et la STRUCTURE. On ouvre une fiche, et tout se fait là.
-
-
-/* --- Le fil du dossier, vu par l'intéressé ---------------------------- */
 export function FilDossier({ d, compact }){
   const i = ETAPES.indexOf(d.statut);
   return html`
@@ -478,8 +460,8 @@ export function FilDossier({ d, compact }){
     </div>`;
 }
 
-
 /* --- Ce que voit un membre : bandeau, ou page entière si suspendu ----- */
+
 export function MonDossier({ p, entier }){
   const [d, setD] = useState(null);
   const [msg, setMsg] = useState('');
@@ -765,6 +747,12 @@ export function MonDossier({ p, entier }){
     </div>`;
 }
 
+/* --- L'écran d'un compte suspendu ------------------------------------ */
+
+
+/* --- Fiche membre ------------------------------------------------------
+   Trois paliers. Les coordonnées ne sortent que si on les demande, et
+   la demande est tracée — c'est ce qui rend la trace honnête.
    --------------------------------------------------------------------- */
 export function FicheMembre({ id, fermer }){
   const [f, setF] = useState(null);
@@ -888,8 +876,8 @@ export function FicheMembre({ id, fermer }){
     </div>`;
 }
 
+/* --- Le référentiel, ouvert à tous ------------------------------------ */
 
-/* Le curseur d'engagement, en tête du tableau de bord. */
 export function CurseurEngagement({ compact }){
   const [e, setE] = useState(null);
   const [h, setH] = useState(0);
@@ -1199,10 +1187,6 @@ export function Engagement({ p }){
     </div>`;
 }
 
-/* --- Le dossier d'adhésion --------------------------------------------
-   Quatre sections courtes plutôt qu'un formulaire d'un mètre. Ce qui
-   manque est dit en tête, avec le nombre exact.
-
 
 export function DossierAdhesion({ p, recharger }){
   const [a, setA] = useState(null);
@@ -1423,6 +1407,8 @@ export function DossierAdhesion({ p, recharger }){
 /* --- Le dossier d'adhésion, vu par la validation ----------------------
    Replié par défaut : on ne consulte pas des données personnelles par
    inadvertance, on les ouvre parce qu'on en a besoin.
+   --------------------------------------------------------------------- */
+/* --- Complétude d'un dossier ------------------------------------------ */
 
 
 export function ApercuAdhesion({ id }){
@@ -1463,11 +1449,9 @@ export function ApercuAdhesion({ id }){
     </div>`;
 }
 
-
-/* =====================================================================
-   COMMUNICATION
-   Un chargé de com rédige, la direction valide, puis publie.
-
+/* --- Dossier incomplet : on ne va pas plus loin ------------------------
+   Ni un mur ni une fenêtre qu'on referme : la page qui suit la
+   connexion, tant qu'il manque l'essentiel.
    --------------------------------------------------------------------- */
 export function DossierIncomplet({ p, manques }){
   return html`
@@ -1496,12 +1480,6 @@ export function DossierIncomplet({ p, manques }){
     </div>`;
 }
 
-/* --- Chancellerie ------------------------------------------------------
-   Reconnaître ce qui est donné. Le barème, les classements, les
-   promotions.
-
-   --------------------------------------------------------------------- */
-/* --- Ce que les échelons supérieurs me signalent ---------------------- */
 export function MesAlertesParcours({ recharger }){
   const [liste, setListe] = useState([]);
   const charger = useCallback(() =>
@@ -1613,8 +1591,8 @@ export function MesCreneaux({ p, creneaux, recharger, setMsg }){
     </div>`;
 }
 
-
 /* --- Le tunnel : chaque marche perdue se voit ------------------------- */
+
 export function Tunnel({ t, compact }){
   if (!t || t.erreur) return html`<div class="alerte err">${t?.erreur||'Indisponible.'}</div>`;
   const depart = t.marches[0].n || 1;
@@ -1670,12 +1648,6 @@ export function Tunnel({ t, compact }){
     </div>`;
 }
 
-/* =====================================================================
-   PILOTAGE DU RÉSEAU
-   Trois vues selon l'échelon : local, territorial, national.
-
-
-/* --- Prendre rendez-vous, côté nouvel adhérent ------------------------ */
 export function PrendreRendezVous(){
   const [libres, setLibres] = useState([]);
   const [miens, setMiens] = useState([]);
@@ -1736,13 +1708,6 @@ export function PrendreRendezVous(){
     </div>`;
 }
 
-
-/* --- Distinctions -------------------------------------------------------
-   Reconnaître un engagement sans attendre un palier. Une lettre de
-   félicitations n'a pas besoin d'un barème.
-
-
-/* --- Mes distinctions, sur la fiche du membre ------------------------- */
 export function MesDistinctions({ profil }){
   const [d, setD] = useState([]);
   useEffect(() => {
@@ -1772,8 +1737,8 @@ export function MesDistinctions({ profil }){
     </div>`;
 }
 
+/* --- Assistance : signaler, proposer ---------------------------------- */
 
-/* --- Confirmer un virement, côté membre ------------------------------- */
 export function MesVirements(){
   const [liste, setListe] = useState([]);
   const [msg, setMsg] = useState('');
@@ -1837,13 +1802,6 @@ export function MesVirements(){
         </div>`)}
     </div>`;
 }
-
-
-/* =====================================================================
-   MON COMITÉ
-   La vie locale directe. Un adhérent n'a pas à comprendre
-   l'organigramme fédéral pour agir : il a besoin de savoir ce qui se
-   passe près de chez lui, qui l'anime, et comment proposer.
 
 
 export function Passeport({ p, profil }){
@@ -1965,8 +1923,8 @@ export function Passeport({ p, profil }){
     </div>`;
 }
 
-
 /* --- Bilans de mission à rédiger --------------------------------------- */
+
 export function BilansMission({ setMsg }){
   const [liste, setListe] = useState([]);
   const [ouvert, setOuvert] = useState(null);
@@ -2057,8 +2015,8 @@ export function BilansMission({ setMsg }){
     </div>`;
 }
 
+/* --- Répartition des nouveaux adhérents -------------------------------- */
 
-/* --- Ma chaîne : qui dépend de qui ------------------------------------- */
 export function MaChaine(){
   const [c, setC] = useState(null);
   useEffect(() => { db.rpc('ma_chaine').then(({data}) => setC(data)); }, []);
@@ -2106,6 +2064,15 @@ export function MaChaine(){
     </div>`;
 }
 
+/* --- Direction générale : vérifications ------------------------------ */
+
+
+/* =====================================================================
+   MES MANDATS
+   Ce qu'on me demande à moi se répond ici, jamais depuis l'application
+   concernée. Un intérim proposé à quelqu'un qui n'a pas Habilitations
+   restait sans réponse possible : la file de travail renvoyait vers une
+   porte fermée. Cet écran est ouvert à tout membre actif, sans droit.
    ===================================================================== */
 export function MesMandats({ p, recharger }){
   const [interims, setInterims] = useState([]);
@@ -2331,12 +2298,12 @@ export function MesMandats({ p, recharger }){
     </div>`;
 }
 
+
 /* =====================================================================
    LA FICHE D'OUVERTURE
    « Comment tout lui débloquer, et rien de plus. » La question se posait
    à chaque arrivée sans réponse écrite. Le membre et celui qui
    l'accompagne lisent maintenant la même liste, dans les mêmes mots.
-
    ===================================================================== */
 export function FicheOuverture({ profil, titre, compact }){
   const [l, setL] = useState(null);
@@ -2377,10 +2344,13 @@ export function FicheOuverture({ profil, titre, compact }){
     </div>`;
 }
 
-/* --- Nommer dans sa structure ------------------------------------------
-   La liste des postes vient de `postes_conferables` : l'écran ne peut
-   pas proposer ce que la base refusera. Si elle est vide, on le dit.
 
+/* =====================================================================
+   LE PROFIL INTERNE
+   Ce que la fédération montre d'un membre à un autre. Ni courriel, ni
+   téléphone, ni adresse : ceux-là relèvent de la fiche membre, dont la
+   consultation se journalise et déclenche une alerte si le dossier est
+   protégé. Ici, rien de plus que ce qui est déjà interne-public.
    ===================================================================== */
 export function ProfilInterne({ profil, fermer }){
   const [d, setD] = useState(null);
@@ -2436,10 +2406,15 @@ export function ProfilInterne({ profil, fermer }){
     </div>`;
 }
 
-/* --- Le journal des envois ---------------------------------------------
-   Qui, quand, vers qui, quel nom, quelle taille. Ni le message, ni le
-   fichier : c'est une trace, pas une clé.
 
+/* =====================================================================
+   LE BILAN DE L'ANNÉE
+   « Mon engagement » listait sans totaliser. Il dit maintenant ce que
+   l'année cumule, d'où viennent les heures — déclarées ou attestées par
+   un bilan de mission — et ce qui sépare de l'échelon suivant.
+
+   Rien n'est stocké : la chancellerie calcule déjà tout cela pour ses
+   promotions. On ne recalcule pas, on cite.
    ===================================================================== */
 export function BilanAnnee({ e }){
   if (!e || !e.annee) return null;
@@ -2524,13 +2499,12 @@ export function BilanAnnee({ e }){
     </div>`;
 }
 
-/* =====================================================================
-   AFFAIRES PUBLIQUES
-   Le fichier des relations extérieures. Trois principes visibles à
-   l'écran : le fichier est fédéral et le partage est gradué ; les
-   personnes sont séparées des organismes ; ce qui mérite la présidence
-   remonte par le canal du cabinet, pas par un second.
 
+/* --- La carte d'adhérent -------------------------------------------------
+   Le QR est dessiné à la main : un code de version fixe suffit pour un
+   identifiant, et cela évite une bibliothèque de plus. Le jeton qu'il
+   porte n'est pas l'identifiant du compte — le photographier ne donne
+   accès à rien.
    --------------------------------------------------------------------- */
 export function qrMatrice(texte){
   // Encodage QR version 4, correction L, mode octet. Suffisant pour un
@@ -2644,10 +2618,3 @@ export function CarteAdherent(){
       </div>
     </div>`;
 }
-
-/* =====================================================================
-   L'ORGANIGRAMME
-   Qui appartient à quoi. Ce n'est pas une donnée à part : il se déduit
-   des postes occupés, donc il ne peut pas être périmé. Les postes qui
-   engagent les points de leur direction sont signalés — c'est à eux
-   qu'on adresse une demande de validation.
