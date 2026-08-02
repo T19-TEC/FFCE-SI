@@ -1,10 +1,10 @@
 # FFCE — Abrégé du schéma en vigueur
 
-> Généré par `schema.py` à partir des 43 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
+> Généré par `schema.py` à partir des 46 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
 
 > Ce fichier remplace le recueil des migrations pour écrire du code. N'ouvrir le recueil que pour comprendre le *pourquoi* d'une règle.
 
-**108 tables · 374 fonctions · 46 droits · 16 applications**
+**110 tables · 386 fonctions · 46 droits · 16 applications**
 
 ---
 
@@ -56,6 +56,8 @@
 
 **`certifications_obtenues`** — `id`, `profil_id`, `code`, `numero`, `obtenue_le`, `expire_le`, `delivree_par`
 
+**`cles_depouillement`** — `id`, `assemblee_id`, `profil_id`, `signe_le`, `role`
+
 **`commande_lignes`** — `id`, `commande_id`, `article_id`, `quantite`, `points`, `variante`
 
 **`commandes`** — `id`, `reference`, `territoire_id`, `demandeur_id`, `motif`, `points_debites`, `statut`, `traite_par`, `traite_le`, `motif_refus`, `expediee_le`, `transporteur`, `suivi`, `recue_le`, `cree_le`, `direction`, `adresse_livraison`, `destinataire`, `finance_par`, `engage_par`, `engage_le`, `motif_engagement`
@@ -84,7 +86,7 @@
 
 **`demandes`** — `id`, `profil_id`, `type`, `objet`, `message`, `cible`, `statut`, `traite_par`, `traite_le`, `motif_reponse`, `cree_le`
 
-**`directions`** — `code`, `nom`, `nom_court`, `description`, `couleur`, `ordre`, `actif`
+**`directions`** — `code`, `nom`, `nom_court`, `description`, `couleur`, `ordre`, `actif`, `bloc_permanent`
 
 **`distinctions`** — `id`, `numero`, `profil_id`, `type`, `motif`, `texte`, `publique`, `decernee_par`, `decernee_le`, `retiree_le`, `motif_retrait`
 
@@ -174,6 +176,8 @@
 
 **`postes_comptables`** — `code`, `libelle`, `sens`, `categorie`, `automatique`, `source`, `ordre`, `actif`
 
+**`pouvoirs_ag`** — `id`, `assemblee_id`, `mandant_id`, `mandataire_id`, `statut`, `motif`, `cree_le`, `valide_par`
+
 **`presences_assemblee`** — `assemblee_id`, `profil_id`, `constate_le`, `constate_par`
 
 **`profils`** — `id`, `matricule`, `prenom`, `nom`, `email`, `telephone`, `fonction`, `territoire_id`, `echelon`, `statut`, `date_adhesion`, `photo_url`, `bio`, `visible_public`, `webmail`, `cree_le`, `maj_le`, `protege`, `motif_protection`, `sous_suivi`, `pronoms`, `langues`, `reseaux`, `devise`, `jeton_carte`
@@ -224,7 +228,7 @@
 
 **`types_distinction`** — `code`, `nom`, `description`, `couleur`, `points`, `ordre`, `actif`
 
-**`votes`** — `id`, `assemblee_id`, `electeur_id`, `cree_le`
+**`votes`** — `id`, `assemblee_id`, `electeur_id`, `cree_le`, `recepisse`, `pouvoirs_exerces`
 
 ---
 
@@ -310,6 +314,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`annuler_creneau(p_creneau uuid, p_motif text)`** → `jsonb` · plpgsql · 18_parcours_pilotage.sql
 
+**`annuler_pouvoir(p_assemblee uuid)`** → `jsonb` · plpgsql · 45_correctifs_ag.sql
+
 **`ap_service()`** → `boolean` · sql · 37_affaires_publiques.sql
 
 **`appel_public(p_token text)`** → `jsonb` · sql · 17_vie_statutaire.sql
@@ -391,6 +397,10 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`classement_merites(p_territoire uuid default null, p_limite integer default 50)`** → `table (profil_id uuid, membre text, matricule text, fonction` · sql · 16_garde_chancellerie.sql
   
   colonnes : `profil_id`, `membre`, `matricule`, `fonction`, `territoire`, `echelon`, `points`, `palier_suivant`, `atteint`, `heures_annee`, `missions`, `certifications`, `derniere_activite`
+
+**`cles_du_depouillement(p_assemblee uuid)`** → `table (profil_id uuid, membre text, role text, signe_le time` · sql · 45_correctifs_ag.sql
+  
+  colonnes : `profil_id`, `membre`, `role`, `signe_le`
 
 **`clore_dossier(p_dossier uuid, p_conclusion text)`** → `jsonb` · plpgsql · 10_discipline_consolidation.sql
 
@@ -490,6 +500,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`donner_avis(p_note uuid, p_favorable boolean, p_avis text)`** → `jsonb` · plpgsql · 09_finances.sql
 
+**`donner_pouvoir(p_assemblee uuid, p_mandataire uuid)`** → `jsonb` · plpgsql · 45_correctifs_ag.sql
+
 **`dossier_est_clos(p_dossier uuid)`** → `boolean` · sql · 21_interim_suppleance.sql
 
 **`dossiers_discipline(p_filtre text default 'ouverts')`** → `table ( id uuid, reference text, objet text, qualification t` · sql · 08_discipline.sql
@@ -505,6 +517,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`echoir_mesures()`** → `integer` · sql · 08_discipline.sql
 
 **`emarger_par_carte(p_jeton text, p_assemblee uuid)`** → `jsonb` · plpgsql · 43_adherent.sql
+
+**`empreinte_emargement(p_assemblee uuid, p_electeur uuid, p_quand timestamptz)`** → `text` · sql · 46_scrutin.sql
 
 **`engagements_a_valider()`** → `table (id uuid, reference text, demandeur text, territoire t` · sql · 42_engagement.sql
   
@@ -593,6 +607,10 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`faire_remonter(p_id uuid, p_motif text)`** → `jsonb` · plpgsql · 22_mon_comite.sql
 
 **`fermer_paquet_poste()`** → `trigger` · plpgsql · 21_interim_suppleance.sql
+
+**`feuille_presence(p_assemblee uuid)`** → `table (profil_id uuid, membre text, matricule text, fonction` · sql · 46_scrutin.sql
+  
+  colonnes : `profil_id`, `membre`, `matricule`, `fonction`, `territoire`, `etat`, `mandataire`, `emarge_le`, `constate_le`
 
 **`fiche_admin(p_profil uuid)`** → `jsonb` · sql · 15_pilotage_unifie.sql
 
@@ -714,9 +732,9 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`mes_delegations()`** → `jsonb` · sql · 21_interim_suppleance.sql
 
-**`mes_directions()`** → `table (code text, nom text, nom_court text, couleur text, or` · sql · 30_menu.sql
+**`mes_directions()`** → `table (code text, nom text, nom_court text, couleur text, or` · sql · 45_correctifs_ag.sql
   
-  colonnes : `code`, `nom`, `nom_court`, `couleur`, `ordre`, `par_poste`, `postes`
+  colonnes : `code`, `nom`, `nom_court`, `couleur`, `ordre`, `par_poste`, `postes`, `bloc_permanent`
 
 **`mes_distinctions(p_profil uuid default null)`** → `table (numero text, type text, type_nom text, couleur text, ` · sql · 19_coherence_distinctions.sql
   
@@ -758,6 +776,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
   
   colonnes : `note_id`, `reference`, `objet`, `total`, `payee_le`, `jours`, `mode`, `reference_paiement`, `attestation`, `recu_fiscal`
 
+**`mes_voix(p_assemblee uuid)`** → `jsonb` · sql · 46_scrutin.sql
+
 **`missions_ouvertes()`** → `table ( id uuid, titre text, description text, lieu text, de` · sql · 12_engagement.sql
   
   colonnes : `id`, `titre`, `description`, `lieu`, `debut`, `fin`, `heures_estimees`, `places`, `retenus`, `statut`, `territoire_nom`, `groupe_nom`, `certification_nom`, `porteur`, `obstacle`, `ma_candidature`
@@ -779,6 +799,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`mon_plafond_nomination()`** → `integer` · sql · 31_nominations.sql
 
 **`mon_poids()`** → `integer` · sql · 16_garde_chancellerie.sql
+
+**`mon_recepisse(p_assemblee uuid)`** → `jsonb` · sql · 46_scrutin.sql
 
 **`mon_rib()`** → `jsonb` · sql · 09_finances.sql
 
@@ -848,6 +870,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
   
   colonnes : `profil_id`, `prenom`, `nom`, `matricule`, `fonction_nom`, `territoire_nom`
 
+**`participation(p_assemblee uuid)`** → `jsonb` · sql · 46_scrutin.sql
+
 **`passeport(p_profil uuid default null)`** → `jsonb` · sql · 27_passeport_parcours.sql
 
 **`payer_note(p_note uuid, p_reference text)`** → `jsonb` · plpgsql · 09_finances.sql
@@ -890,11 +914,17 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`postuler_mission(p_mission uuid, p_message text default null)`** → `jsonb` · plpgsql · 12_engagement.sql
 
+**`pouvoirs_assemblee(p_assemblee uuid)`** → `table (id uuid, mandant text, mandant_matricule text, mandan` · sql · 45_correctifs_ag.sql
+  
+  colonnes : `id`, `mandant`, `mandant_matricule`, `mandant_id`, `mandataire`, `mandataire_matricule`, `mandataire_id`, `statut`, `mandant_a_vote`, `cree_le`
+
 **`prendre_acte(p_type text, p_objet text, p_visas text default null, p_considerants text default null, p_articles jsonb default '[]'::jsonb, p_destinataire uuid default null, p_poste text default null, p_effet date default null, p_territoire uuid default null)`** → `jsonb` · plpgsql · 39_gestion_locale.sql
 
-**`proclamer(p_assemblee uuid, p_pv text, p_pv_fichier text default null)`** → `jsonb` · plpgsql · 17_vie_statutaire.sql
+**`proclamer(p_assemblee uuid, p_pv text, p_pv_fichier text default null)`** → `jsonb` · plpgsql · 46_scrutin.sql
 
 **`profil_interne(p_profil uuid)`** → `jsonb` · sql · 33_messagerie.sql
+
+**`projet_pv(p_assemblee uuid)`** → `jsonb` · sql · 46_scrutin.sql
 
 **`projets_a_soutenir(p_filtre text default 'tous')`** → `table (id uuid, reference text, titre text, objet text, terr` · sql · 40_enveloppes.sql
   
@@ -1042,6 +1072,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`signer_acte(p_id uuid)`** → `jsonb` · plpgsql · 41_organes.sql
 
+**`signer_depouillement(p_assemblee uuid, p_role text default null)`** → `jsonb` · plpgsql · 45_correctifs_ag.sql
+
 **`slugifier(t text)`** → `text` · sql · 14_migration.sql
 
 **`solde_enveloppe(p_nature text, p_ref text, p_annee integer default null)`** → `jsonb` · sql · 40_enveloppes.sql
@@ -1168,6 +1200,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`verifier_formation(p_formation uuid)`** → `jsonb` · sql · 26_editeur_formations.sql
 
+**`verifier_recepisse(p_assemblee uuid, p_empreinte text)`** → `jsonb` · sql · 46_scrutin.sql
+
 **`verser_piece(p_dossier uuid, p_type text, p_titre text, p_contenu text default null, p_fichier text default null, p_communicable boolean default true)`** → `jsonb` · plpgsql · 08_discipline.sql
 
 **`virements_a_suivre()`** → `table (note_id uuid, reference text, objet text, deposant te` · sql · 21_interim_suppleance.sql
@@ -1178,7 +1212,7 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
   
   colonnes : `id`, `type`, `titre`, `contenu`, `image`, `lien`, `lien_texte`, `ordre`
 
-**`voter(p_assemblee uuid, p_choix jsonb)`** → `jsonb` · plpgsql · 34_gardes.sql
+**`voter(p_assemblee uuid, p_choix jsonb)`** → `jsonb` · plpgsql · 46_scrutin.sql
 
 ---
 
