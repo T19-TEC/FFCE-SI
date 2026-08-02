@@ -59,6 +59,17 @@ def ctrl_1_2_3(js):
     noms = re.findall(r'^function (\w+)', js, re.M) + re.findall(r'^const (\w+)\s*=', js, re.M)
     yield "3. Définitions en double", [n for n in sorted(set(noms)) if noms.count(n) > 1]
 
+    # 16 — composant défini mais jamais appelé. C'est le symptôme d'une
+    # livraison à moitié appliquée : le composant existe, la page ne le
+    # montre pas, et rien ne signale l'anomalie. Les composants racines
+    # (montés par le routeur) sont exclus par la liste ci-dessous.
+    RACINES = {'App','Site','Espace','Entete','Pied','Flanc','Accueil'}
+    orphelins = sorted(d - a - RACINES - set(re.findall(r'html`<\$\{(\w+)', js)))
+    # Un composant nommé dans le routeur est monté, même sans balise htm.
+    monte = set(re.findall(r'\$\{(\w+)\}\s', js)) | set(re.findall(r'<\$\{(\w+)\}', js))
+    yield "16. Composants définis mais jamais montés", [
+        n for n in orphelins if n not in monte and n[0].isupper()]
+
 def ctrl_6():
     ko = []
     for f in FS:
