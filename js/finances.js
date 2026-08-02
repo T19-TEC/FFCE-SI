@@ -1,5 +1,4 @@
 import { Groupes } from './collectif.js';
-import { Habilitations } from './direction.js';
 import { Engagement } from './membre.js';
 import { CATEGORIES, ETAT_INV, EURO, Info, ORIGINE_INV, STATUT_EX, aller, db, etatCmd, etatInv, etatNote, h, html, jour, nomComplet, useCallback, useEffect, useState } from './socle.js';
 import { Structures } from './structure.js';
@@ -363,10 +362,10 @@ export function NoteFrais({ p, id, param, fermer }){
     </div>`;
 }
 
+
 /* --- Finances : instruction, ordonnancement, paiement ------------------
    Trois écrans distincts pour trois responsabilités distinctes. La
    séparation doit se voir, sinon elle ne sert à rien.
-
    --------------------------------------------------------------------- */
 export function Finances({ p, role }){
   // role : 'tresorerie' (instruire + payer) ou 'ordonnancement'
@@ -648,8 +647,8 @@ export function Finances({ p, role }){
     </div>`;
 }
 
+/* --- Mes coordonnées bancaires ---------------------------------------- */
 
-/* --- Suivi des virements, côté direction financière ------------------- */
 export function SuiviVirements({ setMsg }){
   const [liste, setListe] = useState([]);
   const charger = useCallback(() =>
@@ -723,6 +722,8 @@ export function SuiviVirements({ setMsg }){
       </div>
     </div>`;
 }
+
+/* --- Confirmer un virement, côté membre ------------------------------- */
 
 
 export function Budget({ p }){
@@ -1032,10 +1033,10 @@ export function Budget({ p }){
     </div>`;
 }
 
+
 /* =====================================================================
    RAPPORT D'ACTIVITÉ
    Les chiffres se calculent, le récit se rédige.
-
    ===================================================================== */
 export function Rapport({ p }){
   const [annee, setAnnee] = useState(new Date().getFullYear() - 1);
@@ -1226,13 +1227,6 @@ export function Rapport({ p }){
 }
 
 
-/* =====================================================================
-   PUBLIER LOCALEMENT
-   Le national prépare, le local adapte et publie. Les [crochets] sont
-   délibérés : une publication identique partout sonne faux, une
-   publication entièrement libre dérive.
-
-
 export function Ressources({ p }){
   const [onglet, setOnglet]   = useState('catalogue');
   const [solde, setSolde]     = useState(null);
@@ -1361,8 +1355,8 @@ export function Ressources({ p }){
     </div>`;
 }
 
-
 /* --- Le solde de points, en tête de tous les volets ------------------- */
+
 export function ResSolde({ solde }){
   if (!solde) return null;
   if (!solde.dotee) return html`
@@ -1405,8 +1399,8 @@ export function ResSolde({ solde }){
     </div>`;
 }
 
-
 /* --- Le catalogue ---------------------------------------------------- */
+
 export function ResCatalogue({ cats, articles, lignes, appel, aller }){
   const [qte, setQte] = useState({});
   const [variante, setVariante] = useState({});
@@ -1482,8 +1476,8 @@ export function ResCatalogue({ cats, articles, lignes, appel, aller }){
     </div>`;
 }
 
-
 /* --- Le panier et les commandes -------------------------------------- */
+
 export function ResCommandes({ p, panier, lignes, mesCmd, cmdReseau, solde, appel }){
   const [motif, setMotif] = useState('');
   const [adresse, setAdresse] = useState('');
@@ -1711,8 +1705,8 @@ export function ResCommandes({ p, panier, lignes, mesCmd, cmdReseau, solde, appe
     </div>`;
 }
 
-
 /* --- L'inventaire ---------------------------------------------------- */
+
 export function ResInventaire({ invent, articles, peutLog, appel, setMsg }){
   const vierge = { id:null, article_id:'', libelle_libre:'', quantite:1,
                    etat:'bon', emplacement:'', origine:'achat_local',
@@ -1903,8 +1897,8 @@ export function ResInventaire({ invent, articles, peutLog, appel, setMsg }){
     </div>`;
 }
 
-
 /* --- Les investissements --------------------------------------------- */
+
 export function ResInvestissements({ inv, appel }){
   const vierge = { intitule:'', justification:'', usage:'', montant:'',
                    fournisseur:'', beneficiaires:'' };
@@ -2057,8 +2051,8 @@ export function ResInvestissements({ inv, appel }){
     </div>`;
 }
 
-
 /* --- La logistique fédérale ------------------------------------------ */
+
 export function ResLogistique({ aTraiter, articles, cats, appel, recharger, setMsg }){
   const [vue, setVue] = useState('commandes');
   const vierge = { reference:'', nom:'', description:'', categorie:'communication',
@@ -2261,8 +2255,8 @@ export function ResLogistique({ aTraiter, articles, cats, appel, recharger, setM
     </div>`;
 }
 
-
 /* --- Les dotations en points ----------------------------------------- */
+
 export function ResDotations({ regles, dotations, p, appel, setMsg }){
   const [simul, setSimul] = useState(null);
   const [exc, setExc] = useState(false);
@@ -2503,13 +2497,12 @@ export function ResDotations({ regles, dotations, p, appel, setMsg }){
     </div>`;
 }
 
-/* =====================================================================
-   MES MANDATS
-   Ce qu'on me demande à moi se répond ici, jamais depuis l'application
-   concernée. Un intérim proposé à quelqu'un qui n'a pas Habilitations
-   restait sans réponse possible : la file de travail renvoyait vers une
-   porte fermée. Cet écran est ouvert à tout membre actif, sans droit.
 
+/* =====================================================================
+   LE SUIVI D'UNE NOTE
+   Le déposant ne voyait qu'un mot. Il voit maintenant les quatre
+   étapes, laquelle est franchie, par qui, et ce qui reste. Un dossier
+   arrêté s'arrête visiblement plutôt que de rester en suspens.
    ===================================================================== */
 export function SuiviNote({ id }){
   const [e, setE] = useState([]);
@@ -2558,11 +2551,11 @@ export function SuiviNote({ id }){
     </div>`;
 }
 
+
 /* --- Instruire ligne à ligne --------------------------------------------
    L'instructeur avait un doute sur une ligne et refusait la note
    entière. Il marque désormais chaque ligne, et peut renvoyer la note
    pour complément sans faire perdre ce qui était acquis.
-
    --------------------------------------------------------------------- */
 export function InstruireLignes({ note, lignes, param, recharger, setMsg }){
   const [msgLocal, setMsgLocal] = useState('');
@@ -2644,15 +2637,12 @@ export function InstruireLignes({ note, lignes, param, recharger, setMsg }){
     </div>`;
 }
 
+
 /* =====================================================================
-   LE BILAN DE L'ANNÉE
-   « Mon engagement » listait sans totaliser. Il dit maintenant ce que
-   l'année cumule, d'où viennent les heures — déclarées ou attestées par
-   un bilan de mission — et ce qui sépare de l'échelon suivant.
-
-   Rien n'est stocké : la chancellerie calcule déjà tout cela pour ses
-   promotions. On ne recalcule pas, on cite.
-
+   LES INVESTISSEMENTS À ORDONNANCER
+   Ils n'apparaissaient que dans Ressources, alors qu'ordonnancer est le
+   métier de l'ordonnateur, qui travaille dans son écran. Même fonction,
+   deux endroits — pas deux circuits.
    ===================================================================== */
 export function InvestissementsAOrdonnancer({ setMsg }){
   const [l, setL] = useState([]);
@@ -2708,16 +2698,13 @@ export function InvestissementsAOrdonnancer({ setMsg }){
     </div>`;
 }
 
+
 /* =====================================================================
-   LA GESTION LOCALE
-   Voir avant de décider. Quatre volets : la fiche du territoire, les
-   accès du périmètre, les actes locaux, et — pour qui pilote le réseau
-   — le plan d'ensemble.
-
-   Ce que le national délègue est une donnée, pas une règle codée :
-   l'écran affiche la liste et dit, pour chaque application, pourquoi
-   elle est ouvrable ou non.
-
+   MES ENVELOPPES
+   Une direction ou un responsable qui détient des points ne les
+   consomme pas : il les répartit. L'écran ne propose donc qu'un geste,
+   affecter à un projet — et il montre, pour chaque projet, ce qu'il a
+   déjà reçu et de qui.
    ===================================================================== */
 export function MesEnveloppes({ setMsg }){
   const [env, setEnv] = useState([]);
@@ -2852,9 +2839,3 @@ export function MesEnveloppes({ setMsg }){
         </div>`}
     </div>`;
 }
-
-/* =====================================================================
-   LE FIL D'ACTUALITÉ
-   Ce qu'on attend de la personne passe avant ce qui s'est passé. Un fil
-   qui commencerait par des nouvelles laisserait les demandes en attente
-   sous la ligne de flottaison.
