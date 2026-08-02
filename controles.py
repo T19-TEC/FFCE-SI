@@ -210,6 +210,59 @@ def ctrl_13():
                           f"(alias de {', '.join(sorted(liens[alias]))})")
     yield "13. Colonnes absentes de la table visée", sorted(set(ko))
 
+def colonnes_des_fonctions():
+    """Les colonnes déclarées par chaque fonction `returns table`, dans
+    sa définition en vigueur."""
+    cols = {}
+    for f in FS:
+        src = sans_commentaires(open(f, encoding='utf-8').read())
+        for m in re.finditer(r'create or replace function (\w+)\s*\([^)]*\)\s*'
+                             r'returns table\s*\((.*?)\)\s*language', src, re.S):
+            noms = set()
+            for c in re.split(r',(?![^(]*\))', m.group(2)):
+                x = re.match(r'\s*([a-z_][a-z0-9_]*)\s', c)
+                if x: noms.add(x.group(1))
+            cols[m.group(1)] = noms
+    return cols
+
+COLS_FN = colonnes_des_fonctions()
+
+def ctrl_15():
+    """Colonne citée sur le résultat d'une fonction `returns table`, mais
+    absente de ses colonnes déclarées. Le contrôle 13 écarte ces alias
+    parce qu'ils ne renvoient pas à une table ; ils sont pourtant tout
+    aussi vérifiables, et l'erreur y est aussi facile — `date_assemblee`
+    au lieu de `date_tenue`."""
+    MOTS = {'on','as','where','and','set','using','join','left','right','group',
+            'order','cross','lateral','inner','outer','full','select','into','values'}
+    ko = []
+    for f in FS:
+        src = sans_commentaires(open(f, encoding='utf-8').read())
+        src = re.sub(r"'[^']*'", "''", src)
+        for chunk in re.split(r'\$\$;|;\s*\n', src):
+            liens, aussi = {}, {}
+            for m in re.finditer(r'\b(?:from|join)\s+([a-z_][a-z0-9_]*)\s*\([^)]*\)\s+'
+                                 r'(?:as\s+)?([a-z][a-z0-9_]{0,4})\b', chunk):
+                fn, alias = m.group(1), m.group(2)
+                if fn in COLS_FN and alias not in MOTS:
+                    liens.setdefault(alias, set()).add(fn)
+            # Un même alias peut désigner une table ailleurs dans la même
+            # fonction — `m` pour `missions_ouvertes()` ici, pour `modules`
+            # là. On ne signale que si la colonne n'existe nulle part.
+            for m in re.finditer(r'\b(?:from|join)\s+([a-z_][a-z0-9_]*)\s+'
+                                 r'(?:as\s+)?([a-z][a-z0-9_]{0,4})\b', chunk):
+                tbl, alias = m.group(1), m.group(2)
+                if tbl in TABLES and alias not in MOTS:
+                    aussi.setdefault(alias, set()).update(TABLES[tbl])
+            for m in re.finditer(r'\b([a-z][a-z0-9_]{0,4})\.([a-z_][a-z0-9_]+)\b', chunk):
+                alias, col = m.group(1), m.group(2)
+                if alias not in liens: continue
+                if any(col in COLS_FN[fn] for fn in liens[alias]): continue
+                if col in aussi.get(alias, set()): continue
+                ko.append(f"{f.split('/')[-1]} : {alias}.{col} "
+                          f"(résultat de {', '.join(sorted(liens[alias]))})")
+    yield "15. Colonnes absentes du résultat d'une fonction", sorted(set(ko))
+
 def ctrl_14():
     """Droit invoqué par `a_droit()` mais jamais déclaré dans la table
     `droits`. Il renvoie alors toujours faux : la fonction paraît
@@ -236,7 +289,7 @@ if __name__ == '__main__':
     nouvelles = sys.argv[1:]
     js, h = js_du_html()
     flux = list(ctrl_1_2_3(js)) + list(ctrl_4_5()) + list(ctrl_6()) + list(ctrl_9()) \
-         + list(ctrl_10()) + list(ctrl_11()) + list(ctrl_13()) + list(ctrl_14()) \
+         + list(ctrl_10()) + list(ctrl_11()) + list(ctrl_13()) + list(ctrl_15()) + list(ctrl_14()) \
          + list(ctrl_12(nouvelles))
     dur = 0
     for titre, ko in flux:
