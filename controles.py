@@ -29,7 +29,7 @@ BRUIT = {'on','using','old','new','storage','now','age','coalesce','current_date
  'select','case','exists','table','function','only','lateral','values','public','set',
  'greatest','string_agg','jsonb_build_array','trim','count','buckets','objects','pg_proc',
  'regexp_replace','jsonb_each','jsonb_array_elements_text','jsonb_array_elements',
- 'unnest','generate_series','p_territoire'}
+ 'unnest','generate_series','p_territoire','information_schema'}
 
 def sans_commentaires(s):
     """Les contrôles portent sur le code, pas sur ce qu'on en dit."""
@@ -66,6 +66,54 @@ def ctrl_6():
                              open(f, encoding='utf-8').read()):
             ko.append(f.split('/')[-1] + ' : ' + re.sub(r'\s+',' ',m.group(0))[:60])
     yield "6. Jointures mêlées", ko
+
+def ctrl_4_5():
+    """4 — une fonction `returns table` redéfinie exige un `drop` préalable
+    si ses colonnes changent ; on signale toute redéfinition sans drop,
+    à relire.
+    5 — une table ou une fonction lue avant sa création dans le MÊME
+    fichier : PostgreSQL résout le corps d'une fonction `language sql`
+    au moment du CREATE. C'est ce qui a manqué à la migration 38."""
+    ko4, ko5 = [], []
+    for f in FS:
+        brut = open(f, encoding='utf-8').read()
+        s = sans_commentaires(brut)
+        nom_f = f.split('/')[-1]
+
+        # 4 — cf. plus bas : le contrôle 4 se fait globalement, en
+        # comparant chaque définition à celle qui la précède.
+        # 5 — position de la création par rapport à la première lecture
+        crees = {}
+        for m in re.finditer(r'create table if not exists (\w+)', s):
+            crees.setdefault(m.group(1), m.start())
+        for m in re.finditer(r'create (?:or replace )?function ([a-z_0-9]+)', s):
+            crees.setdefault(m.group(1), m.start())
+        for obj, pos in crees.items():
+            for m in re.finditer(r'\b(?:from|join|insert into|update|delete from)\s+'
+                                 + obj + r'\b', s):
+                if m.start() < pos:
+                    ko5.append(f"{nom_f} : {obj} lu ligne "
+                               f"{s[:m.start()].count(chr(10))+1}, créé ligne "
+                               f"{s[:pos].count(chr(10))+1}")
+                    break
+    # Chaque fonction `returns table` est comparée à sa définition
+    # immédiatement précédente : c'est le seul enchaînement que
+    # PostgreSQL exécute réellement.
+    defs = {}
+    for f in FS:
+        s = sans_commentaires(open(f, encoding='utf-8').read())
+        drops = set(re.findall(r'drop function if exists (\w+)', s))
+        for m in re.finditer(r'create or replace function (\w+)\s*\([^)]*\)\s*'
+                             r'returns table\s*\((.*?)\)\s*language', s, re.S):
+            n = m.group(1)
+            cols = re.sub(r'\s+', ' ', m.group(2)).strip()
+            av = defs.get(n)
+            if av and av[1] != cols and n not in drops:
+                ko4.append(f"{f.split('/')[-1]} : {n} — colonnes changées depuis "
+                           f"{av[0]}, `drop function` requis")
+            defs[n] = (f.split('/')[-1], cols)
+    yield "4. Redéfinitions `returns table` sans drop", sorted(set(ko4))
+    yield "5. Objet lu avant sa création dans le même fichier", sorted(set(ko5))
 
 def ctrl_9():
     defs = {}
@@ -160,6 +208,16 @@ def ctrl_13():
                           f"(alias de {', '.join(sorted(liens[alias]))})")
     yield "13. Colonnes absentes de la table visée", sorted(set(ko))
 
+def ctrl_14():
+    """Droit invoqué par `a_droit()` mais jamais déclaré dans la table
+    `droits`. Il renvoie alors toujours faux : la fonction paraît
+    fonctionner, mais refuse tout le monde en silence."""
+    declares = set()
+    for m in re.finditer(r"insert into droits[^;]+;", SRC, re.S):
+        declares |= set(re.findall(r"\('([a-z_]+\.[a-z_]+)'", m.group(0)))
+    cites = set(re.findall(r"a_droit\('([a-z_.]+)'\)", SRC))
+    yield "14. Droits invoqués mais non déclarés", sorted(cites - declares)
+
 def ctrl_12(nouvelles):
     """Fonction redéfinie sous un nom qui n'existait pas ailleurs."""
     anciens = "\n".join(open(f, encoding='utf-8').read() for f in FS
@@ -175,8 +233,8 @@ def ctrl_12(nouvelles):
 if __name__ == '__main__':
     nouvelles = sys.argv[1:]
     js, h = js_du_html()
-    flux = list(ctrl_1_2_3(js)) + list(ctrl_6()) + list(ctrl_9()) \
-         + list(ctrl_10()) + list(ctrl_11()) + list(ctrl_13()) \
+    flux = list(ctrl_1_2_3(js)) + list(ctrl_4_5()) + list(ctrl_6()) + list(ctrl_9()) \
+         + list(ctrl_10()) + list(ctrl_11()) + list(ctrl_13()) + list(ctrl_14()) \
          + list(ctrl_12(nouvelles))
     dur = 0
     for titre, ko in flux:
