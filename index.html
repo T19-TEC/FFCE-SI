@@ -1280,6 +1280,8 @@ function TableauDeBord({ p, apps, chemin, demandes, attentes }){
         <a class="btn light" href="#/espace/demandes">Guichet des demandes</a>
       </div>
 
+      <${CarteAdherent} />
+
       <${MonDossier} p=${p} entier=${false} />
 
       <${FicheOuverture} compact=${true}
@@ -1297,6 +1299,8 @@ function TableauDeBord({ p, apps, chemin, demandes, attentes }){
         <${CurseurEngagement} compact=${true} />
         <${Progression} />
       </div>
+
+      <${FilActualite} p=${p} />
 
       <${CeQuiAttend} items=${attentes} />
 
@@ -4411,120 +4415,6 @@ function IdentiteApplications({ setMsg }){
         </div>`)}
     </div>`;
 }
-
-function Nominations({ postes, noms, gens, terr, nomDe, actif, recharger, setMsg }){
-  const [f, setF] = useState({profil:'', poste:'', territoire:'', fin:'', motif:''});
-  const [historique, setHistorique] = useState(false);
-
-  async function nommer(e){
-    e.preventDefault();
-    const { data, error } = await db.rpc('nommer', {
-      p_profil: f.profil, p_poste: f.poste,
-      p_territoire: f.territoire || null, p_fin: f.fin || null, p_motif: f.motif || null
-    });
-    if (error) return setMsg('Erreur : ' + error.message);
-    if (!data.ok) return setMsg('Erreur : ' + data.message);
-    setF({profil:'', poste:'', territoire:'', fin:'', motif:''});
-    setMsg('Nomination enregistrée.'); recharger();
-  }
-
-  async function revoquer(n){
-    const motif = prompt('Motif de la révocation (obligatoire)');
-    if (!motif) return;
-    const { data, error } = await db.rpc('revoquer', { p_nomination: n.id, p_motif: motif });
-    if (error) return setMsg('Erreur : ' + error.message);
-    if (!data.ok) return setMsg('Erreur : ' + data.message);
-    setMsg('Nomination révoquée.'); recharger();
-  }
-
-  const enCours = noms.filter(actif);
-  const closes  = noms.filter(n => !actif(n));
-  const posteNom = c => (postes.find(x => x.code === c)||{}).nom || c;
-  const terrNom  = i => (terr.find(x => x.id === i)||{}).nom;
-
-  return html`
-    <div>
-      <form onSubmit=${nommer} class="panneau" style="margin-bottom:24px">
-        <div class="tete"><h3 style="font-size:17px">Nommer</h3></div>
-        <div class="corps stack">
-          <div class="row" style="gap:16px;align-items:flex-start">
-            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Membre</label>
-              <select required value=${f.profil} onChange=${e=>setF(o=>({...o,profil:e.target.value}))}>
-                <option value="">Choisir…</option>
-                ${gens.map(g => html`<option value=${g.id}>${nomComplet(g)} — ${g.fonction_nom}</option>`)}
-              </select></div>
-            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Poste</label>
-              <select required value=${f.poste} onChange=${e=>setF(o=>({...o,poste:e.target.value}))}>
-                <option value="">Choisir…</option>
-                ${postes.filter(x=>x.actif).map(x => html`<option value=${x.code}>${x.nom}</option>`)}
-              </select></div>
-          </div>
-          <div class="row" style="gap:16px;align-items:flex-start">
-            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Périmètre</label>
-              <select value=${f.territoire} onChange=${e=>setF(o=>({...o,territoire:e.target.value}))}>
-                <option value="">National</option>
-                ${terr.map(t => html`<option value=${t.id}>${t.nom} (${t.echelle})</option>`)}
-              </select></div>
-            <div class="field" style="flex:1;min-width:160px;margin:0"><label>Fin du mandat</label>
-              <input type="date" value=${f.fin} onInput=${e=>setF(o=>({...o,fin:e.target.value}))} />
-            </div>
-          </div>
-          <div class="field"><label>Motif</label>
-            <input value=${f.motif} onInput=${e=>setF(o=>({...o,motif:e.target.value}))}
-              placeholder="Élu au bureau du 12 mars" /></div>
-          <div><button class="btn">Nommer</button></div>
-          <p class="small muted">
-            Sans date de fin, le mandat court jusqu\u2019à révocation. Un mandat
-            à durée déterminée s\u2019éteint seul : c\u2019est plus sûr qu\u2019un rappel.
-          </p>
-        </div>
-      </form>
-
-      <div class="panneau">
-        <div class="tete"><h3 style="font-size:17px">Postes occupés</h3>
-          <span class="tag">${enCours.length}</span></div>
-        ${enCours.length === 0
-          ? html`<div class="vide">Aucune nomination en cours.</div>`
-          : enCours.map(n => html`
-            <div class="ligne">
-              <div style="flex:1;min-width:220px">
-                <div>${nomDe(n.profil_id)} — <strong>${posteNom(n.poste)}</strong></div>
-                <div class="small muted">
-                  ${n.territoire_id ? terrNom(n.territoire_id) : 'National'}
-                  · depuis le ${jour(n.debut)}
-                  ${n.fin ? ' · jusqu\u2019au ' + jour(n.fin) : ' · sans terme'}
-                  ${n.motif ? ' · ' + n.motif : ''}
-                </div>
-              </div>
-              <button class="btn sm light" onClick=${()=>revoquer(n)}>Révoquer</button>
-            </div>`)}
-      </div>
-
-      ${closes.length > 0 && html`
-        <div style="margin-top:24px">
-          <button class="btn light" style="border:0;background:transparent;padding:0;
-            font-size:13px;color:var(--gris)" onClick=${()=>setHistorique(h=>!h)}>
-            ${historique ? 'Masquer' : 'Voir'} les mandats clos (${closes.length})</button>
-          ${historique && html`
-            <div class="panneau" style="margin-top:12px">
-              ${closes.map(n => html`
-                <div class="ligne">
-                  <div>
-                    <div class="muted">${nomDe(n.profil_id)} — ${posteNom(n.poste)}</div>
-                    <div class="small muted">
-                      ${n.revoque_le
-                        ? 'Révoqué le ' + jour(n.revoque_le) +
-                          (n.motif_revocation ? ' · ' + n.motif_revocation : '')
-                        : 'Mandat échu le ' + jour(n.fin)}
-                    </div>
-                  </div>
-                  <span class="tag">Clos</span>
-                </div>`)}
-            </div>`}
-        </div>`}
-    </div>`;
-}
-
 function Postes({ postes, droits, liens, recharger, setMsg }){
   const [creation, setCreation] = useState(false);
   const [f, setF] = useState({code:'', nom:'', description:'', couleur:'neutre'});
@@ -4631,118 +4521,6 @@ function Postes({ postes, droits, liens, recharger, setMsg }){
       })}
     </div>`;
 }
-
-function PilotageAcces({ acces, apps, gens, recharger, setMsg }){
-  const [f, setF] = useState({profil:'', app:'', motif:'', expire:''});
-  const [filtre, setFiltre] = useState('actifs');
-
-  async function accorder(e){
-    e.preventDefault();
-    const { data, error } = await db.rpc('accorder_acces', {
-      p_profil: f.profil, p_app: f.app,
-      p_motif: f.motif || null, p_expire: f.expire || null
-    });
-    if (error) return setMsg('Erreur : ' + error.message);
-    if (!data.ok) return setMsg('Erreur : ' + data.message);
-    setF({profil:'', app:'', motif:'', expire:''});
-    setMsg('Accès ouvert.'); recharger();
-  }
-
-  async function revoquer(a){
-    const motif = prompt('Motif de la révocation (obligatoire)');
-    if (!motif) return;
-    const { data, error } = await db.rpc('revoquer_acces',
-      { p_profil: a.profil_id, p_app: a.application, p_motif: motif });
-    if (error) return setMsg('Erreur : ' + error.message);
-    if (!data.ok) return setMsg('Erreur : ' + data.message);
-    setMsg('Accès révoqué.'); recharger();
-  }
-
-  const liste = acces.filter(a => filtre === 'tous' ? true : a.statut === 'Actif');
-  const dormants = acces.filter(a => a.statut === 'Actif' && !a.derniere_utilisation);
-
-  return html`
-    <div>
-      <form onSubmit=${accorder} class="panneau" style="margin-bottom:24px">
-        <div class="tete"><h3 style="font-size:17px">Ouvrir un accès</h3></div>
-        <div class="corps stack">
-          <div class="row" style="gap:16px;align-items:flex-start">
-            <div class="field" style="flex:1;min-width:200px;margin:0"><label>Membre</label>
-              <select required value=${f.profil} onChange=${e=>setF(o=>({...o,profil:e.target.value}))}>
-                <option value="">Choisir…</option>
-                ${gens.map(g => html`<option value=${g.id}>${nomComplet(g)}</option>`)}
-              </select></div>
-            <div class="field" style="flex:1;min-width:180px;margin:0"><label>Application</label>
-              <select required value=${f.app} onChange=${e=>setF(o=>({...o,app:e.target.value}))}>
-                <option value="">Choisir…</option>
-                ${apps.map(a => html`<option value=${a.code}>${a.nom}</option>`)}
-              </select></div>
-            <div class="field" style="flex:1;min-width:150px;margin:0"><label>Expire le</label>
-              <input type="date" value=${f.expire}
-                onInput=${e=>setF(o=>({...o,expire:e.target.value}))} /></div>
-          </div>
-          <div class="field"><label>Motif</label>
-            <input value=${f.motif} onInput=${e=>setF(o=>({...o,motif:e.target.value}))}
-              placeholder="Trésorier adjoint depuis mars" /></div>
-          <div><button class="btn">Ouvrir</button></div>
-        </div>
-      </form>
-
-      ${dormants.length > 0 && html`
-        <div class="alerte" style="margin-bottom:24px;border-left-color:var(--laiton)">
-          ${dormants.length} accès ouvert${dormants.length>1?'s':''} n\u2019
-          ${dormants.length>1?'ont':'a'} jamais servi. Un accès inutilisé est un
-          accès à retirer.
-        </div>`}
-
-      <div class="spread" style="margin-bottom:16px">
-        <span class="small muted">${liste.length} ligne${liste.length>1?'s':''}</span>
-        <select style="width:auto" value=${filtre} onChange=${e=>setFiltre(e.target.value)}>
-          <option value="actifs">Accès actifs</option>
-          <option value="tous">Tout l\u2019historique</option>
-        </select>
-      </div>
-
-      <div class="panneau" style="overflow-x:auto">
-        ${liste.length === 0
-          ? html`<div class="vide">Aucun accès nominatif ouvert.</div>`
-          : html`
-            <table>
-              <thead><tr>
-                <th>Membre</th><th>Application</th><th>Ouvert le</th>
-                <th>Dernier usage</th><th>Ouvertures</th><th>État</th><th></th>
-              </tr></thead>
-              <tbody>
-                ${liste.map(a => html`
-                  <tr>
-                    <td><div>${a.membre}</div>
-                      <div class="mono muted">${a.matricule}</div></td>
-                    <td>${a.app_nom}</td>
-                    <td class="small">${jour(a.accorde_le)}
-                      ${a.expire_le ? html`<div class="small muted">expire le ${jour(a.expire_le)}</div>` : ''}</td>
-                    <td class="small">${a.derniere_utilisation
-                      ? jour(a.derniere_utilisation)
-                      : html`<span class="tag or">Jamais</span>`}</td>
-                    <td class="mono">${a.nb_ouvertures}</td>
-                    <td>${a.statut === 'Actif'
-                      ? html`<span class="tag vert">Actif</span>`
-                      : html`<span class="tag rouge">${a.statut}</span>`}</td>
-                    <td>${a.statut === 'Actif' && html`
-                      <button class="btn sm light" onClick=${()=>revoquer(a)}>Révoquer</button>`}</td>
-                  </tr>`)}
-              </tbody>
-            </table>`}
-      </div>
-    </div>`;
-}
-
-
-/* =====================================================================
-   5 septies. DISCIPLINE, RECOURS ET ARCHIVES
-   Aucune mesure ne produit d'effet sans avoir été notifiée, et aucune
-   notification n'est valable sans voie de recours ouverte.
-   ===================================================================== */
-
 const MESURES = {
   classement:          'Classement sans suite',
   rappel_regles:       'Rappel des règles',
@@ -9377,25 +9155,6 @@ function ArchivesElectorales({ archives }){
 }
 
 
-/* --- Insigne -----------------------------------------------------------
-   Une distinction n'a de sens que portée. L'insigne accompagne le nom
-   partout où il apparaît : conversations, annuaire, groupes.
-   --------------------------------------------------------------------- */
-function Insigne({ ins, compact }){
-  if (!ins) return null;
-  return html`
-    <span class="row" style="gap:5px;display:inline-flex;vertical-align:middle">
-      <span class="insigne" title=${'Échelon ' + ins.echelon + ' — ' + (ins.echelon_nom||'')}>
-        ${ins.echelon}</span>
-      ${ins.distinction && html`
-        <span class=${'tag '+(ins.couleur||'or')} title=${ins.distinction}
-          style="padding:1px 6px;font-size:9.5px">
-          ${compact ? '★' : ins.distinction}</span>`}
-      ${!compact && ins.poste && html`
-        <span class="tag" style="padding:1px 6px;font-size:9.5px">${ins.poste}</span>`}
-    </span>`;
-}
-
 /* --- Mes délégations en cours ------------------------------------------
    Agir au nom d'un autre doit toujours se voir.
    --------------------------------------------------------------------- */
@@ -12279,87 +12038,6 @@ function Validation({ p }){
                 <button class="btn sm light" onClick=${()=>traiter(d,false)}>Refuser</button>
               </div>
             </div>`)}
-      </div>
-    </div>`;
-}
-
-/* --- Direction générale : réseau et fonctions ------------------------ */
-function ReseauAdmin(){
-  const [membres, setMembres] = useState([]);
-  const [fonctions, setFonctions] = useState([]);
-  const [terr, setTerr] = useState([]);
-  const [q, setQ] = useState('');
-  const [msg, setMsg] = useState('');
-
-  const charger = useCallback(async () => {
-    const [m, f, t] = await Promise.all([
-      db.from('v_annuaire').select('*').order('niveau',{ascending:false}).order('nom'),
-      db.from('fonctions').select('*').order('niveau'),
-      db.from('territoires').select('id,nom,echelle,code').order('echelle').order('nom')
-    ]);
-    setMembres(m.data||[]); setFonctions(f.data||[]); setTerr(t.data||[]);
-  }, []);
-  useEffect(() => { charger(); }, [charger]);
-
-  async function modifier(id, champ, valeur){
-    const { error } = await db.from('profils').update({ [champ]: valeur }).eq('id', id);
-    setMsg(error ? error.message : 'Enregistré.');
-    charger();
-  }
-
-  const filtre = membres.filter(m =>
-    (nomComplet(m)+' '+(m.territoire_nom||'')).toLowerCase().includes(q.toLowerCase()));
-
-  return html`
-    <div>
-      <p class="muted" style="max-width:60ch">
-        Nommer, muter, faire progresser, protéger un dossier. Chaque
-        modification est immédiate et inscrite au journal.
-      </p>
-      ${msg && html`<div class="alerte ok" style="margin:16px 0">${msg}</div>`}
-
-      <div class="field" style="max-width:360px;margin:24px 0">
-        <input placeholder="Rechercher…" value=${q} onInput=${e=>setQ(e.target.value)} />
-      </div>
-
-      <div class="panneau" style="overflow-x:auto">
-        <table>
-          <thead><tr><th>Membre</th><th>Fonction</th><th>Territoire</th><th>Échelon</th>
-            <th>Statut</th><th title="Toute consultation déclenche une alerte">Protégé</th></tr></thead>
-          <tbody>
-            ${filtre.map(m => html`
-              <tr>
-                <td><div>${nomComplet(m)}</div><div class="mono muted">${m.matricule}</div></td>
-                <td>
-                  <select value=${m.fonction} onChange=${e=>modifier(m.id,'fonction',e.target.value)}>
-                    ${fonctions.map(f => html`<option value=${f.code}>${f.nom}</option>`)}
-                  </select>
-                </td>
-                <td>
-                  <select value=${m.territoire_id||''} onChange=${e=>modifier(m.id,'territoire_id',e.target.value||null)}>
-                    <option value="">—</option>
-                    ${terr.map(t => html`<option value=${t.id}>${t.nom} (${t.echelle})</option>`)}
-                  </select>
-                </td>
-                <td>
-                  <select value=${m.echelon} onChange=${e=>modifier(m.id,'echelon',Number(e.target.value))}>
-                    ${[1,2,3,4,5,6,7].map(n => html`<option value=${n}>${n}</option>`)}
-                  </select>
-                </td>
-                <td>
-                  <select value=${m.statut} onChange=${e=>modifier(m.id,'statut',e.target.value)}>
-                    ${['en_attente','actif','suspendu','archive'].map(s =>
-                      html`<option value=${s}>${s.replace('_',' ')}</option>`)}
-                  </select>
-                </td>
-                <td style="text-align:center">
-                  <input type="checkbox" style="width:auto" checked=${!!m.protege}
-                    title="Protection renforcée : toute consultation déclenche une alerte"
-                    onChange=${e=>modifier(m.id,'protege',e.target.checked)} />
-                </td>
-              </tr>`)}
-          </tbody>
-        </table>
       </div>
     </div>`;
 }
