@@ -12717,7 +12717,8 @@ const ORIGINE_INV = { catalogue:'Catalogue fédéral', achat_local:'Achat local'
 
 /* Les états d'une commande et d'un investissement, avec leur couleur. */
 const etatCmd = s => {
-  const t = { brouillon:['Panier',''], deposee:['Déposée','bleu'],
+  const t = { brouillon:['Panier',''], a_valider:['En validation','or'],
+              deposee:['Déposée','bleu'],
               validee:['Validée','bleu'], expediee:['Expédiée','or'],
               recue:['Reçue','vert'], refusee:['Refusée','rouge'],
               annulee:['Annulée','rouge'] }[s] || [s, ''];
@@ -12983,6 +12984,22 @@ function ResCommandes({ p, panier, lignes, mesCmd, cmdReseau, solde, appel }){
   const [motif, setMotif] = useState('');
   const [adresse, setAdresse] = useState('');
   const [destinataire, setDestinataire] = useState('');
+  const [source, setSource] = useState('territoire');
+  const [plan, setPlan] = useState(null);
+  const [aValider, setAValider] = useState([]);
+
+  const total0 = lignes.reduce((s,l) => s + Number(l.points||0), 0);
+
+  // Le plan d'engagement vient de la base : l'écran ne recalcule pas la
+  // règle « personnel d'abord, direction ensuite », il l'affiche.
+  useEffect(() => {
+    if (source !== 'enveloppe' || total0 <= 0) return setPlan(null);
+    db.rpc('plan_engagement', { p_points: total0 }).then(({data}) => setPlan(data));
+  }, [source, total0]);
+
+  useEffect(() => {
+    db.rpc('engagements_a_valider').then(({data}) => setAValider(data || []));
+  }, [mesCmd]);
   const total = lignes.reduce((s,l) => s + Number(l.points||0), 0);
   const dispo = solde ? Number(solde.disponible) || 0 : 0;
 
@@ -13052,20 +13069,87 @@ function ResCommandes({ p, panier, lignes, mesCmd, cmdReseau, solde, appel }){
                     onInput=${e=>setDestinataire(e.target.value)} />
                 </div>
               </div>
+              <div class="field">
+                <label>Sur quels points</label>
+                <select value=${source} onChange=${e=>setSource(e.target.value)}>
+                  <option value="territoire">La dotation de ma structure</option>
+                  <option value="enveloppe">Mes enveloppes (personnelle, puis direction)</option>
+                </select>
+              </div>
+
+              ${source === 'enveloppe' && plan && html`
+                <div class="alerte" style="margin:0">
+                  ${(plan.plan||[]).length === 0
+                    ? 'Vous ne portez aucune enveloppe engageable.'
+                    : html`
+                      <div class="small" style="margin-bottom:6px">
+                        Ce qui sera engagé, dans cet ordre :</div>
+                      ${plan.plan.map((x,i) => html`
+                        <div class="small" key=${i}>
+                          ${x.libelle} — <span class="mono">${x.points} pts</span></div>`)}`}
+                  ${plan.reste > 0 && html`
+                    <div class="small" style="color:var(--rouge);margin-top:6px">
+                      Il manque ${plan.reste} points : vos enveloppes ne couvrent pas
+                      cette commande.</div>`}
+                </div>`}
+
               <div class="small muted">
                 Les points ne sont retenus qu\u2019au dépôt, et rendus si la
-                commande est refusée ou retirée.
+                commande est refusée ou retirée. Si vous n\u2019êtes pas habilité à
+                engager, la commande partira en validation auprès du responsable
+                \u2014 préparer n\u2019est pas engager.
               </div>
               <div style="margin-top:14px">
-                <button class="btn" disabled=${total > dispo || !adresse.trim()}
-                  onClick=${()=>appel('deposer_commande',
-                    { p_id: panier.id, p_motif: motif, p_adresse: adresse,
-                      p_destinataire: destinataire || null },
-                    'Commande déposée. La logistique fédérale l\u2019examine.')}>
+                <button class="btn"
+                  disabled=${!adresse.trim()
+                    || (source === 'territoire' && total > dispo)
+                    || (source === 'enveloppe' && (!plan || plan.reste > 0))}
+                  onClick=${async ()=>{
+                    const r = await appel('deposer_commande',
+                      { p_id: panier.id, p_motif: motif, p_adresse: adresse,
+                        p_destinataire: destinataire || null, p_source: source },
+                      'Commande transmise.');
+                  }}>
                   Déposer la commande</button>
               </div>
             </div>`}
       </div>
+
+      ${aValider.length > 0 && html`
+        <h3 style="font-size:17px;margin-bottom:12px">Engagements à valider</h3>
+        <div class="panneau" style="margin-bottom:28px;border-color:var(--brun)">
+          <div class="corps small muted" style="padding-bottom:0">
+            Ces paniers ont été préparés par des membres qui n\u2019ont pas
+            l\u2019habilitation d\u2019engager les points. Rien n\u2019est débité tant que
+            vous n\u2019avez pas validé.
+          </div>
+          ${aValider.map(c => html`
+            <div class="ligne" key=${c.id} style="align-items:flex-start">
+              <div style="flex:1;min-width:240px">
+                <div class="row" style="gap:8px">
+                  <span class="mono">${c.reference}</span>
+                  <span class="mono muted small">${c.points} pts</span>
+                </div>
+                <div class="small muted" style="margin-top:3px">
+                  ${c.demandeur}${c.territoire ? ' · ' + c.territoire : ''}
+                  · ${jour(c.cree_le)}</div>
+                ${c.motif && html`<div class="small" style="margin-top:4px">${c.motif}</div>`}
+                ${(c.finance_par||[]).map((x,i) => html`
+                  <div class="small muted" key=${i} style="margin-top:2px">
+                    Sur ${x.libelle} — ${x.points} pts</div>`)}
+              </div>
+              <div class="row" style="gap:6px">
+                <button class="btn sm" onClick=${()=>appel('valider_engagement',
+                  { p_id:c.id, p_ok:true, p_motif:null },
+                  'Engagement validé. Les points sont retenus.')}>Engager</button>
+                <button class="btn sm light" onClick=${()=>{
+                  const m = prompt('Motif du refus (obligatoire)');
+                  if (m) appel('valider_engagement', { p_id:c.id, p_ok:false, p_motif:m },
+                    'Demande refusée.');
+                }}>Refuser</button>
+              </div>
+            </div>`)}
+        </div>`}
 
       <h3 style="font-size:17px;margin-bottom:12px">Mes commandes</h3>
       <div class="panneau" style="margin-bottom:28px">
@@ -16708,6 +16792,8 @@ function GlPlan({ appel, setMsg, ouvrir }){
           ${carte ? 'Masquer la carte' : 'Afficher la carte'}</button>
       </div>
 
+      <${Organigramme} />
+
       ${carte && html`<${CarteReseau} territoires=${l} indicateur=${indicateur}
         ouvrir=${(id, ind) => { if (ind) setIndicateur(ind); else if (id) ouvrir(id); }} />`}
 
@@ -17154,6 +17240,255 @@ function MesEnveloppes({ setMsg }){
     </div>`;
 }
 
+/* =====================================================================
+   LE FIL D'ACTUALITÉ
+   Ce qu'on attend de la personne passe avant ce qui s'est passé. Un fil
+   qui commencerait par des nouvelles laisserait les demandes en attente
+   sous la ligne de flottaison.
+   ===================================================================== */
+const NATURE_FIL = {
+  attente:     ['À traiter',     'var(--rouge)'],
+  assemblee:   ['Vie statutaire','var(--bordeaux)'],
+  acte:        ['Décision',      'var(--nuit)'],
+  publication: ['À relayer',     'var(--action)'],
+  mission:     ['Engagement',    'var(--vert)'],
+  formation:   ['Formation',     'var(--laiton)'],
+  projet:      ['Ma structure',  'var(--bleu)']
+};
+
+function FilActualite({ p }){
+  const [l, setL] = useState(null);
+  const [filtre, setFiltre] = useState('tout');
+
+  useEffect(() => {
+    db.rpc('fil_actualite', { p_limite: 40 }).then(({data}) => setL(data || []));
+  }, []);
+  if (!l) return html`<div class="vide" style="padding:60px">Chargement…</div>`;
+
+  const natures = [...new Set(l.map(x => x.nature))];
+  const liste = filtre === 'tout' ? l : l.filter(x => x.nature === filtre);
+  const urgents = l.filter(x => x.urgent).length;
+
+  return html`
+    <div style="margin-bottom:32px">
+      <div class="spread" style="margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <div>
+          <h2 style="font-size:22px;margin:0">Bonjour ${p.prenom}</h2>
+          <div class="small muted" style="margin-top:3px">
+            ${urgents > 0
+              ? urgents + ' chose(s) demandent votre attention aujourd\u2019hui.'
+              : 'Rien d\u2019urgent. Voici ce qui se passe dans la fédération.'}
+          </div>
+        </div>
+      </div>
+
+      ${natures.length > 1 && html`
+        <div class="row" style="gap:6px;margin-bottom:16px;flex-wrap:wrap">
+          <button class=${'btn sm ' + (filtre==='tout' ? '' : 'light')}
+            onClick=${()=>setFiltre('tout')}>Tout</button>
+          ${natures.map(n => html`
+            <button key=${n} class=${'btn sm ' + (filtre===n ? '' : 'light')}
+              onClick=${()=>setFiltre(n)}>
+              ${(NATURE_FIL[n] || [n])[0]}</button>`)}
+        </div>`}
+
+      ${liste.length === 0
+        ? html`<div class="vide">Rien à afficher pour l\u2019instant.</div>`
+        : html`<div class="panneau">
+            ${liste.map((x,i) => html`
+              <div class="ligne" key=${i} style=${'align-items:flex-start;border-left:3px solid '
+                + (x.urgent ? 'var(--rouge)' : (NATURE_FIL[x.nature] || ['','var(--filet)'])[1])}>
+                <div style="flex:1;min-width:250px">
+                  <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+                    <span class="small" style=${'font-weight:600;color:'
+                      + (NATURE_FIL[x.nature] || ['','var(--gris)'])[1]}>
+                      ${(NATURE_FIL[x.nature] || [x.nature])[0]}</span>
+                    ${x.urgent && html`<span class="tag rouge">À faire</span>`}
+                    <span class="small muted">${x.portee}</span>
+                  </div>
+                  <div style="margin-top:5px;font-weight:${x.urgent ? '600' : '400'}">
+                    ${x.titre}</div>
+                  ${x.corps && html`<div class="small muted" style="margin-top:3px">
+                    ${x.corps}</div>`}
+                  ${x.quand && html`<div class="small muted" style="margin-top:3px">
+                    ${jour(x.quand)}</div>`}
+                </div>
+                <a class=${'btn sm ' + (x.urgent ? '' : 'light')} href=${x.lien}>
+                  ${x.action}</a>
+              </div>`)}
+          </div>`}
+    </div>`;
+}
+
+/* --- La carte d'adhérent -------------------------------------------------
+   Le QR est dessiné à la main : un code de version fixe suffit pour un
+   identifiant, et cela évite une bibliothèque de plus. Le jeton qu'il
+   porte n'est pas l'identifiant du compte — le photographier ne donne
+   accès à rien.
+   --------------------------------------------------------------------- */
+function qrMatrice(texte){
+  // Encodage QR version 4, correction L, mode octet. Suffisant pour un
+  // identifiant de 36 caractères, et entièrement déterministe.
+  const N = 33, T = 80;                       // 33 modules, 80 octets utiles
+  const oct = [0x40 | (texte.length >> 4), ((texte.length & 15) << 4)];
+  for (let i = 0; i < texte.length; i++){
+    const c = texte.charCodeAt(i);
+    oct[oct.length - 1] |= (c >> 4);
+    oct.push((c & 15) << 4);
+  }
+  while (oct.length < T) oct.push(oct.length % 2 ? 0x11 : 0xEC);
+
+  const m = Array.from({length:N}, () => Array(N).fill(null));
+  const rep = (r,c) => {
+    for (let i = -1; i <= 7; i++) for (let j = -1; j <= 7; j++){
+      if (r+i < 0 || r+i >= N || c+j < 0 || c+j >= N) continue;
+      m[r+i][c+j] = (i>=0&&i<=6&&(j===0||j===6)) || (j>=0&&j<=6&&(i===0||i===6))
+                 || (i>=2&&i<=4&&j>=2&&j<=4);
+    }
+  };
+  rep(0,0); rep(0,N-7); rep(N-7,0);
+  for (let i = 8; i < N-8; i++){ m[6][i] = i % 2 === 0; m[i][6] = i % 2 === 0; }
+  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++)
+    m[N-7+i][N-7+j] = Math.max(Math.abs(i), Math.abs(j)) !== 1;
+
+  let bit = 0, haut = true;
+  for (let col = N-1; col > 0; col -= 2){
+    if (col === 6) col--;
+    for (let k = 0; k < N; k++){
+      const row = haut ? N-1-k : k;
+      for (let d = 0; d < 2; d++){
+        const c = col - d;
+        if (m[row][c] !== null) continue;
+        let v = bit < T*8 ? ((oct[bit >> 3] >> (7 - (bit & 7))) & 1) === 1 : false;
+        if ((row + c) % 2 === 0) v = !v;      // masque 0
+        m[row][c] = v; bit++;
+      }
+    }
+    haut = !haut;
+  }
+  return m;
+}
+
+function CarteAdherent(){
+  const [c, setC] = useState(null);
+  const [grand, setGrand] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(() =>
+    db.rpc('ma_carte').then(({data}) => setC(data)), []);
+  useEffect(() => { charger(); }, [charger]);
+  if (!c) return null;
+
+  const m = qrMatrice(String(c.jeton));
+  const N = m.length, cote = grand ? 260 : 128;
+
+  return html`
+    <div class="panneau" style="margin-bottom:24px;overflow:hidden">
+      <div class=${'corps'} style=${'background:var(--nuit);color:#fff;'
+        + 'display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap'}>
+        <div style="flex:1;min-width:220px">
+          <div class="eyebrow" style="color:rgba(255,255,255,.6)">
+            Fédération française pour la citoyenneté et l\u2019égalité des chances</div>
+          <div style="font-size:22px;font-weight:700;margin-top:8px">${c.nom}</div>
+          <div style="opacity:.8;margin-top:4px">${c.fonction} · ${c.echelon}</div>
+          <div style="opacity:.6;font-size:14px;margin-top:2px">${c.territoire}</div>
+          <div class="mono" style="opacity:.6;font-size:13px;margin-top:8px">
+            ${c.matricule}</div>
+          ${(c.postes||[]).length > 0 && html`
+            <div class="row" style="gap:5px;margin-top:10px;flex-wrap:wrap">
+              ${c.postes.map((x,i) => html`
+                <span key=${i} style=${'font-size:12px;padding:2px 8px;border-radius:20px;'
+                  + 'background:rgba(255,255,255,.14)'}>${x}</span>`)}
+            </div>`}
+          <div style="margin-top:12px;font-size:13px;opacity:.75">
+            ${c.valide
+              ? 'Adhésion à jour' + (c.depuis ? ' depuis le ' + jour(c.depuis) : '')
+              : 'Adhésion non validée — cette carte n\u2019a pas cours'}
+          </div>
+        </div>
+
+        <div style="text-align:center">
+          <div style=${'background:#fff;padding:8px;border-radius:6px;cursor:pointer'}
+            onClick=${()=>setGrand(!grand)}>
+            <svg viewBox=${'0 0 ' + N + ' ' + N} width=${cote} height=${cote}
+              shape-rendering="crispEdges" style="display:block">
+              <rect width=${N} height=${N} fill="#fff" />
+              ${m.map((ligne,y) => ligne.map((v,x) => v
+                ? html`<rect key=${y+'-'+x} x=${x} y=${y} width="1" height="1"
+                    fill="#1E2A38" />` : null))}
+            </svg>
+          </div>
+          <div style="font-size:11px;opacity:.6;margin-top:6px">
+            ${grand ? 'Toucher pour réduire' : 'Toucher pour agrandir'}</div>
+        </div>
+      </div>
+
+      <div class="corps small muted">
+        Présentez ce code à l\u2019accueil d\u2019une assemblée : il constate votre
+        présence, rien d\u2019autre. Il ne donne accès ni à votre compte ni à vos
+        données. Si votre carte a circulé,
+        <a href="#" onClick=${async e=>{
+          e.preventDefault();
+          const { data } = await db.rpc('regenerer_jeton_carte');
+          if (data?.ok){ setMsg('Nouveau code généré : l\u2019ancien ne vaut plus rien.');
+            charger(); }
+        }}>générez-en un nouveau</a> — l\u2019ancien cesse aussitôt de valoir.
+        ${msg && html`<div style="color:var(--vert);margin-top:6px">${msg}</div>`}
+      </div>
+    </div>`;
+}
+
+/* =====================================================================
+   L'ORGANIGRAMME
+   Qui appartient à quoi. Ce n'est pas une donnée à part : il se déduit
+   des postes occupés, donc il ne peut pas être périmé. Les postes qui
+   engagent les points de leur direction sont signalés — c'est à eux
+   qu'on adresse une demande de validation.
+   ===================================================================== */
+function Organigramme(){
+  const [l, setL] = useState([]);
+  useEffect(() => {
+    db.rpc('organigramme').then(({data}) => setL(data || []));
+  }, []);
+  if (l.length === 0) return null;
+
+  const dirs = [...new Set(l.map(x => x.direction))];
+
+  return html`
+    <div class="panneau" style="margin-bottom:24px">
+      <div class="tete"><h3 style="font-size:17px">Organigramme</h3></div>
+      <div class="corps small muted" style="padding-bottom:0">
+        Il se déduit des mandats en cours : il ne peut donc pas être périmé.
+        Un poste marqué « engage » peut dépenser les points de son entité.
+      </div>
+      ${dirs.map(d => {
+        const postes = l.filter(x => x.direction === d);
+        return html`
+          <div key=${d}>
+            <div class="corps" style="padding-bottom:6px;padding-top:16px">
+              <div class="eyebrow">${postes[0].direction_nom}</div>
+            </div>
+            ${postes.map((x,i) => html`
+              <div class="ligne" key=${i} style="align-items:flex-start">
+                <div style="flex:1;min-width:220px">
+                  <div class="row" style="gap:8px;flex-wrap:wrap">
+                    <span>${x.poste_nom}</span>
+                    ${x.engage_points && html`<span class="tag bleu">engage</span>`}
+                  </div>
+                  ${x.titulaire
+                    ? html`<div class="small muted" style="margin-top:3px">
+                        ${x.titulaire}${x.territoire ? ' · ' + x.territoire : ''}
+                        ${x.depuis ? ' · depuis le ' + jour(x.depuis) : ''}</div>`
+                    : html`<div class="small" style="margin-top:3px;color:var(--rouge)">
+                        Vacant</div>`}
+                </div>
+                <span class="mono muted small">${x.rang}</span>
+              </div>`)}
+          </div>`;
+      })}
+    </div>`;
+}
+
 function Espace({ session, sous }){
   const [p, setP] = useState(null);
   const [apps, setApps] = useState([]);
@@ -17307,7 +17642,25 @@ function Espace({ session, sous }){
                        ? html`<${Finances} p=${p} role="ordonnancement" />` : refus; break;
     case 'ressources': vue = acces('ressources')
                        ? html`<${Ressources} p=${p} />` : refus; break;
-    default:           vue = html`<div class="vide">Page inconnue.</div>`;
+    // Le webmail et l'espace de travail viennent plus tard : d'ici là,
+    // on dit ce qu'il en est plutôt que d'annoncer une page inconnue.
+    default:           vue = html`
+      <div class="panneau" style="margin-top:40px">
+        <div class="tete"><h3 style="font-size:17px">Bientôt disponible</h3></div>
+        <div class="corps">
+          <p style="margin:0 0 12px">
+            Cette fonction n\u2019est pas encore ouverte. Elle le sera lors d\u2019une
+            prochaine mise à jour de la plateforme.
+          </p>
+          <p class="small muted" style="margin:0">
+            Si vous êtes arrivé ici depuis un lien de la plateforme, signalez-le :
+            c\u2019est peut-être un lien qui pointe au mauvais endroit.
+          </p>
+          <div style="margin-top:16px">
+            <a class="btn light" href="#/espace">Retour à mon espace</a>
+          </div>
+        </div>
+      </div>`;
   }
 
   return html`
