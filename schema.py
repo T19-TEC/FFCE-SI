@@ -12,7 +12,17 @@ dans 95 % des cas. Il se régénère après chaque migration :
 """
 import re, glob, os, sys
 
-FS = sorted(glob.glob('sql/SQL/*.sql'))
+def dossier_sql():
+    """Où sont les migrations. On accepte `sql/SQL/`, `sql/` ou
+    `migrations/` : le dépôt d'origine employait l'un, le dépôt actuel
+    l'autre, et il serait absurde qu'un script échoue pour cela."""
+    for motif in ('sql/SQL/*.sql', 'sql/*.sql', 'migrations/*.sql', '*.sql'):
+        trouve = sorted(glob.glob(motif))
+        if trouve:
+            return trouve
+    return []
+
+FS = dossier_sql()
 SRC = "\n".join(open(f, encoding='utf-8').read() for f in FS)
 
 def sans_com(s):
