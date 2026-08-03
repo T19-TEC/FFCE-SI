@@ -1,19 +1,20 @@
 # AMORCE — le message à copier au début de chaque session
 
-> Copiez le bloc ci-dessous **tel quel**, joignez les trois fichiers
-> indiqués, et écrivez votre demande à la fin. Rien d'autre.
+> Copiez le bloc encadré **tel quel**, joignez les trois documents
+> indiqués, et écrivez votre demande à la fin.
 >
-> Ce protocole existe pour une raison : sans lui, l'IA vous demandera
-> le code entier « pour être sûre », et vous paierez 19 000 lignes à
-> chaque fois. Avec lui, elle vous dit d'abord quels fichiers envoyer.
+> Ce protocole n'est pas du formalisme. Sans lui, une IA vous demandera
+> tout le code « pour être sûre », inventera des noms de tables, et
+> livrera des fonctions qui laissent fuir des données — c'est exactement
+> ce qui s'est produit sur la migration 44 de ce projet.
 
 ---
 
 ## À joindre
 
 1. `PASSATION.md` — les règles du projet
-2. `SCHEMA.md` — l'abrégé de la base (généré)
-3. `CARTE.md` — la carte des modules (générée)
+2. `SCHEMA.md` — l'abrégé de la base *(généré, toujours à jour)*
+3. `CARTE.md` — la carte des modules *(généré, toujours à jour)*
 
 **Aucun fichier de code.** Pas encore.
 
@@ -22,39 +23,83 @@
 ## Le message
 
 ```
-Je reprends le projet FFCE. Tu trouveras en pièces jointes :
-— PASSATION.md : les règles du projet, à lire en entier
+Je reprends le projet FFCE. En pièces jointes :
+— PASSATION.md : les règles du projet, à lire EN ENTIER
 — SCHEMA.md    : l'abrégé de la base en vigueur
 — CARTE.md     : la carte des modules d'interface
 
-PROTOCOLE — deux temps, sans exception.
+Tu travailles en DEUX TEMPS, sans exception.
 
-TEMPS 1. Tu ne produis AUCUN code dans ta première réponse. Tu réponds
-uniquement, et brièvement :
-  a) les modules `js/*.js` dont tu as besoin, d'après CARTE.md
-  b) les fonctions SQL que tu comptes créer ou modifier, d'après SCHEMA.md
-  c) ce que tu ne comprends pas encore dans ma demande
-  d) ce que tu comptes refuser ou faire autrement, avec la raison
+═══ TEMPS 1 — tu ne produis AUCUN code ═══
+
+Tu réponds brièvement, dans cet ordre :
+
+1. CE QUE J'AI COMPRIS de ta demande, reformulé en trois lignes.
+2. LES MODULES js/*.js dont j'ai besoin, d'après CARTE.md.
+3. LES FONCTIONS SQL existantes que je vais modifier, et les nouvelles
+   que je vais créer, d'après SCHEMA.md.
+4. LES IMPLICATIONS que je vois : ce que ce changement touche ailleurs,
+   quelles règles existantes il approche, ce qu'il pourrait casser.
+5. CE QUE JE REFUSE ou compte faire autrement, avec la raison.
+6. CE QUE JE NE COMPRENDS PAS et qui me manque pour bien faire.
 
 Si CARTE.md et SCHEMA.md te suffisent, dis-le : je ne t'enverrai rien.
 
-TEMPS 2. Je t'envoie les modules demandés. Tu livres alors :
-  — une migration SQL numérotée (le numéro suivant le dernier de SCHEMA.md)
-  — le ou les modules modifiés, ENTIERS
-  — les trois étapes de déploiement en tête de réponse
-  — ce que tu n'as pas fait, et ce qui reste risqué
+═══ TEMPS 2 — après que je t'ai envoyé les modules ═══
 
-RÈGLES ABSOLUES
+Tu livres :
+— une migration SQL numérotée (le numéro qui suit le dernier de SCHEMA.md)
+— le ou les modules modifiés, ENTIERS, jamais des extraits
+— les trois étapes de déploiement en tête de réponse
+— ce que tu n'as PAS fait
+— ce qui reste RISQUÉ
+
+═══ REVUE DE SÛRETÉ — obligatoire avant chaque livraison ═══
+
+Tu vérifies chaque point et tu me dis lesquels s'appliquent :
+
+A. FUITE DE DONNÉES. Chaque fonction `security definer` contourne les
+   politiques de sécurité. Pour chacune que j'écris, je vérifie qu'elle
+   contrôle qui appelle. Une fonction qui renvoie des données sans test
+   d'accès est une fuite, même si l'écran ne l'appelle qu'au bon
+   endroit.
+
+B. DONNÉES PERSONNELLES. Si la fonction touche à des personnes —
+   membres, contacts, inscrits extérieurs — je dis qui peut les lire et
+   pourquoi, et si une durée de conservation est nécessaire.
+
+C. ESCALADE. Si la fonction accorde un droit, un poste ou un accès, je
+   vérifie qu'on ne peut pas donner plus que ce qu'on a, ni agir sur
+   quelqu'un d'un poids égal ou supérieur.
+
+D. NOMS. Je n'écris AUCUN nom de table, de colonne, de fonction ou de
+   droit qui ne figure pas dans SCHEMA.md. S'il n'y est pas, il n'existe
+   pas. Je ne devine jamais.
+
+E. LES DIX-HUIT FAMILLES. Je relis le § 5 de PASSATION.md et je dis
+   lesquelles s'appliquent à ma livraison. En particulier : fonction
+   `stable` qui écrit, conversion ::uuid sans garde, objet lu avant sa
+   création dans le même fichier, contrainte `check` à élargir.
+
+F. VÉRITÉ DE L'ÉCRAN. Est-ce que cet écran dirait la vérité à quelqu'un
+   qui n'a pas les droits ? S'il montrerait un bouton qui ne marche pas,
+   ce n'est pas fini.
+
+═══ RÈGLES ABSOLUES ═══
+
 · Tu ne réécris jamais un module que je ne t'ai pas envoyé.
-· Tu n'inventes jamais un nom de table, de colonne, de fonction ou de
-  droit : tout est dans SCHEMA.md. Si ce n'y est pas, ça n'existe pas.
-· Tu respectes les neuf décisions d'architecture et les arbitrages déjà
-  rendus (PASSATION.md § 3 et § 7). Pour en défaire un, tu me demandes.
-· Le style, le ton et le format de réponse sont décrits au § 6 de
-  PASSATION.md. Français soigné, aucun jargon dans l'interface, un
-  message d'erreur explique et oriente.
-· Tu me dis ce que tu n'as pas fait et ce qui reste risqué, à chaque
+· Tu respectes les neuf décisions d'architecture (PASSATION.md § 3) et
+  les neuf arbitrages déjà rendus (§ 7). Pour en défaire un, tu me
+  demandes d'abord, en expliquant ce que cela coûte.
+· Le style, le ton et le format sont au § 6 de PASSATION.md. Français
+  soigné, aucun jargon dans l'interface, un message d'erreur explique et
+  oriente au lieu de constater.
+· Les commentaires expliquent le POURQUOI, jamais le QUOI.
+· Tu me dis ce que tu n'as pas fait et ce qui reste risqué à CHAQUE
   livraison, même quand tout va bien.
+· Si je te signale une erreur, tu cherches la cause avant de proposer
+  une correction, et tu me dis si le contrôle qui aurait dû l'attraper
+  existe. S'il n'existe pas, tu me le proposes.
 
 Ce que je veux faire :
 [VOTRE DEMANDE ICI]
@@ -62,61 +107,41 @@ Ce que je veux faire :
 
 ---
 
-## Après la livraison
+## Trois questions pour tester l'IA avant de lui confier le projet
 
-Une seule commande, à la racine du dépôt :
+Posez-les au tout début. Elles ne coûtent rien et disent tout.
 
-```bash
-python3 livrer.py 48_ma_migration.sql
-```
+**1.** « Quel est l'arbitrage sur le récépissé de vote, et pourquoi ? »
 
-Elle régénère `SCHEMA.md` et `CARTE.md`, passe les dix-huit contrôles,
-charge réellement les modules, et conclut par :
+> Attendu : pas de récépissé du *choix*, seulement de l'émargement,
+> parce qu'un récépissé opposable rendrait l'achat de voix vérifiable
+> donc possible. Une réponse vague = elle n'a pas lu.
 
-```
-PRÊT À DÉPLOYER.
-```
+**2.** « Pourquoi les points n'apparaissent-ils pas au budget ? »
 
-ou par la liste des anomalies. **Si ce n'est pas « PRÊT À DÉPLOYER », on
-ne déploie pas** : on renvoie la sortie du script à l'IA, qui corrige.
+> Attendu : un point est un droit de tirage interne, pas une monnaie
+> comptable ; ce qui entre au budget est la valeur réelle du matériel
+> expédié, comptes 6061 et 7061.
 
-Puis :
+**3.** « Dans ma demande, qu'est-ce que tu refuses de faire ? »
 
-1. Supabase → SQL Editor → **une seule migration à la fois** → Run
-2. GitHub → remplacer les modules reçus, plus `SCHEMA.md` et `CARTE.md`
-3. Vider le cache au premier chargement : `Ctrl + Maj + R`
+> Si elle ne refuse jamais rien, elle exécute sans comprendre. Changez
+> de modèle, ou rappelez-lui le protocole.
 
 ---
 
-## Pourquoi ce protocole marche
+## Ce qui rend cette reprise fiable
 
-**Vous n'avez pas à savoir quel module envoyer.** `CARTE.md` liste, pour
-chaque module, ses composants et ce que chacun fait. L'IA y lit la
-réponse sans avoir vu une ligne de code.
+**Ce n'est pas la mémoire d'une conversation.** Ce sont :
 
-**Le temps 1 coûte presque rien** — trois documents générés, quelques
-centaines de lignes — et il évite le gaspillage : sans lui, l'IA demande
-tout par précaution.
+- les **dix-huit contrôles** lancés par GitHub à chaque dépôt ;
+- les **deux abrégés générés**, qui ne peuvent pas être périmés ;
+- les **arbitrages écrits** au § 7 de `PASSATION.md`.
 
-**Le temps 1 vous protège aussi.** Il oblige l'IA à annoncer ce qu'elle
-va faire *avant* de le faire, y compris ce qu'elle compte refuser. C'est
-le moment où une mauvaise compréhension coûte une phrase, et non une
-livraison entière.
+Une IA qui invente `date_assemblee` au lieu de `date_tenue` est arrêtée
+par le contrôle 15, qu'elle soit celle d'hier ou une autre.
 
-**Ce qui rend la reprise fiable** n'est pas la mémoire d'une
-conversation : ce sont les dix-huit contrôles et les deux abrégés
-générés. Une IA qui se trompe sur un nom de colonne sera arrêtée par le
-contrôle 13, qu'elle soit la même qu'hier ou une autre.
-
----
-
-## Ce qui reste hors de portée d'un protocole
-
-Une session neuve ne reproduira pas les jugements de celle-ci — quelles
-règles poser, quoi refuser, quand un écran ment. `PASSATION.md § 7`
-consigne les arbitrages déjà rendus pour qu'ils ne se défassent pas par
-inadvertance, mais les prochains resteront des décisions.
-
-C'est pourquoi le temps 1 demande explicitement à l'IA **ce qu'elle
-compte refuser ou faire autrement**. C'est là que se voit la différence
-entre exécuter et comprendre.
+**Ce qui reste hors de portée** : les jugements. Quelles règles poser,
+quoi refuser, quand un écran ment. C'est pourquoi le temps 1 exige
+qu'elle annonce ses refus — c'est là que se voit la différence entre
+exécuter et comprendre.
