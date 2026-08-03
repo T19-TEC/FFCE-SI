@@ -61,11 +61,14 @@ jobs:
 
       - name: Passer les dix-huit contrôles
         run: |
-          DERNIERE=$(ls sql/SQL/*.sql | tail -1 | xargs -n1 basename)
-          echo "Dernière migration : $DERNIERE"
-          python3 controles.py "$DERNIERE" | tee rapport.txt
+          # Les migrations peuvent vivre dans sql/SQL/ ou dans sql/ :
+          # on ne fait pas échouer un contrôle pour une question de rangement.
+          DERNIERE=$(ls sql/SQL/*.sql sql/*.sql migrations/*.sql 2>/dev/null \
+                     | sort | tail -1 | xargs -n1 basename 2>/dev/null)
+          echo "Dernière migration repérée : ${DERNIERE:-aucune}"
+          python3 controles.py $DERNIERE | tee rapport.txt
           if ! grep -q "ANOMALIES BLOQUANTES : 0" rapport.txt; then
-            echo "::error::Des anomalies bloquantes subsistent. Voir le rapport."
+            echo "::error::Des anomalies bloquantes subsistent. Voir le rapport ci-dessous."
             exit 1
           fi
 
