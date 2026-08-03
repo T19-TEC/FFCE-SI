@@ -1,6 +1,6 @@
 # FFCE — Abrégé du schéma en vigueur
 
-> Généré par `schema.py` à partir des 47 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
+> Généré par `schema.py` à partir des 48 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
 
 > Ce fichier remplace le recueil des migrations pour écrire du code. N'ouvrir le recueil que pour comprendre le *pourquoi* d'une règle.
 
@@ -268,7 +268,7 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`a_droit_sur(p_droit text, p_territoire uuid)`** → `boolean` · sql · 07_habilitations.sql
 
-**`abroger_acte(p_id uuid, p_motif text)`** → `jsonb` · plpgsql · 32_cabinet.sql
+**`abroger_acte(p_id uuid, p_motif text)`** → `jsonb` · plpgsql · 48_garde_abrogation.sql
 
 **`accede_conversation(p_conv uuid)`** → `boolean` · sql · 41_organes.sql
 

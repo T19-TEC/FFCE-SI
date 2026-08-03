@@ -7,19 +7,19 @@
 | Module | Lignes | Composants | Ce qu'il contient |
 |---|---|---|---|
 | `js/app.js` | 11 | 0 | FFCE — Point d'entrée Le navigateur charge ce module ; les autres suivent par leurs imports. |
-| `js/collectif.js` | 1332 | 11 | Le travail à plusieurs : groupes de travail nationaux, équipes locales, candidatures, tâches, documents partagés — et la messagerie interne, avec ses pièces jointes, ses boîtes organiques et |
-| `js/direction.js` | 3468 | 33 | Ce qui se pilote au national : habilitations et postes, validation des inscriptions et des actes sensibles, cabinet de la présidence, recueil des actes, affaires publiques, communication, ca |
+| `js/collectif.js` | 1325 | 11 |  |
+| `js/direction.js` | 3461 | 33 |  |
 | `js/espace.js` | 1074 | 11 | La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits. |
 | `js/evenements.js` | 844 | 8 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
-| `js/finances.js` | 2848 | 18 | FINANCES L'argent et le matériel : notes de frais et leur circuit, trésorerie, ordonnancement, budget, rapport d'activité, suivi des virements — et les ressources : catalogue, panier, invent |
-| `js/formation.js` | 1236 | 9 | Les parcours de formation, leur éditeur, les leçons et les quiz, les certifications — et la chancellerie : barème de points, échelons, promotions et distinctions. |
-| `js/membre.js` | 2627 | 28 | Ce qui appartient à la personne : son compte, sa carte d'adhérent, son dossier d'adhésion, son engagement mensuel, son passeport, ses mandats et intérims, ses distinctions, son RIB, ses rend |
-| `js/socle.js` | 525 | 6 | Ce dont tous les autres modules ont besoin : la connexion à la base, le moteur de rendu et ses crochets, les helpers de format (dates, montants, noms), les constantes partagées, et les quelq |
-| `js/statutaire.js` | 1809 | 11 | Les assemblées et leur scrutin : candidatures, corps électoral, isoloir, récépissé d'émargement, bureau de vote, pouvoirs, feuille de présence et procès-verbal. |
-| `js/structure.js` | 2172 | 20 | La vie d'un territoire : mon comité, ses projets et propositions, la gestion locale, les accès du périmètre, les actes locaux, le plan et la carte du réseau, l'organigramme, le pilotage et l |
+| `js/finances.js` | 2841 | 18 |  |
+| `js/formation.js` | 1230 | 9 |  |
+| `js/membre.js` | 2620 | 28 |  |
+| `js/socle.js` | 514 | 6 |  |
+| `js/statutaire.js` | 1802 | 11 |  |
+| `js/structure.js` | 2165 | 20 |  |
 | `js/vitrine.js` | 647 | 17 | Tout ce qui se voit sans compte : accueil, présentation de la fédération, actions, réseau, actualités, pages de texte, adhésion, connexion et inscription. |
 
-**Total : 18593 lignes d'interface.**
+**Total : 18534 lignes d'interface.**
 
 ---
 
@@ -31,9 +31,7 @@ FFCE — Point d'entrée Le navigateur charge ce module ; les autres suivent par
 
 ## `js/collectif.js`
 
-Le travail à plusieurs : groupes de travail nationaux, équipes locales, candidatures, tâches, documents partagés — et la messagerie interne, avec ses pièces jointes, ses boîtes organiques et
-
-*1332 lignes · 11 composants*
+*1325 lignes · 11 composants*
 
 - **`Conversation`** — 297 lignes
 - **`Groupes`** — 163 lignes  
@@ -57,9 +55,7 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
 
 ## `js/direction.js`
 
-Ce qui se pilote au national : habilitations et postes, validation des inscriptions et des actes sensibles, cabinet de la présidence, recueil des actes, affaires publiques, communication, ca
-
-*3468 lignes · 33 composants*
+*3461 lignes · 33 composants*
 
 - **`Validation`** — 342 lignes
 - **`FicheAdmin`** — 292 lignes  
@@ -171,9 +167,7 @@ Fonctions SQL appelées : `controler_entree`, `evenement_public`, `inscription_p
 
 ## `js/finances.js`
 
-FINANCES L'argent et le matériel : notes de frais et leur circuit, trésorerie, ordonnancement, budget, rapport d'activité, suivi des virements — et les ressources : catalogue, panier, invent
-
-*2848 lignes · 18 composants*
+*2841 lignes · 18 composants*
 
 - **`Budget`** — 312 lignes  
   --- Confirmer un virement, côté membre
@@ -213,9 +207,7 @@ Fonctions SQL appelées : `affecter_points_projet`, `budget_exercice`, `calculer
 
 ## `js/formation.js`
 
-Les parcours de formation, leur éditeur, les leçons et les quiz, les certifications — et la chancellerie : barème de points, échelons, promotions et distinctions.
-
-*1236 lignes · 9 composants*
+*1230 lignes · 9 composants*
 
 - **`EditeurParcours`** — 263 lignes
 - **`Chancellerie`** — 225 lignes  
@@ -236,9 +228,7 @@ Fonctions SQL appelées : `avancement`, `bareme_echelons`, `chancellerie_synthes
 
 ## `js/membre.js`
 
-Ce qui appartient à la personne : son compte, sa carte d'adhérent, son dossier d'adhésion, son engagement mensuel, son passeport, ses mandats et intérims, ses distinctions, son RIB, ses rend
-
-*2627 lignes · 28 composants*
+*2620 lignes · 28 composants*
 
 - **`MonDossier`** — 292 lignes  
   --- Ce que voit un membre : bandeau, ou page entière si suspendu
@@ -288,9 +278,7 @@ Fonctions SQL appelées : `accuser_reception`, `accuser_virement`, `annuler_cren
 
 ## `js/socle.js`
 
-Ce dont tous les autres modules ont besoin : la connexion à la base, le moteur de rendu et ses crochets, les helpers de format (dates, montants, noms), les constantes partagées, et les quelq
-
-*525 lignes · 6 composants*
+*514 lignes · 6 composants*
 
 - **`Progression`** — 58 lignes
 - **`Logo`** — 25 lignes  
@@ -307,9 +295,7 @@ Fonctions SQL appelées : `completude_dossier`, `points_membre`
 
 ## `js/statutaire.js`
 
-Les assemblées et leur scrutin : candidatures, corps électoral, isoloir, récépissé d'émargement, bureau de vote, pouvoirs, feuille de présence et procès-verbal.
-
-*1809 lignes · 11 composants*
+*1802 lignes · 11 composants*
 
 - **`DossierDetail`** — 319 lignes
 - **`Assemblee`** — 267 lignes
@@ -332,9 +318,7 @@ Fonctions SQL appelées : `appel_public`, `archives_electorales`, `changer_phase
 
 ## `js/structure.js`
 
-La vie d'un territoire : mon comité, ses projets et propositions, la gestion locale, les accès du périmètre, les actes locaux, le plan et la carte du réseau, l'organigramme, le pilotage et l
-
-*2172 lignes · 20 composants*
+*2165 lignes · 20 composants*
 
 - **`MonComite`** — 182 lignes  
   --- Prendre rendez-vous, côté nouvel adhérent
