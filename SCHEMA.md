@@ -1,10 +1,10 @@
 # FFCE — Abrégé du schéma en vigueur
 
-> Généré par `schema.py` à partir des 48 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
+> Généré par `schema.py` à partir des 49 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
 
 > Ce fichier remplace le recueil des migrations pour écrire du code. N'ouvrir le recueil que pour comprendre le *pourquoi* d'une règle.
 
-**114 tables · 399 fonctions · 49 droits · 17 applications**
+**114 tables · 400 fonctions · 49 droits · 17 applications**
 
 ---
 
@@ -1087,6 +1087,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`revoquer(p_nomination uuid, p_motif text)`** → `jsonb` · plpgsql · 31_nominations.sql
 
 **`revoquer_acces(p_profil uuid, p_app text, p_motif text)`** → `jsonb` · plpgsql · 31_nominations.sql
+
+**`router_ticket_destinataire()`** → `trigger` · plpgsql · 49_routage_assistance.sql
 
 **`scelle_sur_dossier()`** → `trigger` · plpgsql · 21_interim_suppleance.sql
 
