@@ -155,6 +155,8 @@ export function TableauDeBord({ p, apps, chemin, demandes, attentes }){
         <a class="btn light" href="#/espace/demandes">Guichet des demandes</a>
       </div>
 
+      <${Assistance} p=${p} />
+
       <${CarteAdherent} />
 
       <${MonDossier} p=${p} entier=${false} />

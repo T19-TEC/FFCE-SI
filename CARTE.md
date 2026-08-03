@@ -9,7 +9,7 @@
 | `js/app.js` | 11 | 0 | FFCE — Point d'entrée Le navigateur charge ce module ; les autres suivent par leurs imports. |
 | `js/collectif.js` | 1325 | 11 |  |
 | `js/direction.js` | 3461 | 33 |  |
-| `js/espace.js` | 1074 | 11 | La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits. |
+| `js/espace.js` | 1076 | 11 | La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits. |
 | `js/evenements.js` | 844 | 8 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
 | `js/finances.js` | 2841 | 18 |  |
 | `js/formation.js` | 1230 | 9 |  |
@@ -19,7 +19,7 @@
 | `js/structure.js` | 2165 | 20 |  |
 | `js/vitrine.js` | 647 | 17 | Tout ce qui se voit sans compte : accueil, présentation de la fédération, actions, réseau, actualités, pages de texte, adhésion, connexion et inscription. |
 
-**Total : 18534 lignes d'interface.**
+**Total : 18536 lignes d'interface.**
 
 ---
 
@@ -118,7 +118,7 @@ Fonctions SQL appelées : `acces_complets`, `accorder_acces`, `actes_a_controler
 
 La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits.
 
-*1074 lignes · 11 composants*
+*1076 lignes · 11 composants*
 
 - **`Espace`** — 195 lignes
 - **`Assistance`** — 178 lignes
@@ -126,7 +126,7 @@ La charpente de l'intranet : le menu latéral, le routeur des applications, le t
   --- L'application Discipline
 - **`AssistanceAdmin`** — 111 lignes  
   --- Assistance, côté pilotage
-- **`TableauDeBord`** — 97 lignes
+- **`TableauDeBord`** — 99 lignes
 - **`Flanc`** — 82 lignes  
   --- Menu latéral Le menu suit l'organigramme, pas la liste des tables.
 - **`Matrice`** — 80 lignes  
