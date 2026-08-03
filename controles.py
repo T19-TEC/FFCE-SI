@@ -1,7 +1,17 @@
 """Contrôles de livraison FFCE — les douze familles."""
 import re, sys, glob, os
 
-FS = sorted(glob.glob('sql/SQL/*.sql'))
+def dossier_sql():
+    """Où sont les migrations. On accepte `sql/SQL/`, `sql/` ou
+    `migrations/` : le dépôt d'origine employait l'un, le dépôt actuel
+    l'autre, et il serait absurde qu'un script échoue pour cela."""
+    for motif in ('sql/SQL/*.sql', 'sql/*.sql', 'migrations/*.sql', '*.sql'):
+        trouve = sorted(glob.glob(motif))
+        if trouve:
+            return trouve
+    return []
+
+FS = dossier_sql()
 SRC = "\n".join(open(f, encoding='utf-8').read() for f in FS)
 
 def objets():
@@ -345,10 +355,12 @@ def ctrl_14():
 def ctrl_12(nouvelles):
     """Fonction redéfinie sous un nom qui n'existait pas ailleurs."""
     anciens = "\n".join(open(f, encoding='utf-8').read() for f in FS
-                        if f.split('/')[-1] not in nouvelles)
+                        if os.path.basename(f) not in nouvelles)
     ko = []
     for n in nouvelles:
-        s = open('sql/SQL/'+n, encoding='utf-8').read()
+        chemin = next((f for f in FS if os.path.basename(f) == n), None)
+        if chemin is None: continue
+        s = open(chemin, encoding='utf-8').read()
         for fn in set(re.findall(r'create or replace function (\w+)', s)):
             if ('function '+fn+'(') not in anciens:
                 ko.append(n + ' : ' + fn + ' (nouvelle — à confirmer)')
