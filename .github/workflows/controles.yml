@@ -83,8 +83,12 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Réenregistrer les abrégés s'ils ont changé
-        if: success() && github.event_name == 'push'
+      # Les abrégés se réenregistrent sur `travail`, jamais sur `main`.
+      # `main` est protégée : un dépôt automatique ne peut pas satisfaire
+      # le contrôle qu'elle exige, et se heurterait indéfiniment à elle.
+      # C'est aussi ce qui garantit que tout passe par `travail`.
+      - name: Réenregistrer les abrégés (branche travail seulement)
+        if: success() && github.event_name == 'push' && github.ref_name == 'travail'
         run: |
           git config user.name  "Contrôles FFCE"
           git config user.email "actions@github.com"
@@ -95,3 +99,18 @@ jobs:
           else
             echo "Les abrégés étaient déjà à jour."
           fi
+
+      # Sur `main` et sur les demandes de fusion, on ne réécrit rien :
+      # on vérifie que les abrégés déposés sont à jour. S'ils ne le sont
+      # pas, c'est qu'on a court-circuité `travail`.
+      - name: Vérifier que les abrégés sont à jour
+        if: success() && github.ref_name != 'travail'
+        run: |
+          if [ -n "$(git status --porcelain SCHEMA.md CARTE.md)" ]; then
+            echo "::error::SCHEMA.md ou CARTE.md ne correspond pas au code. \
+            Déposez d'abord sur la branche `travail` : l'automate les y \
+            régénère, puis fusionnez vers main."
+            git --no-pager diff --stat SCHEMA.md CARTE.md
+            exit 1
+          fi
+          echo "Les abrégés sont à jour."
