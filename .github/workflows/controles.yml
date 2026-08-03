@@ -1,0 +1,94 @@
+# =====================================================================
+#  FFCE — Contrôles automatiques
+#
+#  Ce fichier n'est PAS un programme de contrôle : c'est l'ordre donné à
+#  GitHub de lancer les programmes de contrôle. Les vérifications sont
+#  dans controles.py, schema.py, carte.py et verifier_modules.py.
+#
+#  Il se déclenche :
+#    · à chaque dépôt sur la branche `travail`
+#    · à chaque demande de fusion vers `main`
+#    · à la main, bouton « Run workflow »
+#
+#  Et il fait, sans que personne ne tape quoi que ce soit :
+#    1. régénère SCHEMA.md — l'abrégé de la base
+#    2. régénère CARTE.md  — la carte des modules
+#    3. charge réellement les modules ES
+#    4. passe les dix-huit contrôles
+#    5. réenregistre les deux abrégés s'ils ont changé
+#    6. échoue si une anomalie subsiste
+# =====================================================================
+
+name: Contrôles FFCE
+
+on:
+  push:
+    branches: [travail, main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installer Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Régénérer l'abrégé du schéma
+        run: python3 schema.py > SCHEMA.md
+
+      - name: Régénérer la carte des modules
+        run: python3 carte.py > CARTE.md
+
+      - name: Charger réellement les modules
+        run: python3 verifier_modules.py
+
+      - name: Passer les dix-huit contrôles
+        run: |
+          DERNIERE=$(ls sql/SQL/*.sql | tail -1 | xargs -n1 basename)
+          echo "Dernière migration : $DERNIERE"
+          python3 controles.py "$DERNIERE" | tee rapport.txt
+          if ! grep -q "ANOMALIES BLOQUANTES : 0" rapport.txt; then
+            echo "::error::Des anomalies bloquantes subsistent. Voir le rapport."
+            exit 1
+          fi
+
+      - name: Publier le rapport
+        if: always()
+        run: |
+          {
+            echo "## Rapport des contrôles FFCE"
+            echo ''
+            echo '```'
+            cat rapport.txt 2>/dev/null || echo "(un contrôle a échoué avant le rapport)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Réenregistrer les abrégés s'ils ont changé
+        if: success() && github.event_name == 'push'
+        run: |
+          git config user.name  "Contrôles FFCE"
+          git config user.email "actions@github.com"
+          if [ -n "$(git status --porcelain SCHEMA.md CARTE.md)" ]; then
+            git add SCHEMA.md CARTE.md
+            git commit -m "Abrégés régénérés automatiquement"
+            git push
+          else
+            echo "Les abrégés étaient déjà à jour."
+          fi
