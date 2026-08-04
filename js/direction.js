@@ -29,7 +29,7 @@ export function Habilitations({ p }){
 
   return html`
     <div>
-      <div class="eyebrow">Pilotage</div>
+      <div class="eyebrow">Administration</div>
       <h1 style="margin:6px 0 8px">Réseau et habilitations</h1>
       <p class="muted" style="max-width:62ch">
         Deux entrées : par la <strong>personne</strong>, pour tout régler sur une
@@ -42,7 +42,7 @@ export function Habilitations({ p }){
       <div class="row" style="margin:32px 0 24px;gap:0;border-bottom:1px solid var(--filet)">
         ${[['membres','Membres'],['structures','Structures'],
            ['postes','Postes et droits'],['interims','Intérims'],
-           ['conformite','Conformité des postes'],['applications','Applications']]
+           ['conformite','Conformité des postes']]
           .map(([k,t]) => html`
           <button class="btn light" style=${'border:0;border-bottom:2px solid '+
             (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
@@ -54,7 +54,6 @@ export function Habilitations({ p }){
       ${onglet === 'postes'       && html`<${PostesEtDroits} setMsg=${setMsg} />`}
       ${onglet === 'interims'   && html`<${Interims} p=${p} setMsg=${setMsg} />`}
       ${onglet === 'conformite' && html`<${ConformitePostes} setMsg=${setMsg} />`}
-      ${onglet === 'applications' && html`<${IdentiteApplications} setMsg=${setMsg} />`}
     </div>`;
 }
 
@@ -455,6 +454,8 @@ export function IdentiteApplications({ setMsg }){
   const [ouvert, setOuvert] = useState(null);
   const [f, setF] = useState({});
   const [fichier, setFichier] = useState(null);
+  const [nouvelEnsemble, setNouvelEnsemble] = useState(false);
+  const [ne, setNe] = useState({ code:'', nom:'', couleur:'bleu' });
 
   const charger = useCallback(async () => {
     const [a, d] = await Promise.all([
@@ -464,6 +465,19 @@ export function IdentiteApplications({ setMsg }){
     setApps(a.data||[]); setDirs(d.data||[]);
   }, []);
   useEffect(() => { charger(); }, [charger]);
+
+  async function creerEnsemble(e){
+    e.preventDefault();
+    const code = ne.code.trim().toLowerCase().replace(/[^a-z0-9_]/g,'_');
+    if (!code || !ne.nom.trim()) return setMsg('Erreur : code et nom sont obligatoires.');
+    const { error } = await db.from('directions').insert({
+      code, nom: ne.nom.trim(), nom_court: ne.nom.trim(), couleur: ne.couleur, ordre: 100
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setNe({ code:'', nom:'', couleur:'bleu' }); setNouvelEnsemble(false);
+    setMsg('Ensemble créé — il apparaît maintenant dans les deux listes ci-dessous.');
+    charger();
+  }
 
   const TEINTES = { bleu:'Bleu profond', bordeaux:'Rouge bordeaux', nuit:'Bleu nuit',
                     brun:'Brun chaud', action:'Bleu vif', framboise:'Rose framboise' };
@@ -505,6 +519,35 @@ export function IdentiteApplications({ setMsg }){
         c\u2019est ainsi que le Pilotage se lit sous la Direction générale au
         national et sous Ma structure sur le terrain.
       </p>
+
+      <div class="panneau" style="margin-bottom:20px">
+        <div class="tete spread">
+          <h3 style="font-size:17px">Ensembles (regroupements)</h3>
+          <button class="btn sm light" onClick=${()=>setNouvelEnsemble(!nouvelEnsemble)}>
+            ${nouvelEnsemble ? 'Fermer' : 'Nouvel ensemble'}</button>
+        </div>
+        <div class="corps">
+          <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:${nouvelEnsemble?'16px':'0'}">
+            ${dirs.length === 0 && html`<span class="small muted">Aucun ensemble pour l\u2019instant.</span>`}
+            ${dirs.map(d => html`<span class="tag">${d.nom_court || d.nom}</span>`)}
+          </div>
+          ${nouvelEnsemble && html`
+            <form onSubmit=${creerEnsemble} class="row" style="gap:12px;align-items:flex-end;flex-wrap:wrap">
+              <div class="field" style="margin:0"><label>Code</label>
+                <input placeholder="daj" value=${ne.code}
+                  onInput=${e=>setNe(o=>({...o,code:e.target.value}))} /></div>
+              <div class="field" style="margin:0"><label>Nom</label>
+                <input placeholder="Direction des affaires juridiques" value=${ne.nom}
+                  onInput=${e=>setNe(o=>({...o,nom:e.target.value}))} /></div>
+              <div class="field" style="margin:0"><label>Couleur</label>
+                <select value=${ne.couleur} onChange=${e=>setNe(o=>({...o,couleur:e.target.value}))}>
+                  ${Object.entries(TEINTES).map(([k,v]) => html`<option value=${k}>${v}</option>`)}
+                </select></div>
+              <button class="btn sm">Créer</button>
+            </form>`}
+        </div>
+      </div>
+
       ${apps.map(a => html`
         <div class="panneau" style="margin-bottom:16px">
           <div class="tete">
@@ -1973,7 +2016,7 @@ export function VitrineAdmin(){
   const [msg, setMsg] = useState('');
   return html`
     <div>
-      <div class="eyebrow">Pilotage</div>
+      <div class="eyebrow">Administration</div>
       <h1 style="margin:6px 0 8px">Site public</h1>
       <p class="muted" style="max-width:60ch">
         Tout ce que voient les visiteurs se règle ici. Aucun texte, aucun
@@ -2580,6 +2623,7 @@ export function CabinetTaches({ p }){
 /* --- Administrateur réseau : configurer sans passer par le code ------- */
 
 export function AdministrateurReseau({ p }){
+  const [onglet, setOnglet] = useState('visibilite');
   const [fonctions, setFonctions] = useState(null);
   const [applications, setApplications] = useState([]);
   const [blocs, setBlocs] = useState([]);
@@ -2627,10 +2671,19 @@ export function AdministrateurReseau({ p }){
     setVisBlocs(m => ({ ...m, [bloc]: val })); setMsg('');
   }
 
-  if (!fonctions) return html`<div class="vide">Chargement…</div>`;
-
   return html`
     <div>
+      <div class="row" style="margin-bottom:24px;gap:0;border-bottom:1px solid var(--filet)">
+        ${[['visibilite','Visibilité'],['applications','Applications']].map(([k,t]) => html`
+          <button class="btn light" style=${'border:0;border-bottom:2px solid '+
+            (onglet===k?'var(--bordeaux)':'transparent')+';border-radius:0;background:transparent'}
+            onClick=${()=>setOnglet(k)}>${t}</button>`)}
+      </div>
+
+      ${onglet === 'applications' && html`<${IdentiteApplications} setMsg=${setMsg} />`}
+
+      ${onglet === 'visibilite' && (!fonctions ? html`<div class="vide">Chargement…</div>` : html`
+      <div>
       <p class="muted" style="max-width:62ch;margin-bottom:20px">
         Ce que voit chaque catégorie de poste, sans passer par une nouvelle
         livraison. Choisissez une catégorie : ses applications et ses blocs
@@ -2679,6 +2732,7 @@ export function AdministrateurReseau({ p }){
               </div>`)}
           </div>
         </div>`}
+      </div>`)}
     </div>`;
 }
 
