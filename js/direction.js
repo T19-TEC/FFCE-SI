@@ -3,7 +3,7 @@ import { AssistanceAdmin, Espace, Matrice } from './espace.js';
 import { Rapport, Ressources } from './finances.js';
 import { Formations } from './formation.js';
 import { ApercuAdhesion, Engagement, MesDistinctions } from './membre.js';
-import { CANAUX, Completude, ETAT_PUB, Info, NATURE_ECHANGE, NATURE_REMONTEE, Portrait, RESEAUX, STATUT_CONTACT, TYPE_ACTE, TYPE_CONTACT, db, deposerImage, html, jour, nomComplet, urlPublique, useCallback, useEffect, useState } from './socle.js';
+import { CANAUX, Completude, ETAT_PUB, Info, NATURE_ECHANGE, NATURE_REMONTEE, Portrait, RESEAUX, STATUT_CONTACT, STATUT_TACHE, TYPE_ACTE, TYPE_CONTACT, db, deposerImage, html, jour, nomComplet, urlPublique, useCallback, useEffect, useState } from './socle.js';
 import { Discipline } from './statutaire.js';
 import { Pilotage, Structures } from './structure.js';
 import { Accueil, Blocs, CarteFederale, Contact, Site } from './vitrine.js';
@@ -2334,7 +2334,8 @@ export function Cabinet({ p }){
 
   const projets = actes.filter(a => a.statut === 'projet');
   const tabs = [['table','L\u2019état de la fédération'], ['remontees','Remontées'],
-                ['actes','Actes'], ['rapport','Rapport d\u2019activité']];
+                ['taches','Tâches'], ['actes','Actes'], ['rapport','Rapport d\u2019activité'],
+                ...(p.niveau >= 100 ? [['admin_reseau','Administrateur réseau']] : [])];
 
   return html`
     <div>
@@ -2366,9 +2367,11 @@ export function Cabinet({ p }){
       ${onglet === 'table' && html`<${CabinetEtat} tb=${tb} />`}
       ${onglet === 'remontees' && html`<${CabinetRemontees}
         remontees=${remontees} appel=${appel} />`}
+      ${onglet === 'taches' && html`<${CabinetTaches} p=${p} />`}
       ${onglet === 'actes' && html`<${CabinetActes} p=${p} actes=${actes}
         projets=${projets} signataire=${signataire} appel=${appel} setMsg=${setMsg} />`}
       ${onglet === 'rapport' && html`<${Rapport} p=${p} />`}
+      ${onglet === 'admin_reseau' && html`<${AdministrateurReseau} p=${p} />`}
     </div>`;
 }
 
@@ -2453,9 +2456,9 @@ export function CabinetRemontees({ remontees, appel }){
               <div class="small muted" style="margin-top:3px">
                 ${r.auteur} · ${r.auteur_fonction} · ${r.territoire} · ${jour(r.cree_le)}
               </div>
-              <div class="small" style="margin-top:6px">${r.corps}</div>
+              <div class="small" style="margin-top:6px;white-space:pre-wrap">${r.corps}</div>
               ${r.lien && html`<div style="margin-top:6px">
-                <a class="small" href=${r.lien}>Ouvrir l\u2019écran concerné</a></div>`}
+                <a class="small" href=${r.lien}>Ouvrir le lien joint</a></div>`}
             </div>
             <div class="row" style="gap:6px">
               <button class="btn sm" onClick=${()=>{
@@ -2468,6 +2471,214 @@ export function CabinetRemontees({ remontees, appel }){
                 Classer</button>
             </div>
           </div>`)}
+    </div>`;
+}
+
+/* --- Les tâches confiées par la présidence ------------------------------ */
+
+export function CabinetTaches({ p }){
+  const [taches, setTaches] = useState(null);
+  const [gens, setGens] = useState([]);
+  const [f, setF] = useState({ assigne_a:'', titre:'', description:'', echeance:'' });
+  const [ouvert, setOuvert] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      db.rpc('taches_que_jai_confiees'),
+      db.from('v_annuaire').select('id,prenom,nom,fonction_nom,territoire_nom')
+        .eq('statut','actif').order('nom')
+    ]);
+    setTaches(a.data || []); setGens(b.data || []);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function assigner(e){
+    e.preventDefault();
+    if (!f.assigne_a || !f.titre) return setMsg('Erreur : choisissez un membre et un titre.');
+    const { data, error } = await db.rpc('assigner_tache', {
+      p_assigne_a: f.assigne_a, p_titre: f.titre,
+      p_description: f.description || null, p_echeance: f.echeance || null
+    });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setF({ assigne_a:'', titre:'', description:'', echeance:'' });
+    setMsg('Tâche assignée.'); setOuvert(false); charger();
+  }
+
+  async function annuler(t){
+    const motif = prompt('Motif de l\u2019annulation (obligatoire)');
+    if (!motif) return;
+    const { data, error } = await db.rpc('annuler_tache', { p_tache: t.id, p_motif: motif });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setMsg('Tâche annulée.'); charger();
+  }
+
+  if (!taches) return html`<div class="vide">Chargement…</div>`;
+  const enCours = taches.filter(t => t.statut === 'en_cours');
+
+  return html`
+    <div>
+      <div class="panneau" style="margin-bottom:24px">
+        <div class="tete spread">
+          <h3 style="font-size:17px">Assigner une tâche</h3>
+          <button class="btn sm light" onClick=${()=>setOuvert(!ouvert)}>
+            ${ouvert ? 'Fermer' : 'Nouvelle tâche'}</button>
+        </div>
+        ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+          style="margin:0 20px 16px">${msg}</div>`}
+        ${ouvert && html`
+          <form onSubmit=${assigner} class="corps stack">
+            <div class="field"><label>À qui</label>
+              <select required value=${f.assigne_a}
+                onChange=${e=>setF(o=>({...o,assigne_a:e.target.value}))}>
+                <option value="">— Choisir —</option>
+                ${gens.map(g => html`<option value=${g.id}>
+                  ${nomComplet(g)} · ${g.fonction_nom}${g.territoire_nom ? ' · '+g.territoire_nom : ''}
+                </option>`)}
+              </select></div>
+            <div class="field"><label>Titre</label>
+              <input required value=${f.titre}
+                onInput=${e=>setF(o=>({...o,titre:e.target.value}))} /></div>
+            <div class="field"><label>Description (facultatif)</label>
+              <textarea value=${f.description}
+                onInput=${e=>setF(o=>({...o,description:e.target.value}))}></textarea></div>
+            <div class="field"><label>Échéance (facultatif)</label>
+              <input type="date" value=${f.echeance}
+                onInput=${e=>setF(o=>({...o,echeance:e.target.value}))} /></div>
+            <div><button class="btn">Assigner</button></div>
+          </form>`}
+      </div>
+
+      <div class="panneau">
+        <div class="tete"><h3 style="font-size:17px">Tâches en cours</h3>
+          <span class="tag">${enCours.length}</span></div>
+        ${taches.length === 0
+          ? html`<div class="corps muted">Aucune tâche assignée pour l\u2019instant.</div>`
+          : taches.map(t => html`
+            <div class="ligne" key=${t.id} style="align-items:flex-start">
+              <div style="flex:1;min-width:260px">
+                <div class="row" style="gap:8px;flex-wrap:wrap">
+                  <span style="font-weight:600">${t.titre}</span>
+                  <span class=${'tag '+STATUT_TACHE[t.statut][1]}>${STATUT_TACHE[t.statut][0]}</span>
+                </div>
+                <div class="small muted" style="margin-top:3px">
+                  Confiée à ${t.assigne_a_nom || 'un membre'}
+                  ${t.echeance ? ' · échéance ' + jour(t.echeance) : ''}
+                </div>
+                ${t.description && html`
+                  <div class="small" style="margin-top:6px;white-space:pre-wrap">${t.description}</div>`}
+              </div>
+              ${t.statut === 'en_cours' && html`
+                <button class="btn sm light" onClick=${()=>annuler(t)}>Annuler</button>`}
+            </div>`)}
+      </div>
+    </div>`;
+}
+
+/* --- Administrateur réseau : configurer sans passer par le code ------- */
+
+export function AdministrateurReseau({ p }){
+  const [fonctions, setFonctions] = useState(null);
+  const [applications, setApplications] = useState([]);
+  const [blocs, setBlocs] = useState([]);
+  const [fonction, setFonction] = useState('');
+  const [visApps, setVisApps] = useState({});
+  const [visBlocs, setVisBlocs] = useState({});
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    Promise.all([
+      db.from('fonctions').select('code,nom').order('nom'),
+      db.from('applications').select('code,nom').order('nom'),
+      db.from('blocs_definis').select('bloc,libelle,description').order('libelle')
+    ]).then(([f, a, b]) => {
+      setFonctions(f.data || []); setApplications(a.data || []); setBlocs(b.data || []);
+    });
+  }, []);
+
+  const chargerReglages = useCallback(async (f) => {
+    if (!f) { setVisApps({}); setVisBlocs({}); return; }
+    const [a, b] = await Promise.all([
+      db.from('application_visibilite').select('application,etat').eq('fonction', f),
+      db.from('blocs_visibilite').select('bloc,visible').eq('fonction', f)
+    ]);
+    const ma = {}; (a.data||[]).forEach(x => { ma[x.application] = x.etat; });
+    const mb = {}; (b.data||[]).forEach(x => { mb[x.bloc] = x.visible; });
+    setVisApps(ma); setVisBlocs(mb);
+  }, []);
+  useEffect(() => { chargerReglages(fonction); }, [fonction, chargerReglages]);
+
+  async function basculerApp(code, val){
+    const { error } = await db.from('application_visibilite').upsert(
+      { application: code, fonction, etat: val, maj_par: p.id },
+      { onConflict: 'application,fonction' });
+    if (error) return setMsg('Erreur sur « ' + code + ' » : ' + error.message +
+      ' — dites-moi ce message exact, la colonne etat n\u2019attend peut-être pas un booléen.');
+    setVisApps(m => ({ ...m, [code]: val })); setMsg('');
+  }
+
+  async function basculerBloc(bloc, val){
+    const { error } = await db.from('blocs_visibilite').upsert(
+      { bloc, fonction, visible: val, maj_par: p.id },
+      { onConflict: 'bloc,fonction' });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setVisBlocs(m => ({ ...m, [bloc]: val })); setMsg('');
+  }
+
+  if (!fonctions) return html`<div class="vide">Chargement…</div>`;
+
+  return html`
+    <div>
+      <p class="muted" style="max-width:62ch;margin-bottom:20px">
+        Ce que voit chaque catégorie de poste, sans passer par une nouvelle
+        livraison. Choisissez une catégorie : ses applications et ses blocs
+        s\u2019affichent en dessous, à régler un par un.
+      </p>
+
+      <div class="field" style="max-width:360px;margin-bottom:24px">
+        <label>Catégorie de poste</label>
+        <select value=${fonction} onChange=${e=>setFonction(e.target.value)}>
+          <option value="">— Choisir —</option>
+          ${fonctions.map(f => html`<option value=${f.code}>${f.nom}</option>`)}
+        </select>
+      </div>
+
+      ${msg && html`<div class="alerte err" style="margin-bottom:20px">${msg}</div>`}
+
+      ${fonction && html`
+        <div class="panneau" style="margin-bottom:24px">
+          <div class="tete"><h3 style="font-size:17px">Applications</h3></div>
+          <div class="corps">
+            ${applications.map(a => html`
+              <label class="ligne" style="cursor:pointer">
+                <span>${a.nom}</span>
+                <input type="checkbox"
+                  checked=${visApps[a.code] !== false}
+                  onChange=${e => basculerApp(a.code, e.target.checked)} />
+              </label>`)}
+          </div>
+        </div>
+
+        <div class="panneau">
+          <div class="tete"><h3 style="font-size:17px">Blocs d\u2019affichage</h3></div>
+          <div class="corps">
+            ${blocs.length === 0 && html`<p class="small muted" style="margin:0">
+              Aucun bloc configurable enregistré pour l\u2019instant.</p>`}
+            ${blocs.map(b => html`
+              <div style="margin-bottom:14px">
+                <label class="ligne" style="cursor:pointer">
+                  <span>${b.libelle}</span>
+                  <input type="checkbox"
+                    checked=${visBlocs[b.bloc] !== false}
+                    onChange=${e => basculerBloc(b.bloc, e.target.checked)} />
+                </label>
+                ${b.description && html`
+                  <p class="small muted" style="margin:2px 0 0">${b.description}</p>`}
+              </div>`)}
+          </div>
+        </div>`}
     </div>`;
 }
 
@@ -2774,18 +2985,24 @@ export function Recueil(){
 
 export function VersLeCabinet(){
   const [ouvert, setOuvert] = useState(false);
-  const [f, setF] = useState({ nature:'information', objet:'', corps:'' });
+  const [f, setF] = useState({ nature:'information', objet:'', corps:'', contexte:'', suite:'', lien:'' });
   const [msg, setMsg] = useState('');
+
+  const travail = f.nature === 'travail';
 
   async function envoyer(e){
     e.preventDefault();
+    const corps = travail
+      ? ['Contexte : ' + f.contexte, 'Ce qui a été fait : ' + f.corps,
+         'Suite proposée : ' + f.suite].join('\n\n')
+      : f.corps;
     const { data, error } = await db.rpc('flecher_vers_cabinet', {
-      p_nature: f.nature, p_objet: f.objet, p_corps: f.corps,
-      p_lien: location.hash || null
+      p_nature: f.nature, p_objet: f.objet, p_corps: corps,
+      p_lien: f.lien || (location.hash || null)
     });
     if (error) return setMsg('Erreur : ' + error.message);
     if (!data.ok) return setMsg('Erreur : ' + data.message);
-    setF({ nature:'information', objet:'', corps:'' });
+    setF({ nature:'information', objet:'', corps:'', contexte:'', suite:'', lien:'' });
     setMsg('Transmis au cabinet de la présidence.');
     setOuvert(false);
   }
@@ -2808,16 +3025,33 @@ export function VersLeCabinet(){
                   html`<option value=${k}>${v}</option>`)}
               </select></div>
             <div class="field"><label>Objet</label>
-              <input value=${f.objet}
+              <input required value=${f.objet}
                 onInput=${e=>setF(o=>({...o,objet:e.target.value}))} /></div>
-            <div class="field"><label>Ce que vous voulez porter à sa connaissance</label>
-              <textarea value=${f.corps}
-                onInput=${e=>setF(o=>({...o,corps:e.target.value}))}></textarea></div>
+            ${travail ? html`
+              <div class="field"><label>Contexte</label>
+                <textarea required placeholder="Pourquoi ce travail, dans quel cadre"
+                  value=${f.contexte}
+                  onInput=${e=>setF(o=>({...o,contexte:e.target.value}))}></textarea></div>
+              <div class="field"><label>Ce qui a été fait</label>
+                <textarea required placeholder="Le résultat concret, pas juste l'avancement"
+                  value=${f.corps}
+                  onInput=${e=>setF(o=>({...o,corps:e.target.value}))}></textarea></div>
+              <div class="field"><label>Suite proposée</label>
+                <textarea placeholder="Ce que vous recommandez, s'il y a lieu"
+                  value=${f.suite}
+                  onInput=${e=>setF(o=>({...o,suite:e.target.value}))}></textarea></div>
+              <div class="field"><label>Lien vers le document (facultatif)</label>
+                <input placeholder="Lien Drive, dossier, ou autre"
+                  value=${f.lien}
+                  onInput=${e=>setF(o=>({...o,lien:e.target.value}))} /></div>`
+            : html`<div class="field"><label>Ce que vous voulez porter à sa connaissance</label>
+                <textarea required value=${f.corps}
+                  onInput=${e=>setF(o=>({...o,corps:e.target.value}))}></textarea></div>`}
             <div><button class="btn">Transmettre</button></div>
           </form>`
         : html`<div class="corps small muted">
-            Une information, une alerte, une proposition ou une demande
-            d\u2019arbitrage. Elle arrive directement au cabinet, quelle que soit
+            Une information, une alerte, une proposition, un rendu de travail ou une
+            demande d\u2019arbitrage. Elle arrive directement au cabinet, quelle que soit
             votre échelle, et y reste jusqu\u2019à ce qu\u2019on l\u2019ait traitée
             \u2014 elle ne se perd pas en conversation.</div>`}
     </div>`;

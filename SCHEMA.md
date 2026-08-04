@@ -1,10 +1,10 @@
 # FFCE — Abrégé du schéma en vigueur
 
-> Généré par `schema.py` à partir des 50 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
+> Généré par `schema.py` à partir des 51 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
 
 > Ce fichier remplace le recueil des migrations pour écrire du code. N'ouvrir le recueil que pour comprendre le *pourquoi* d'une règle.
 
-**115 tables · 401 fonctions · 49 droits · 17 applications**
+**116 tables · 407 fonctions · 49 droits · 17 applications**
 
 ---
 
@@ -230,6 +230,8 @@
 
 **`suggestions_reprises`** — `id`, `suggestion_id`, `profil_id`, `territoire_id`, `canal`, `publie_le`, `lien`, `observation`
 
+**`taches_assignees`** — `id`, `titre`, `description`, `assigne_a`, `assigne_par`, `echeance`, `statut`, `delegue_de`, `annule_par`, `annule_le`, `motif_annulation`, `faite_le`, `cree_le`, `maj_le`
+
 **`territoires`** — `id`, `parent_id`, `echelle`, `code`, `nom`, `actif`, `cree_le`, `etat`, `cree_le_reel`, `agree_le`, `sommeil_le`, `motif_etat`, `rattache_a`, `academie`, `siege`, `courriel`, `telephone`, `population`, `note`, `cree_le_reel`
 
 **`ticket_messages`** — `id`, `ticket_id`, `auteur_id`, `contenu`, `cree_le`
@@ -326,6 +328,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`annuler_pouvoir(p_assemblee uuid)`** → `jsonb` · plpgsql · 45_correctifs_ag.sql
 
+**`annuler_tache(p_tache uuid, p_motif text)`** → `jsonb` · plpgsql · 51_taches_et_remontees.sql
+
 **`ap_service()`** → `boolean` · sql · 37_affaires_publiques.sql
 
 **`appel_public(p_token text)`** → `jsonb` · sql · 17_vie_statutaire.sql
@@ -343,6 +347,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
   colonnes : `assemblee_id`, `reference`, `titre`, `type`, `territoire`, `date_tenue`, `proclame_le`, `inscrits`, `votants`, `participation`, `proces_verbal`, `pv_fichier`, `elus`, `jai_participe`
 
 **`article(p_slug text)`** → `jsonb` · sql · 14_migration.sql
+
+**`assigner_tache(p_assigne_a uuid, p_titre text, p_description text default null, p_echeance date default null)`** → `jsonb` · plpgsql · 51_taches_et_remontees.sql
 
 **`attribuer_dotations(p_annee integer)`** → `jsonb` · plpgsql · 28_ressources.sql
 
@@ -483,6 +489,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`declarer_reprise(p_suggestion uuid, p_canal text, p_lien text default null, p_observation text default null)`** → `jsonb` · plpgsql · 24_suggestions_assistance.sql
 
 **`declarer_sauvegarde(p_portee text, p_emplacement text, p_observation text default null)`** → `jsonb` · plpgsql · 23_budget_rapport.sql
+
+**`deleguer_tache(p_tache uuid, p_a uuid)`** → `jsonb` · plpgsql · 51_taches_et_remontees.sql
 
 **`delivrer_certifications()`** → `void` · plpgsql · 02_formations.sql
 
@@ -801,6 +809,10 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`mes_rendez_vous()`** → `table (id uuid, debut timestamptz, duree_min integer, lieu t` · sql · 18_parcours_pilotage.sql
   
   colonnes : `id`, `debut`, `duree_min`, `lieu`, `visio`, `avec`, `avec_fonction`, `je_suis_hote`, `passe`
+
+**`mes_taches()`** → `table( id uuid, titre text, description text, echeance date,` · sql · 51_taches_et_remontees.sql
+  
+  colonnes : `id`, `titre`, `description`, `echeance`, `statut`, `assigne_par_nom`, `delegue_de_nom`, `cree_le`
 
 **`mes_virements_a_confirmer()`** → `table (note_id uuid, reference text, objet text, total numer` · sql · 21_interim_suppleance.sql
   
@@ -1186,9 +1198,15 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`tableau_ordonnancement()`** → `jsonb` · sql · 38_ressources_budget.sql
 
+**`taches_que_jai_confiees()`** → `table( id uuid, titre text, description text, echeance date,` · sql · 51_taches_et_remontees.sql
+  
+  colonnes : `id`, `titre`, `description`, `echeance`, `statut`, `assigne_a_nom`, `cree_le`
+
 **`telephone_valide(t text)`** → `boolean` · sql · 19_coherence_distinctions.sql
 
 **`terminer_lecon(p_lecon uuid)`** → `jsonb` · plpgsql · 02_formations.sql
+
+**`terminer_tache(p_tache uuid)`** → `jsonb` · plpgsql · 51_taches_et_remontees.sql
 
 **`territoires_sous(racine uuid)`** → `table (id uuid)` · sql · 01_socle.sql
   

@@ -471,7 +471,11 @@ export const etatInv = s => {
    le cabinet rédige les projets, la présidence seule signe.
    ===================================================================== */
 export const NATURE_REMONTEE = { information:'Information', alerte:'Alerte',
-  proposition:'Proposition', arbitrage:'Demande d\u2019arbitrage', contact:'Contact' };
+  proposition:'Proposition', arbitrage:'Demande d\u2019arbitrage', contact:'Contact',
+  travail:'Rendu de travail' };
+
+export const STATUT_TACHE = { en_cours:['En cours',''], faite:['Faite','vert'],
+  annulee:['Annulée','rouge'] };
 
 export const TYPE_ACTE = { nomination:'Nomination', delegation:'Délégation',
   decision:'Décision', convocation:'Convocation', motion:'Motion',
