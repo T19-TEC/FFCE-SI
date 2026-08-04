@@ -8,7 +8,7 @@
 |---|---|---|---|
 | `js/app.js` | 11 | 0 | FFCE — Point d'entrée Le navigateur charge ce module ; les autres suivent par leurs imports. |
 | `js/collectif.js` | 1325 | 11 |  |
-| `js/direction.js` | 3513 | 34 |  |
+| `js/direction.js` | 3467 | 33 |  |
 | `js/espace.js` | 1076 | 11 | La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits. |
 | `js/evenements.js` | 844 | 8 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
 | `js/finances.js` | 2841 | 18 |  |
@@ -19,7 +19,7 @@
 | `js/structure.js` | 2165 | 20 |  |
 | `js/vitrine.js` | 647 | 17 | Tout ce qui se voit sans compte : accueil, présentation de la fédération, actions, réseau, actualités, pages de texte, adhésion, connexion et inscription. |
 
-**Total : 18653 lignes d'interface.**
+**Total : 18607 lignes d'interface.**
 
 ---
 
@@ -55,9 +55,10 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
 
 ## `js/direction.js`
 
-*3513 lignes · 34 composants*
+*3467 lignes · 33 composants*
 
-- **`Validation`** — 344 lignes
+- **`Validation`** — 342 lignes  
+  Paramètres administrateur : quelles catégories de poste voient les noms dans « Mon périmètre ».
 - **`FicheAdmin`** — 292 lignes  
   --- La fiche unique : tout se règle ici
 - **`CabinetActes`** — 187 lignes  
@@ -65,7 +66,7 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
 - **`ApFichier`** — 187 lignes  
   --- Le fichier
 - **`Communication`** — 165 lignes
-- **`SuggestionsAdmin`** — 144 lignes  
+- **`SuggestionsAdmin`** — 147 lignes  
   --- Suggestions, côté direction
 - **`ApContact`** — 143 lignes  
   --- Le détail d'un contact
@@ -98,8 +99,6 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
   --- Porter au cabinet, depuis n'importe où
 - **`Recueil`** — 51 lignes  
   --- Le recueil, application ouverte à tous
-- **`ReglagesVisibilite`** *(interne)* — 47 lignes  
-  Paramètres administrateur : quelles catégories de poste voient les noms dans « Mon périmètre ».
 - **`CabinetRemontees`** — 42 lignes  
   --- Les remontées du réseau
 - **`Habilitations`** — 41 lignes  
