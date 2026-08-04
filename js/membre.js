@@ -319,9 +319,11 @@ export function Annuaire({ p }){
   const [q, setQ] = useState('');
   const [fiche, setFiche] = useState(null);
   useEffect(() => {
-    db.from('v_annuaire').select('*').neq('statut','archive')
-      .order('niveau', {ascending:false}).order('nom')
-      .then(({data}) => setMembres(data || []));
+    db.rpc('mon_perimetre').then(({data}) => {
+      const m = (data || []).filter(x => x.statut !== 'archive');
+      m.sort((a,b) => (b.niveau - a.niveau) || String(a.nom||'').localeCompare(String(b.nom||'')));
+      setMembres(m);
+    });
   }, []);
 
   if (fiche) return html`<${FicheMembre} id=${fiche} fermer=${()=>setFiche(null)} />`;
@@ -330,6 +332,7 @@ export function Annuaire({ p }){
     const s = (nomComplet(m)+' '+(m.territoire_nom||'')+' '+m.fonction_nom).toLowerCase();
     return s.includes(q.toLowerCase());
   });
+  const masqueActif = membres.length > 0 && membres.every(m => !m.nom && !m.prenom);
 
   return html`
     <div>
@@ -338,8 +341,9 @@ export function Annuaire({ p }){
       <p class="muted" style="max-width:58ch">
         Vous voyez les membres rattachés à votre territoire et à tous ceux qui
         en dépendent. Cette limite est appliquée par la base de données.
-        Ouvrez une fiche pour en savoir plus : les coordonnées ne s\u2019affichent
-        que sur demande, et cette demande est enregistrée.
+        ${masqueActif
+          ? "Les noms sont masqués pour votre catégorie de poste : seul l\u2019effectif est visible ici."
+          : "Ouvrez une fiche pour en savoir plus : les coordonnées ne s\u2019affichent que sur demande, et cette demande est enregistrée."}
       </p>
 
       <div class="field" style="max-width:360px;margin:24px 0">
@@ -357,11 +361,14 @@ export function Annuaire({ p }){
               <th>Membre</th><th>Fonction</th><th>Territoire</th><th>Échelon</th><th>Statut</th>
             </tr></thead>
             <tbody>
-              ${filtre.map(m => html`
-                <tr style="cursor:pointer" onClick=${()=>setFiche(m.id)}>
+              ${filtre.map(m => { const masque = !m.nom && !m.prenom; return html`
+                <tr style=${masque ? '' : 'cursor:pointer'}
+                    onClick=${masque ? undefined : ()=>setFiche(m.id)}>
                   <td>
-                    <div><a href="#" onClick=${e=>e.preventDefault()}>${nomComplet(m)}</a></div>
-                    <div class="mono muted">${m.matricule}</div>
+                    ${masque
+                      ? html`<span class="muted">Non affiché</span>`
+                      : html`<div><a href="#" onClick=${e=>e.preventDefault()}>${nomComplet(m)}</a></div>
+                             <div class="mono muted">${m.matricule}</div>`}
                   </td>
                   <td>${m.fonction_nom}</td>
                   <td>${m.territoire_nom || '—'}</td>
@@ -369,7 +376,7 @@ export function Annuaire({ p }){
                   <td>${m.statut === 'actif'
                     ? html`<span class="tag vert">Actif</span>`
                     : html`<span class="tag">${m.statut.replace('_',' ')}</span>`}</td>
-                </tr>`)}
+                </tr>`; })}
             </tbody>
           </table>
         </div>
