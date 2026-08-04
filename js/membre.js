@@ -314,6 +314,59 @@ export function MesDemandes({ p, apps, demandes, recharger }){
 }
 
 
+/* Réglage admin, à même l'écran : quelles catégories de poste voient
+   les noms dans « Mon périmètre ». Replié par défaut, visible
+   seulement pour l'admin (niveau 100). Un seul bloc aujourd'hui
+   ('annuaire.noms') ; la table blocs_visibilite est faite pour en
+   recevoir d'autres, ailleurs, sur le même principe : le réglage vit
+   dans l'écran qu'il affecte, jamais dans un tiroir séparé. */
+function ReglagesAffichage({ p, bloc, titre, description }){
+  const [ouvert, setOuvert] = useState(false);
+  const [fonctions, setFonctions] = useState(null);
+  const [reglages, setReglages] = useState({});
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const [{ data: f }, { data: r }] = await Promise.all([
+      db.from('fonctions').select('code,nom').order('nom'),
+      db.from('blocs_visibilite').select('fonction,visible').eq('bloc', bloc)
+    ]);
+    setFonctions(f || []);
+    const m = {};
+    (r || []).forEach(x => { m[x.fonction] = x.visible; });
+    setReglages(m);
+  }, [bloc]);
+  useEffect(() => { if (ouvert && !fonctions) charger(); }, [ouvert, fonctions, charger]);
+
+  async function basculer(code, val){
+    const { error } = await db.from('blocs_visibilite').upsert({
+      bloc, fonction: code, visible: val, maj_par: p.id
+    }, { onConflict: 'bloc,fonction' });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setReglages(m => ({ ...m, [code]: val }));
+  }
+
+  return html`
+    <div style="margin:8px 0 24px">
+      <button class="btn sm light" onClick=${()=>setOuvert(o=>!o)}>
+        ${ouvert ? 'Fermer les réglages' : 'Réglages d\u2019affichage (admin)'}</button>
+      ${ouvert && html`
+        <div class="panneau" style="margin-top:12px;max-width:420px">
+          <div class="corps">
+            <p class="small muted" style="margin-top:0">${description}</p>
+            ${msg && html`<div class="alerte err" style="margin-bottom:12px">${msg}</div>`}
+            ${!fonctions ? html`<div class="vide">Chargement…</div>` : fonctions.map(f => html`
+              <label class="ligne" style="cursor:pointer">
+                <span>${f.nom}</span>
+                <input type="checkbox"
+                  checked=${reglages[f.code] !== false}
+                  onChange=${e => basculer(f.code, e.target.checked)} />
+              </label>`)}
+          </div>
+        </div>`}
+    </div>`;
+}
+
 export function Annuaire({ p }){
   const [membres, setMembres] = useState(null);
   const [q, setQ] = useState('');
@@ -345,6 +398,11 @@ export function Annuaire({ p }){
           ? "Les noms sont masqués pour votre catégorie de poste : seul l\u2019effectif est visible ici."
           : "Ouvrez une fiche pour en savoir plus : les coordonnées ne s\u2019affichent que sur demande, et cette demande est enregistrée."}
       </p>
+
+      ${p.niveau >= 100 && html`<${ReglagesAffichage} p=${p} bloc="annuaire.noms"
+        titre="Noms visibles dans Mon périmètre"
+        description=${'Noms visibles dans « Mon périmètre », par catégorie de poste. ' +
+          'Décochée, la catégorie garde l\u2019effectif affiché, sans les noms.'} />`}
 
       <div class="field" style="max-width:360px;margin:24px 0">
         <input placeholder="Rechercher un nom, un territoire…"
