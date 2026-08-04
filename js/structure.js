@@ -1,7 +1,7 @@
 import { EquipesLocales, Groupes } from './collectif.js';
 import { Habilitations, Postes, Publier, RecueilListe } from './direction.js';
 import { BilansMission, FicheOuverture, MesAlertesParcours, MesCreneaux, Tunnel } from './membre.js';
-import { Info, Portrait, STATUT_PROJET, STATUT_PROP, TYPE_ACTE, db, h, html, jour, nomComplet, urlPublique, useCallback, useEffect, useState } from './socle.js';
+import { Info, Portrait, STATUT_PROJET, STATUT_PROP, TYPE_ACTE, aller, db, h, html, jour, nomComplet, urlPublique, useCallback, useEffect, useState } from './socle.js';
 import { Contact, Rejoindre } from './vitrine.js';
 
 export function Structures({ setMsg, ouvrir }){
@@ -1386,6 +1386,8 @@ export function GestionLocale({ p }){
         fédération vous délègue est écrit noir sur blanc — comme ce qu\u2019elle
         ne vous délègue pas.
       </p>
+      <button class="btn sm light" style="margin-top:4px" onClick=${()=>aller('#/espace/pilotage')}>
+        Voir la santé de mon secteur (Pilotage)</button>
 
       <div class="row" style="margin:28px 0 24px;gap:0;border-bottom:1px solid var(--filet);
         flex-wrap:wrap">
