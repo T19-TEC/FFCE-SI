@@ -8,7 +8,7 @@
 |---|---|---|---|
 | `js/app.js` | 11 | 0 | FFCE — Point d'entrée Le navigateur charge ce module ; les autres suivent par leurs imports. |
 | `js/collectif.js` | 1325 | 11 |  |
-| `js/direction.js` | 3701 | 35 |  |
+| `js/direction.js` | 3755 | 35 |  |
 | `js/espace.js` | 1155 | 12 | La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits. |
 | `js/evenements.js` | 844 | 8 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
 | `js/finances.js` | 2841 | 18 |  |
@@ -19,7 +19,7 @@
 | `js/structure.js` | 2165 | 20 |  |
 | `js/vitrine.js` | 647 | 17 | Tout ce qui se voit sans compte : accueil, présentation de la fédération, actions, réseau, actualités, pages de texte, adhésion, connexion et inscription. |
 
-**Total : 18924 lignes d'interface.**
+**Total : 18978 lignes d'interface.**
 
 ---
 
@@ -55,7 +55,7 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
 
 ## `js/direction.js`
 
-*3701 lignes · 35 composants*
+*3755 lignes · 35 composants*
 
 - **`Validation`** — 342 lignes  
   Paramètres administrateur : quelles catégories de poste voient les noms dans « Mon périmètre ».
@@ -65,6 +65,8 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
   --- Préparer, signer, abroger
 - **`ApFichier`** — 187 lignes  
   --- Le fichier
+- **`IdentiteApplications`** — 171 lignes  
+  --- Identité des applications
 - **`Communication`** — 165 lignes
 - **`SuggestionsAdmin`** — 147 lignes  
   --- Suggestions, côté direction
@@ -73,17 +75,15 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
 - **`Interims`** — 140 lignes
 - **`VitrineBlocs`** — 135 lignes
 - **`Suggestion`** — 129 lignes
-- **`IdentiteApplications`** — 127 lignes  
-  --- Identité des applications
 - **`EditionPublication`** — 123 lignes
+- **`AdministrateurReseau`** — 116 lignes  
+  --- Administrateur réseau : configurer sans passer par le code
 - **`ApSollicitations`** — 116 lignes  
   --- Les sollicitations du réseau
 - **`VitrineArticles`** — 109 lignes
 - **`Postes`** — 108 lignes
 - **`ApProspection`** — 108 lignes  
   --- La prospection
-- **`AdministrateurReseau`** — 105 lignes  
-  --- Administrateur réseau : configurer sans passer par le code
 - **`CabinetTaches`** — 103 lignes  
   --- Les tâches confiées par la présidence
 - **`AffairesPubliques`** — 88 lignes
@@ -105,7 +105,7 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
   --- Le recueil, application ouverte à tous
 - **`CabinetRemontees`** — 42 lignes  
   --- Les remontées du réseau
-- **`Habilitations`** — 41 lignes  
+- **`Habilitations`** — 40 lignes  
   éorganisé autour de deux objets, pas de cinq tables : la PERSONNE et la STRUCTURE.
 - **`VitrineTextes`** — 40 lignes
 - **`ConformitePostes`** — 37 lignes  
