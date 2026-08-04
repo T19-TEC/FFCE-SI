@@ -1620,6 +1620,56 @@ export function SuggestionsAdmin({ setMsg }){
     </div>`;
 }
 
+/* Paramètres administrateur : quelles catégories de poste voient les
+   noms dans « Mon périmètre ». Un seul bloc aujourd'hui
+   ('annuaire.noms') ; la table est faite pour en recevoir d'autres. */
+function ReglagesVisibilite({ p, setMsg }){
+  const [fonctions, setFonctions] = useState(null);
+  const [reglages, setReglages] = useState({});
+
+  const charger = useCallback(async () => {
+    const [{ data: f }, { data: r }] = await Promise.all([
+      db.from('fonctions').select('code,nom').order('nom'),
+      db.from('blocs_visibilite').select('fonction,visible').eq('bloc','annuaire.noms')
+    ]);
+    setFonctions(f || []);
+    const m = {};
+    (r || []).forEach(x => { m[x.fonction] = x.visible; });
+    setReglages(m);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function basculer(code, val){
+    const { error } = await db.from('blocs_visibilite').upsert({
+      bloc: 'annuaire.noms', fonction: code, visible: val, maj_par: p.id
+    }, { onConflict: 'bloc,fonction' });
+    if (error) return setMsg('Erreur : ' + error.message);
+    setReglages(m => ({ ...m, [code]: val }));
+  }
+
+  if (!fonctions) return null;
+  return html`
+    <div class="panneau" style="margin-bottom:24px">
+      <div class="tete">
+        <h3 style="font-size:17px">Paramètres administrateur</h3>
+      </div>
+      <div class="corps">
+        <p class="small muted" style="margin-top:0">
+          Noms visibles dans « Mon périmètre », par catégorie de poste.
+          Décochée, seule la catégorie garde l\u2019effectif affiché, sans
+          les noms.
+        </p>
+        ${fonctions.map(f => html`
+          <label class="ligne" style="cursor:pointer">
+            <span>${f.nom}</span>
+            <input type="checkbox"
+              checked=${reglages[f.code] !== false}
+              onChange=${e => basculer(f.code, e.target.checked)} />
+          </label>`)}
+      </div>
+    </div>`;
+}
+
 export function Validation({ p }){
   const [attente, setAttente] = useState([]);
   const [demandes, setDemandes] = useState([]);
@@ -1794,6 +1844,8 @@ export function Validation({ p }){
       </div>
       <div style="height:32px"></div>
       ${msg && html`<div class="alerte ok" style="margin-bottom:24px">${msg}</div>`}
+
+      <${ReglagesVisibilite} p=${p} setMsg=${setMsg} />
 
       <${AssistanceAdmin} setMsg=${setMsg} />
 

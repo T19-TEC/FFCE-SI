@@ -8,18 +8,18 @@
 |---|---|---|---|
 | `js/app.js` | 11 | 0 | FFCE — Point d'entrée Le navigateur charge ce module ; les autres suivent par leurs imports. |
 | `js/collectif.js` | 1325 | 11 |  |
-| `js/direction.js` | 3461 | 33 |  |
+| `js/direction.js` | 3513 | 34 |  |
 | `js/espace.js` | 1076 | 11 | La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits. |
 | `js/evenements.js` | 844 | 8 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
 | `js/finances.js` | 2841 | 18 |  |
 | `js/formation.js` | 1230 | 9 |  |
-| `js/membre.js` | 2620 | 28 |  |
+| `js/membre.js` | 2627 | 28 |  |
 | `js/socle.js` | 514 | 6 |  |
 | `js/statutaire.js` | 1802 | 11 |  |
 | `js/structure.js` | 2165 | 20 |  |
 | `js/vitrine.js` | 647 | 17 | Tout ce qui se voit sans compte : accueil, présentation de la fédération, actions, réseau, actualités, pages de texte, adhésion, connexion et inscription. |
 
-**Total : 18536 lignes d'interface.**
+**Total : 18595 lignes d'interface.**
 
 ---
 
@@ -55,9 +55,9 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
 
 ## `js/direction.js`
 
-*3461 lignes · 33 composants*
+*3513 lignes · 34 composants*
 
-- **`Validation`** — 342 lignes
+- **`Validation`** — 344 lignes
 - **`FicheAdmin`** — 292 lignes  
   --- La fiche unique : tout se règle ici
 - **`CabinetActes`** — 187 lignes  
@@ -65,10 +65,10 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
 - **`ApFichier`** — 187 lignes  
   --- Le fichier
 - **`Communication`** — 165 lignes
+- **`SuggestionsAdmin`** — 144 lignes  
+  --- Suggestions, côté direction
 - **`ApContact`** — 143 lignes  
   --- Le détail d'un contact
-- **`SuggestionsAdmin`** — 141 lignes  
-  --- Suggestions, côté direction
 - **`Interims`** — 140 lignes
 - **`VitrineBlocs`** — 135 lignes
 - **`Suggestion`** — 129 lignes
@@ -98,6 +98,8 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
   --- Porter au cabinet, depuis n'importe où
 - **`Recueil`** — 51 lignes  
   --- Le recueil, application ouverte à tous
+- **`ReglagesVisibilite`** *(interne)* — 47 lignes  
+  Paramètres administrateur : quelles catégories de poste voient les noms dans « Mon périmètre ».
 - **`CabinetRemontees`** — 42 lignes  
   --- Les remontées du réseau
 - **`Habilitations`** — 41 lignes  
@@ -228,7 +230,7 @@ Fonctions SQL appelées : `avancement`, `bareme_echelons`, `chancellerie_synthes
 
 ## `js/membre.js`
 
-*2620 lignes · 28 composants*
+*2627 lignes · 28 composants*
 
 - **`MonDossier`** — 292 lignes  
   --- Ce que voit un membre : bandeau, ou page entière si suspendu
@@ -248,11 +250,11 @@ Fonctions SQL appelées : `avancement`, `bareme_echelons`, `chancellerie_synthes
   LE BILAN DE L'ANNÉE « Mon engagement » listait sans totaliser.
 - **`MesDemandes`** — 88 lignes
 - **`MesCreneaux`** — 80 lignes
+- **`Annuaire`** — 71 lignes
 - **`CarteAdherent`** — 69 lignes
 - **`MonRib`** — 65 lignes
 - **`MesVirements`** — 65 lignes  
   --- Assistance : signaler, proposer
-- **`Annuaire`** — 64 lignes
 - **`ProfilInterne`** — 64 lignes  
   Ce que la fédération montre d'un membre à un autre.
 - **`PrendreRendezVous`** — 60 lignes
@@ -274,7 +276,7 @@ Fonctions SQL appelées : `avancement`, `bareme_echelons`, `chancellerie_synthes
   --- Dossier incomplet : on ne va pas plus loin Ni un mur ni une fenêtre qu'on referme : la page qui suit la connexion, tant qu'il manque l'essentiel.
 - **`FilDossier`** — 19 lignes
 
-Fonctions SQL appelées : `accuser_reception`, `accuser_virement`, `annuler_creneau`, `bilans_a_rediger`, `checklist_ouverture`, `completude_dossier`, `creer_mission`, `creneaux_disponibles`, `deposer_recours`, `enregistrer_adhesion`, `enregistrer_rib`, `fiche_membre`, `ma_carte`, `ma_chaine`, `mes_alertes_parcours`, `mes_distinctions`, `mes_droits`, `mes_interims`, `mes_invitations_groupe`, `mes_rendez_vous`, `mes_virements_a_confirmer`, `missions_ouvertes`, `mon_adhesion`, `mon_dossier`, `mon_engagement`, `mon_rib`, `passeport`, `poser_creneaux`, `postuler_mission`, `profil_interne`, `qui_ma_consulte`, `rediger_bilan`, `regenerer_jeton_carte`, `regler_engagement`, `renoncer_gracieux`, `repondre_alerte_parcours`, `reserver_creneau`, `verser_piece`
+Fonctions SQL appelées : `accuser_reception`, `accuser_virement`, `annuler_creneau`, `bilans_a_rediger`, `checklist_ouverture`, `completude_dossier`, `creer_mission`, `creneaux_disponibles`, `deposer_recours`, `enregistrer_adhesion`, `enregistrer_rib`, `fiche_membre`, `ma_carte`, `ma_chaine`, `mes_alertes_parcours`, `mes_distinctions`, `mes_droits`, `mes_interims`, `mes_invitations_groupe`, `mes_rendez_vous`, `mes_virements_a_confirmer`, `missions_ouvertes`, `mon_adhesion`, `mon_dossier`, `mon_engagement`, `mon_perimetre`, `mon_rib`, `passeport`, `poser_creneaux`, `postuler_mission`, `profil_interne`, `qui_ma_consulte`, `rediger_bilan`, `regenerer_jeton_carte`, `regler_engagement`, `renoncer_gracieux`, `repondre_alerte_parcours`, `reserver_creneau`, `verser_piece`
 
 ## `js/socle.js`
 
