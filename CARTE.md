@@ -13,13 +13,13 @@
 | `js/evenements.js` | 844 | 8 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
 | `js/finances.js` | 2841 | 18 |  |
 | `js/formation.js` | 1230 | 9 |  |
-| `js/membre.js` | 2627 | 28 |  |
+| `js/membre.js` | 2685 | 29 |  |
 | `js/socle.js` | 514 | 6 |  |
 | `js/statutaire.js` | 1802 | 11 |  |
 | `js/structure.js` | 2165 | 20 |  |
 | `js/vitrine.js` | 647 | 17 | Tout ce qui se voit sans compte : accueil, présentation de la fédération, actions, réseau, actualités, pages de texte, adhésion, connexion et inscription. |
 
-**Total : 18595 lignes d'interface.**
+**Total : 18653 lignes d'interface.**
 
 ---
 
@@ -230,7 +230,7 @@ Fonctions SQL appelées : `avancement`, `bareme_echelons`, `chancellerie_synthes
 
 ## `js/membre.js`
 
-*2627 lignes · 28 composants*
+*2685 lignes · 29 composants*
 
 - **`MonDossier`** — 292 lignes  
   --- Ce que voit un membre : bandeau, ou page entière si suspendu
@@ -244,13 +244,13 @@ Fonctions SQL appelées : `avancement`, `bareme_echelons`, `chancellerie_synthes
 - **`Passeport`** — 121 lignes
 - **`CurseurEngagement`** — 95 lignes  
   --- Le référentiel, ouvert à tous
+- **`MesDemandes`** — 94 lignes
 - **`BilansMission`** — 92 lignes  
   --- Bilans de mission à rédiger
 - **`BilanAnnee`** — 90 lignes  
   LE BILAN DE L'ANNÉE « Mon engagement » listait sans totaliser.
-- **`MesDemandes`** — 88 lignes
 - **`MesCreneaux`** — 80 lignes
-- **`Annuaire`** — 71 lignes
+- **`Annuaire`** — 76 lignes
 - **`CarteAdherent`** — 69 lignes
 - **`MonRib`** — 65 lignes
 - **`MesVirements`** — 65 lignes  
@@ -264,6 +264,8 @@ Fonctions SQL appelées : `avancement`, `bareme_echelons`, `chancellerie_synthes
   --- Le tunnel : chaque marche perdue se voit
 - **`MonPortrait`** — 53 lignes  
   --- Mon portrait Deux mégaoctets, dépôt privé, dossier nommé par l'identifiant : nul ne peut déposer chez un autre.
+- **`ReglagesAffichage`** *(interne)* — 47 lignes  
+  Réglage admin, à même l'écran : quelles catégories de poste voient les noms dans « Mon périmètre ».
 - **`FicheOuverture`** — 47 lignes  
   LA FICHE D'OUVERTURE « Comment tout lui débloquer, et rien de plus.
 - **`ApercuAdhesion`** — 42 lignes  
