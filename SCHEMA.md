@@ -1,10 +1,10 @@
 # FFCE — Abrégé du schéma en vigueur
 
-> Généré par `schema.py` à partir des 49 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
+> Généré par `schema.py` à partir des 50 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
 
 > Ce fichier remplace le recueil des migrations pour écrire du code. N'ouvrir le recueil que pour comprendre le *pourquoi* d'une règle.
 
-**114 tables · 400 fonctions · 49 droits · 17 applications**
+**115 tables · 401 fonctions · 49 droits · 17 applications**
 
 ---
 
@@ -37,6 +37,8 @@
 **`bareme_points`** — `cle`, `libelle`, `points`, `unite`, `actif`, `ordre`, `maj_par`, `maj_le`
 
 **`bilans_mission`** — `id`, `mission_id`, `profil_id`, `heures`, `realise`, `competences`, `appreciation`, `merite`, `redige_par`, `cree_le`
+
+**`blocs_visibilite`** — `bloc`, `fonction`, `visible`, `note`, `maj_par`, `maj_le`
 
 **`blocs_vitrine`** — `id`, `page`, `type`, `titre`, `contenu`, `image`, `lien`, `lien_texte`, `ordre`, `publie`, `maj_par`, `maj_le`, `cree_le`
 
@@ -823,6 +825,10 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`mon_engagement()`** → `jsonb` · sql · 36_notes_engagement.sql
 
 **`mon_niveau()`** → `integer` · sql · 01_socle.sql
+
+**`mon_perimetre()`** → `table( id uuid, nom text, prenom text, matricule text, fonct` · sql · 50_masquage_perimetre.sql
+  
+  colonnes : `id`, `nom`, `prenom`, `matricule`, `fonction_nom`, `territoire_nom`, `echelon`, `statut`, `niveau`
 
 **`mon_plafond_nomination()`** → `integer` · sql · 31_nominations.sql
 
