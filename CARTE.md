@@ -16,10 +16,10 @@
 | `js/membre.js` | 2685 | 29 |  |
 | `js/socle.js` | 518 | 6 |  |
 | `js/statutaire.js` | 1802 | 11 |  |
-| `js/structure.js` | 2165 | 20 |  |
+| `js/structure.js` | 2167 | 20 |  |
 | `js/vitrine.js` | 647 | 17 | Tout ce qui se voit sans compte : accueil, présentation de la fédération, actions, réseau, actualités, pages de texte, adhésion, connexion et inscription. |
 
-**Total : 18978 lignes d'interface.**
+**Total : 18980 lignes d'interface.**
 
 ---
 
@@ -327,7 +327,7 @@ Fonctions SQL appelées : `appel_public`, `archives_electorales`, `changer_phase
 
 ## `js/structure.js`
 
-*2165 lignes · 20 composants*
+*2167 lignes · 20 composants*
 
 - **`MonComite`** — 182 lignes  
   --- Prendre rendez-vous, côté nouvel adhérent
@@ -354,7 +354,7 @@ Fonctions SQL appelées : `appel_public`, `archives_electorales`, `changer_phase
 - **`BordLocal`** — 72 lignes  
   --- Local : quatre choses, pas une de plus
 - **`RepartirNouveaux`** — 71 lignes
-- **`GestionLocale`** — 67 lignes  
+- **`GestionLocale`** — 69 lignes  
   Voir avant de décider.
 - **`BordTunnel`** — 64 lignes
 - **`Organigramme`** — 44 lignes  
