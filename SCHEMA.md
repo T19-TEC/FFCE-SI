@@ -1,10 +1,10 @@
 # FFCE — Abrégé du schéma en vigueur
 
-> Généré par `schema.py` à partir des 51 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
+> Généré par `schema.py` à partir des 52 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
 
 > Ce fichier remplace le recueil des migrations pour écrire du code. N'ouvrir le recueil que pour comprendre le *pourquoi* d'une règle.
 
-**116 tables · 407 fonctions · 49 droits · 17 applications**
+**117 tables · 407 fonctions · 49 droits · 17 applications**
 
 ---
 
@@ -37,6 +37,8 @@
 **`bareme_points`** — `cle`, `libelle`, `points`, `unite`, `actif`, `ordre`, `maj_par`, `maj_le`
 
 **`bilans_mission`** — `id`, `mission_id`, `profil_id`, `heures`, `realise`, `competences`, `appreciation`, `merite`, `redige_par`, `cree_le`
+
+**`blocs_definis`** — `bloc`, `libelle`, `description`, `cree_le`
 
 **`blocs_visibilite`** — `bloc`, `fonction`, `visible`, `note`, `maj_par`, `maj_le`
 
