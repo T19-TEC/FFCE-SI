@@ -1,10 +1,10 @@
 # FFCE — Abrégé du schéma en vigueur
 
-> Généré par `schema.py` à partir des 52 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
+> Généré par `schema.py` à partir des 53 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
 
 > Ce fichier remplace le recueil des migrations pour écrire du code. N'ouvrir le recueil que pour comprendre le *pourquoi* d'une règle.
 
-**117 tables · 407 fonctions · 49 droits · 17 applications**
+**117 tables · 408 fonctions · 49 droits · 17 applications**
 
 ---
 
@@ -979,6 +979,10 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`projets_a_soutenir(p_filtre text default 'tous')`** → `table (id uuid, reference text, titre text, objet text, terr` · sql · 40_enveloppes.sql
   
   colonnes : `id`, `reference`, `titre`, `objet`, `territoire`, `statut`, `debut`, `budget_estime`, `responsable`, `points_recus`
+
+**`projets_a_venir()`** → `table( id uuid, titre text, objet text, lieu text, debut dat` · sql · 54_projets_a_venir.sql
+  
+  colonnes : `id`, `titre`, `objet`, `lieu`, `debut`, `fin`, `statut`, `avancement`, `territoire_nom`
 
 **`promouvoir(p_profil uuid, p_echelon integer, p_motif text)`** → `jsonb` · plpgsql · 16_garde_chancellerie.sql
 
