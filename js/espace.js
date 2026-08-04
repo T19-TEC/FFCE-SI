@@ -155,6 +155,8 @@ export function TableauDeBord({ p, apps, chemin, demandes, attentes }){
         <a class="btn light" href="#/espace/demandes">Guichet des demandes</a>
       </div>
 
+      <${MesTaches} p=${p} />
+
       <${Assistance} p=${p} />
 
       <${CarteAdherent} />
@@ -510,6 +512,83 @@ export function Matrice({ setMsg }){
     </div>`;
 }
 
+
+/* Les tâches que la présidence a confiées, vues par la personne qui les
+   reçoit. Ne s'affiche que s'il y a quelque chose à voir — pas de
+   panneau vide en permanence. */
+export function MesTaches({ p }){
+  const [taches, setTaches] = useState(null);
+  const [gens, setGens] = useState(null);
+  const [enCours, setEnCours] = useState(null);
+  const [msg, setMsg] = useState('');
+
+  const charger = useCallback(async () => {
+    const { data } = await db.rpc('mes_taches');
+    setTaches(data || []);
+  }, []);
+  useEffect(() => { charger(); }, [charger]);
+
+  async function chargerGens(){
+    if (gens) return;
+    const { data } = await db.from('v_annuaire')
+      .select('id,prenom,nom,fonction_nom,territoire_nom')
+      .eq('statut','actif').order('nom');
+    setGens(data || []);
+  }
+
+  async function terminer(t){
+    const { data, error } = await db.rpc('terminer_tache', { p_tache: t.id });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    charger();
+  }
+
+  async function deleguer(t, a){
+    if (!a) return;
+    const { data, error } = await db.rpc('deleguer_tache', { p_tache: t.id, p_a: a });
+    if (error) return setMsg('Erreur : ' + error.message);
+    if (!data.ok) return setMsg('Erreur : ' + data.message);
+    setEnCours(null);
+    setMsg('Tâche déléguée.'); charger();
+  }
+
+  if (!taches || taches.filter(t => t.statut === 'en_cours').length === 0) return null;
+  const actives = taches.filter(t => t.statut === 'en_cours');
+
+  return html`
+    <div class="panneau" style="margin-bottom:24px">
+      <div class="tete"><h3 style="font-size:17px">Confié par la présidence</h3>
+        <span class="tag or">${actives.length}</span></div>
+      ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
+        style="margin:0 20px 16px">${msg}</div>`}
+      ${actives.map(t => html`
+        <div class="ligne" key=${t.id} style="align-items:flex-start">
+          <div style="flex:1;min-width:220px">
+            <div style="font-weight:600">${t.titre}</div>
+            <div class="small muted" style="margin-top:3px">
+              Confiée par ${t.assigne_par_nom || 'la présidence'}
+              ${t.delegue_de_nom ? ', déléguée par ' + t.delegue_de_nom : ''}
+              ${t.echeance ? ' · échéance ' + jour(t.echeance) : ''}
+            </div>
+            ${t.description && html`
+              <div class="small" style="margin-top:6px;white-space:pre-wrap">${t.description}</div>`}
+          </div>
+          <div class="row" style="gap:6px;flex-wrap:wrap">
+            <button class="btn sm" onClick=${()=>terminer(t)}>Marquer faite</button>
+            <button class="btn sm light" onClick=${()=>{chargerGens(); setEnCours(enCours===t.id?null:t.id);}}>
+              Déléguer</button>
+          </div>
+          ${enCours === t.id && html`
+            <div style="width:100%;margin-top:10px">
+              <select onChange=${e=>deleguer(t, e.target.value)}>
+                <option value="">— À qui déléguer —</option>
+                ${(gens||[]).filter(g=>g.id!==p.id).map(g => html`
+                  <option value=${g.id}>${nomComplet(g)} · ${g.fonction_nom}</option>`)}
+              </select>
+            </div>`}
+        </div>`)}
+    </div>`;
+}
 
 export function Assistance({ p }){
   const [ouvert, setOuvert] = useState(false);
