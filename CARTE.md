@@ -8,18 +8,18 @@
 |---|---|---|---|
 | `js/app.js` | 11 | 0 | FFCE — Point d'entrée Le navigateur charge ce module ; les autres suivent par leurs imports. |
 | `js/collectif.js` | 1325 | 11 |  |
-| `js/direction.js` | 3467 | 33 |  |
-| `js/espace.js` | 1076 | 11 | La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits. |
+| `js/direction.js` | 3701 | 35 |  |
+| `js/espace.js` | 1155 | 12 | La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits. |
 | `js/evenements.js` | 844 | 8 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
 | `js/finances.js` | 2841 | 18 |  |
 | `js/formation.js` | 1230 | 9 |  |
 | `js/membre.js` | 2685 | 29 |  |
-| `js/socle.js` | 514 | 6 |  |
+| `js/socle.js` | 518 | 6 |  |
 | `js/statutaire.js` | 1802 | 11 |  |
 | `js/structure.js` | 2165 | 20 |  |
 | `js/vitrine.js` | 647 | 17 | Tout ce qui se voit sans compte : accueil, présentation de la fédération, actions, réseau, actualités, pages de texte, adhésion, connexion et inscription. |
 
-**Total : 18607 lignes d'interface.**
+**Total : 18924 lignes d'interface.**
 
 ---
 
@@ -55,7 +55,7 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
 
 ## `js/direction.js`
 
-*3467 lignes · 33 composants*
+*3701 lignes · 35 composants*
 
 - **`Validation`** — 342 lignes  
   Paramètres administrateur : quelles catégories de poste voient les noms dans « Mon périmètre ».
@@ -82,10 +82,16 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
 - **`Postes`** — 108 lignes
 - **`ApProspection`** — 108 lignes  
   --- La prospection
+- **`AdministrateurReseau`** — 105 lignes  
+  --- Administrateur réseau : configurer sans passer par le code
+- **`CabinetTaches`** — 103 lignes  
+  --- Les tâches confiées par la présidence
 - **`AffairesPubliques`** — 88 lignes
 - **`Publier`** — 83 lignes  
   --- Suivi des virements, côté direction financière
-- **`Cabinet`** — 72 lignes
+- **`Cabinet`** — 75 lignes
+- **`VersLeCabinet`** — 75 lignes  
+  --- Porter au cabinet, depuis n'importe où
 - **`ListeMembres`** — 67 lignes  
   --- Liste des membres, une seule porte d'entrée
 - **`RecueilListe`** — 61 lignes  
@@ -95,8 +101,6 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
 - **`Campagnes`** — 59 lignes
 - **`CabinetEtat`** — 57 lignes  
   --- L'état de la fédération, vu d'en haut
-- **`VersLeCabinet`** — 52 lignes  
-  --- Porter au cabinet, depuis n'importe où
 - **`Recueil`** — 51 lignes  
   --- Le recueil, application ouverte à tous
 - **`CabinetRemontees`** — 42 lignes  
@@ -113,13 +117,13 @@ Fonctions SQL appelées : `candidatures_groupe`, `conversation_groupe`, `convers
 - **`EnAttente`** — 21 lignes  
   --- Coquille de l'espace membre
 
-Fonctions SQL appelées : `acces_complets`, `accorder_acces`, `actes_a_controler`, `alertes_consultation`, `calendrier_com`, `clore_interim`, `clore_signalement`, `confier_interim`, `confier_signalement`, `controler_acte`, `creer_suggestion`, `declarer_reprise`, `enregistrer_article`, `fiche_admin`, `flecher_vers_cabinet`, `liste_directions`, `marquer_alerte_vue`, `mes_interims`, `modifier_membre`, `nommer`, `ouvrir_dossier`, `postes_non_conformes`, `puis_je_lire_journal_pieces`, `puis_je_signer_acte`, `recueil_actes`, `registre_adhesions`, `regler_application`, `remontees_du_cabinet`, `repondre_interim`, `revoquer`, `revoquer_acces`, `signalements_a_traiter`, `sollicitations_ap_a_traiter`, `soumettre_publication`, `statuer_publication`, `suggestions_disponibles`, `suivi_suggestions`, `tableau_ap`, `tableau_cabinet`, `texte_acte`, `tracer_export`, `v_contacts`, `valider_inscription`
+Fonctions SQL appelées : `acces_complets`, `accorder_acces`, `actes_a_controler`, `alertes_consultation`, `annuler_tache`, `assigner_tache`, `calendrier_com`, `clore_interim`, `clore_signalement`, `confier_interim`, `confier_signalement`, `controler_acte`, `creer_suggestion`, `declarer_reprise`, `enregistrer_article`, `fiche_admin`, `flecher_vers_cabinet`, `liste_directions`, `marquer_alerte_vue`, `mes_interims`, `modifier_membre`, `nommer`, `ouvrir_dossier`, `postes_non_conformes`, `puis_je_lire_journal_pieces`, `puis_je_signer_acte`, `recueil_actes`, `registre_adhesions`, `regler_application`, `remontees_du_cabinet`, `repondre_interim`, `revoquer`, `revoquer_acces`, `signalements_a_traiter`, `sollicitations_ap_a_traiter`, `soumettre_publication`, `statuer_publication`, `suggestions_disponibles`, `suivi_suggestions`, `tableau_ap`, `tableau_cabinet`, `taches_que_jai_confiees`, `texte_acte`, `tracer_export`, `v_contacts`, `valider_inscription`
 
 ## `js/espace.js`
 
 La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits.
 
-*1076 lignes · 11 composants*
+*1155 lignes · 12 composants*
 
 - **`Espace`** — 195 lignes
 - **`Assistance`** — 178 lignes
@@ -127,11 +131,13 @@ La charpente de l'intranet : le menu latéral, le routeur des applications, le t
   --- L'application Discipline
 - **`AssistanceAdmin`** — 111 lignes  
   --- Assistance, côté pilotage
-- **`TableauDeBord`** — 99 lignes
+- **`TableauDeBord`** — 101 lignes
+- **`Matrice`** — 83 lignes  
+  --- La matrice des accès, côté pilotage
 - **`Flanc`** — 82 lignes  
   --- Menu latéral Le menu suit l'organigramme, pas la liste des tables.
-- **`Matrice`** — 80 lignes  
-  --- La matrice des accès, côté pilotage
+- **`MesTaches`** — 74 lignes  
+  Les tâches que la présidence a confiées, vues par la personne qui les reçoit.
 - **`FilActualite`** — 65 lignes  
   --- Intérim
 - **`EspaceSuspendu`** — 51 lignes
@@ -140,7 +146,7 @@ La charpente de l'intranet : le menu latéral, le routeur des applications, le t
 - **`Delegations`** — 15 lignes  
   --- Mes délégations en cours Agir au nom d'un autre doit toujours se voir.
 
-Fonctions SQL appelées : `ce_qui_attend`, `chemin_territoire`, `completude_bloquante`, `fil_actualite`, `fil_ticket`, `liste_tickets`, `matrice_acces`, `mes_applications`, `mes_delegations`, `mes_directions`, `mes_droits`, `mes_postes`, `ouvrir_ticket`, `referentiel`, `regler_matrice`, `repondre_ticket`, `tracer_acces`, `traiter_ticket`
+Fonctions SQL appelées : `ce_qui_attend`, `chemin_territoire`, `completude_bloquante`, `deleguer_tache`, `fil_actualite`, `fil_ticket`, `liste_tickets`, `matrice_acces`, `mes_applications`, `mes_delegations`, `mes_directions`, `mes_droits`, `mes_postes`, `mes_taches`, `ouvrir_ticket`, `referentiel`, `regler_matrice`, `repondre_ticket`, `terminer_tache`, `tracer_acces`, `traiter_ticket`
 
 ## `js/evenements.js`
 
@@ -281,7 +287,7 @@ Fonctions SQL appelées : `accuser_reception`, `accuser_virement`, `annuler_cren
 
 ## `js/socle.js`
 
-*514 lignes · 6 composants*
+*518 lignes · 6 composants*
 
 - **`Progression`** — 58 lignes
 - **`Logo`** — 25 lignes  
