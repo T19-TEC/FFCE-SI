@@ -2,11 +2,10 @@ import { h, render } from 'https://esm.sh/preact@10.19.3';
 import { useState, useEffect, useCallback, useRef } from 'https://esm.sh/preact@10.19.3/hooks';
 import htm from 'https://esm.sh/htm@3.1.1';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
-import jsQR from 'https://esm.sh/jsqr@1.4.0';
 
 // Réexportés pour que les autres modules n'aient pas à connaître
 // l'adresse d'esm.sh : la version de Preact se change ici seulement.
-export { h, render, useState, useEffect, useCallback, useRef, createClient, jsQR };
+export { h, render, useState, useEffect, useCallback, useRef, createClient };
 
 
 export const html = htm.bind(h);
