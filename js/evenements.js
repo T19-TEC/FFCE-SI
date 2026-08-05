@@ -11,8 +11,14 @@
    · un double passage est signalé, pas refusé. Une porte qui refuse
      sans expliquer crée une file et un conflit.
    ===================================================================== */
-import { html, db, useState, useEffect, useCallback, useRef, jour, nomComplet, jsQR } from './socle.js';
+import { html, db, useState, useEffect, useCallback, useRef, jour, nomComplet } from './socle.js';
 import { qrMatrice } from './membre.js';
+
+let jsQRCharge = null;
+async function chargerJsQR(){
+  if (!jsQRCharge) jsQRCharge = import('https://esm.sh/jsqr@1.4.0').then(m => m.default);
+  return jsQRCharge;
+}
 
 const NATURE_EV = { rencontre:'Rencontre', forum:'Forum', formation:'Formation',
   assises:'Assises', ceremonie:'Cérémonie', repas:'Repas', sortie:'Sortie',
@@ -598,28 +604,29 @@ function ScannerCamera({ onLecture, actif }){
 
     async function demarrer(){
       try {
+        const decoder = await chargerJsQR();
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' } });
         if (annule){ stream.getTracks().forEach(t=>t.stop()); return; }
         streamRef.current = stream;
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
-        boucle();
+        boucle(decoder);
       } catch (e){
         setErreur('Caméra indisponible : ' + (e.message || 'accès refusé.'));
       }
     }
 
-    function boucle(){
+    function boucle(decoder){
       const v = videoRef.current, c = canvasRef.current;
       if (!v || !c || v.readyState !== v.HAVE_ENOUGH_DATA){
-        boucleRef.current = requestAnimationFrame(boucle); return;
+        boucleRef.current = requestAnimationFrame(()=>boucle(decoder)); return;
       }
       c.width = v.videoWidth; c.height = v.videoHeight;
       const ctx = c.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(v, 0, 0, c.width, c.height);
       const img = ctx.getImageData(0, 0, c.width, c.height);
-      const lu = jsQR(img.data, c.width, c.height);
+      const lu = decoder(img.data, c.width, c.height);
       if (lu && lu.data){
         const maintenant = Date.now();
         if (lu.data !== dernierRef.current.code || maintenant - dernierRef.current.quand > 3000){
@@ -627,7 +634,7 @@ function ScannerCamera({ onLecture, actif }){
           onLecture(lu.data);
         }
       }
-      boucleRef.current = requestAnimationFrame(boucle);
+      boucleRef.current = requestAnimationFrame(()=>boucle(decoder));
     }
 
     demarrer();
