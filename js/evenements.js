@@ -11,7 +11,7 @@
    · un double passage est signalé, pas refusé. Une porte qui refuse
      sans expliquer crée une file et un conflit.
    ===================================================================== */
-import { html, db, useState, useEffect, useCallback, useRef, jour, nomComplet } from './socle.js';
+import { html, db, useState, useEffect, useCallback, jour, nomComplet } from './socle.js';
 import { qrMatrice } from './membre.js';
 
 let jsQRCharge = null;
@@ -591,11 +591,14 @@ function ListeInscrits({ id, inscrits, appel, niveaux, titre, setMsg }){
    décodage se fait entièrement dans le navigateur — l'image ne
    quitte jamais l'appareil de la personne qui contrôle. */
 function ScannerCamera({ onLecture, actif }){
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const streamRef = useRef(null);
-  const boucleRef = useRef(null);
-  const dernierRef = useRef({ code:'', quand:0 });
+  // Pas de useRef ici : le stub de vérification du dépôt ne le connaît
+  // pas encore (voir verifier_modules.py), et on ne touche pas aux
+  // fichiers de contrôle. `useState` avec initialisation paresseuse
+  // donne exactement la même garantie — un objet stable, jamais
+  // remplacé puisque son "setter" n'est jamais appelé (voir plus bas).
+  // Si useRef est ajouté au stub un jour, ce commentaire n'a plus lieu
+  // d'être et on peut basculer sans risque.
+  const [r] = useState(() => ({ dernier: { code:'', quand:0 } }));
   const [erreur, setErreur] = useState('');
 
   useEffect(() => {
@@ -608,9 +611,9 @@ function ScannerCamera({ onLecture, actif }){
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' } });
         if (annule){ stream.getTracks().forEach(t=>t.stop()); return; }
-        streamRef.current = stream;
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        r.stream = stream;
+        r.video.srcObject = stream;
+        await r.video.play();
         boucle(decoder);
       } catch (e){
         setErreur('Caméra indisponible : ' + (e.message || 'accès refusé.'));
@@ -618,9 +621,9 @@ function ScannerCamera({ onLecture, actif }){
     }
 
     function boucle(decoder){
-      const v = videoRef.current, c = canvasRef.current;
+      const v = r.video, c = r.canvas;
       if (!v || !c || v.readyState !== v.HAVE_ENOUGH_DATA){
-        boucleRef.current = requestAnimationFrame(()=>boucle(decoder)); return;
+        r.boucle = requestAnimationFrame(()=>boucle(decoder)); return;
       }
       c.width = v.videoWidth; c.height = v.videoHeight;
       const ctx = c.getContext('2d', { willReadFrequently: true });
@@ -629,19 +632,19 @@ function ScannerCamera({ onLecture, actif }){
       const lu = decoder(img.data, c.width, c.height);
       if (lu && lu.data){
         const maintenant = Date.now();
-        if (lu.data !== dernierRef.current.code || maintenant - dernierRef.current.quand > 3000){
-          dernierRef.current = { code: lu.data, quand: maintenant };
+        if (lu.data !== r.dernier.code || maintenant - r.dernier.quand > 3000){
+          r.dernier = { code: lu.data, quand: maintenant };
           onLecture(lu.data);
         }
       }
-      boucleRef.current = requestAnimationFrame(()=>boucle(decoder));
+      r.boucle = requestAnimationFrame(()=>boucle(decoder));
     }
 
     demarrer();
     return () => {
       annule = true;
-      if (boucleRef.current) cancelAnimationFrame(boucleRef.current);
-      if (streamRef.current) streamRef.current.getTracks().forEach(t=>t.stop());
+      if (r.boucle) cancelAnimationFrame(r.boucle);
+      if (r.stream) r.stream.getTracks().forEach(t=>t.stop());
     };
   }, [actif]);
 
@@ -654,8 +657,8 @@ function ScannerCamera({ onLecture, actif }){
   return html`
     <div style="margin-top:10px;border-radius:8px;overflow:hidden;
       background:#000;max-width:360px">
-      <video ref=${videoRef} playsInline muted style="width:100%;display:block" />
-      <canvas ref=${canvasRef} style="display:none" />
+      <video ref=${el=>r.video=el} playsInline muted style="width:100%;display:block" />
+      <canvas ref=${el=>r.canvas=el} style="display:none" />
     </div>`;
 }
 
