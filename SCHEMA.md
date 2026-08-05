@@ -1,10 +1,10 @@
 # FFCE — Abrégé du schéma en vigueur
 
-> Généré par `schema.py` à partir des 53 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
+> Généré par `schema.py` à partir des 54 migrations. **Ne pas modifier à la main.** Régénérer après chaque migration.
 
 > Ce fichier remplace le recueil des migrations pour écrire du code. N'ouvrir le recueil que pour comprendre le *pourquoi* d'une règle.
 
-**117 tables · 408 fonctions · 49 droits · 17 applications**
+**118 tables · 415 fonctions · 49 droits · 17 applications**
 
 ---
 
@@ -112,9 +112,9 @@
 
 **`entrees_evenement`** — `id`, `inscription_id`, `categorie`, `scanne_le`, `scanne_par`
 
-**`evenement_categories`** — `id`, `evenement_id`, `code`, `nom`, `description`, `capacite`, `horaire`, `externe_admis`, `ordre`
+**`evenement_categories`** — `id`, `evenement_id`, `code`, `nom`, `description`, `capacite`, `horaire`, `externe_admis`, `ordre`, `couleur`, `actif`
 
-**`evenements`** — `id`, `reference`, `titre`, `objet`, `nature`, `ouverture`, `territoire_id`, `groupe_id`, `partenaire_id`, `organisateur_id`, `lieu`, `adresse`, `debut`, `fin`, `capacite`, `validation_requise`, `cloture_inscriptions`, `statut`, `motif_annulation`, `jeton_public`, `conservation_jours`, `cree_le`
+**`evenements`** — `id`, `reference`, `titre`, `objet`, `nature`, `ouverture`, `territoire_id`, `groupe_id`, `partenaire_id`, `organisateur_id`, `lieu`, `adresse`, `debut`, `fin`, `capacite`, `validation_requise`, `cloture_inscriptions`, `statut`, `motif_annulation`, `jeton_public`, `conservation_jours`, `cree_le`, `avance`
 
 **`exercices`** — `id`, `annee`, `territoire_id`, `debut`, `fin`, `statut`, `vote_le`, `arrete_le`, `arrete_par`, `observations`, `taux_benevolat`, `cree_le`
 
@@ -163,6 +163,8 @@
 **`modules`** — `id`, `formation_id`, `titre`, `resume`, `ordre`
 
 **`nf_lignes`** — `id`, `note_id`, `date_depense`, `categorie`, `description`, `montant`, `kilometres`, `justificatif`, `cree_le`, `etat`, `observation`
+
+**`niveaux_accreditation`** — `id`, `evenement_id`, `nom`, `couleur`, `categories`, `ordre`, `cree_le`
 
 **`nominations`** — `id`, `profil_id`, `poste`, `territoire_id`, `debut`, `fin`, `motif`, `nomme_par`, `revoque_le`, `revoque_par`, `motif_revocation`, `cree_le`
 
@@ -349,6 +351,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
   colonnes : `assemblee_id`, `reference`, `titre`, `type`, `territoire`, `date_tenue`, `proclame_le`, `inscrits`, `votants`, `participation`, `proces_verbal`, `pv_fichier`, `elus`, `jai_participe`
 
 **`article(p_slug text)`** → `jsonb` · sql · 14_migration.sql
+
+**`assigner_niveau(p_inscription uuid, p_niveau uuid)`** → `jsonb` · plpgsql · 55_multi_entrees.sql
 
 **`assigner_tache(p_assigne_a uuid, p_titre text, p_description text default null, p_echeance date default null)`** → `jsonb` · plpgsql · 51_taches_et_remontees.sql
 
@@ -924,6 +928,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 
 **`payer_note(p_note uuid, p_reference text)`** → `jsonb` · plpgsql · 09_finances.sql
 
+**`peut_regler_evenement(p_evenement uuid)`** → `boolean` · sql · 55_multi_entrees.sql
+
 **`peut_superviser(p_conv uuid)`** → `boolean` · sql · 05_messagerie_correctifs.sql
 
 **`pieces_depuis_mon_controle()`** → `integer` · sql · 33_messagerie.sql
@@ -1056,11 +1062,15 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
   
   colonnes : `reference`, `ouvert_le`, `clos_le`, `statut`, `gravite`, `origine`, `objet`, `qualification`, `conclusion`, `concerne`, `matricule`, `territoire`, `fonction`, `ouvert_par`, `mesure_type`, `mesure_motif`, `mesure_statut`, `mesure_effet`, `mesure_fin`, `notifiee_le`, `accusee_le`, `renonce_le`, `recours_statut`, `recours_le`, `recours_decision`, `nb_pieces`, `nb_pieces_non_communicables`
 
+**`regler_actif_categorie(p_categorie uuid, p_actif boolean)`** → `jsonb` · plpgsql · 55_multi_entrees.sql
+
 **`regler_application(p_code text, p_nom text, p_nom_court text, p_description text, p_accroche text, p_couleur text, p_logo text, p_direction text default null, p_direction_locale text default null, p_ordre integer default null)`** → `jsonb` · plpgsql · 30_menu.sql
 
 **`regler_bareme(p_cle text, p_points integer)`** → `jsonb` · plpgsql · 16_garde_chancellerie.sql
 
 **`regler_categorie(d jsonb)`** → `jsonb` · plpgsql · 47_evenements.sql
+
+**`regler_couleur_categorie(p_categorie uuid, p_couleur text)`** → `jsonb` · plpgsql · 55_multi_entrees.sql
 
 **`regler_dotation(p_cle text, p_valeur numeric)`** → `jsonb` · plpgsql · 28_ressources.sql
 
@@ -1073,6 +1083,10 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`regler_ligne_panier(p_ligne uuid, p_quantite integer)`** → `jsonb` · plpgsql · 29_correctifs.sql
 
 **`regler_matrice(p_app text, p_fonction text, p_etat text)`** → `jsonb` · plpgsql · 11_lisibilite_droits.sql
+
+**`regler_niveau(p_evenement uuid, p_id uuid default null, p_nom text default null, p_couleur text default 'bleu', p_categories text[] default '{}', p_ordre integer default 100)`** → `jsonb` · plpgsql · 55_multi_entrees.sql
+
+**`regler_options_avancees(p_evenement uuid, p_avance boolean)`** → `jsonb` · plpgsql · 55_multi_entrees.sql
 
 **`regler_territoire(p_territoire uuid, d jsonb)`** → `jsonb` · plpgsql · 39_gestion_locale.sql
 
@@ -1195,6 +1209,8 @@ Une fonction redéfinie plusieurs fois n'apparaît qu'une : la version en vigueu
 **`supprimer_element(p_table text, p_id uuid)`** → `jsonb` · plpgsql · 26_editeur_formations.sql
 
 **`supprimer_formation(p_id uuid)`** → `jsonb` · plpgsql · 26_editeur_formations.sql
+
+**`supprimer_niveau(p_id uuid, p_evenement uuid)`** → `jsonb` · plpgsql · 55_multi_entrees.sql
 
 **`tableau_ap()`** → `jsonb` · sql · 37_affaires_publiques.sql
 
