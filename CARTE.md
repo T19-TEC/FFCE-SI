@@ -10,7 +10,7 @@
 | `js/collectif.js` | 1325 | 11 |  |
 | `js/direction.js` | 3755 | 35 |  |
 | `js/espace.js` | 1155 | 12 | La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits. |
-| `js/evenements.js` | 844 | 8 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
+| `js/evenements.js` | 1050 | 10 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
 | `js/finances.js` | 2841 | 18 |  |
 | `js/formation.js` | 1230 | 9 |  |
 | `js/membre.js` | 2685 | 29 |  |
@@ -19,7 +19,7 @@
 | `js/structure.js` | 2167 | 20 |  |
 | `js/vitrine.js` | 647 | 17 | Tout ce qui se voit sans compte : accueil, présentation de la fédération, actions, réseau, actualités, pages de texte, adhésion, connexion et inscription. |
 
-**Total : 18980 lignes d'interface.**
+**Total : 19186 lignes d'interface.**
 
 ---
 
@@ -152,25 +152,29 @@ Fonctions SQL appelées : `ce_qui_attend`, `chemin_territoire`, `completude_bloq
 
 Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées.
 
-*844 lignes · 8 composants*
+*1050 lignes · 10 composants*
 
-- **`Evenement`** — 158 lignes  
+- **`Evenement`** — 167 lignes  
   --- Un événement ouvert
+- **`ReglagesEvenement`** *(interne)* — 153 lignes  
+  --- Les réglages
 - **`EvenementPublic`** — 135 lignes  
   --- La page publique d'inscription Elle s'ouvre sans compte.
-- **`ReglagesEvenement`** *(interne)* — 127 lignes  
-  --- Les réglages
-- **`Evenements`** — 99 lignes
+- **`ControleEntrees`** *(interne)* — 111 lignes  
+  --- Le contrôle des entrées Un double passage est signalé avec l'heure du premier, jamais refusé en silence : une porte qui refuse sans expliquer crée une file et un conflit ; une porte qui 
+- **`Evenements`** — 101 lignes
 - **`FormulaireEvenement`** *(interne)* — 98 lignes  
   --- Le formulaire de création
-- **`ListeInscrits`** *(interne)* — 81 lignes  
+- **`ListeInscrits`** *(interne)* — 89 lignes  
   --- La liste des inscrits
-- **`ControleEntrees`** *(interne)* — 75 lignes  
-  --- Le contrôle des entrées Un double passage est signalé avec l'heure du premier, jamais refusé en silence : une porte qui refuse sans expliquer crée une file et un conflit ; une porte qui 
-- **`MonBillet`** *(interne)* — 48 lignes  
+- **`NiveauxAccreditation`** *(interne)* — 69 lignes  
+  --- Niveaux d'accréditation Un raccourci, pas un nouveau pouvoir : assigner un niveau pose en une fois le même tableau de catégories qu'on pourrait cocher une par une.
+- **`MonBillet`** *(interne)* — 61 lignes  
   --- Mon billet Le code présenté à l'entrée.
+- **`AutourDeVous`** *(interne)* — 39 lignes  
+  Ce qui se passe autour de vous : événements et projets à venir, dans un seul fil, pour que la fédération se voie comme un réseau vivant plutôt que comme des écrans séparés.
 
-Fonctions SQL appelées : `controler_entree`, `evenement_public`, `inscription_publique`, `liste_inscrits`, `mes_evenements`, `tableau_evenement`, `v_contacts`
+Fonctions SQL appelées : `controler_entree`, `evenement_public`, `inscription_publique`, `liste_inscrits`, `mes_evenements`, `projets_a_venir`, `tableau_evenement`, `v_contacts`
 
 ## `js/finances.js`
 

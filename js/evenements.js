@@ -22,6 +22,49 @@ const OUVERTURE_EV = { interne:'Réservé aux membres', ouverte:'Ouverte au publ
 const STATUT_EV = { projet:['Projet',''], ouvert:['Inscriptions ouvertes','vert'],
   complet:['Complet','or'], clos:['Clos',''], annule:['Annulé','rouge'] };
 
+/* Ce qui se passe autour de vous : événements et projets à venir, dans
+   un seul fil, pour que la fédération se voie comme un réseau vivant
+   plutôt que comme des écrans séparés. Rien à gérer ici, seulement à
+   regarder — la gestion reste dans les onglets en dessous. */
+function AutourDeVous(){
+  const [evs, setEvs] = useState(null);
+  const [projets, setProjets] = useState(null);
+
+  useEffect(() => {
+    db.rpc('mes_evenements', { p_filtre: 'a_venir' }).then(({data}) => setEvs(data || []));
+    db.rpc('projets_a_venir').then(({data}) => setProjets(data || []));
+  }, []);
+
+  if (evs === null || projets === null) return null;
+
+  const items = [
+    ...evs.map(e => ({ type:'evenement', id:e.id, titre:e.titre,
+      date: e.debut, lieu: e.lieu, sous: NATURE_EV[e.nature] || e.nature })),
+    ...projets.map(p => ({ type:'projet', id:p.id, titre:p.titre,
+      date: p.debut, lieu: p.lieu, sous: p.territoire_nom }))
+  ].filter(i => i.date).sort((a,b) => new Date(a.date) - new Date(b.date));
+
+  if (items.length === 0) return null;
+
+  return html`
+    <div class="panneau" style="margin-bottom:24px">
+      <div class="tete"><h3 style="font-size:17px">Autour de vous</h3></div>
+      <div class="corps" style="display:flex;gap:14px;overflow-x:auto;padding-bottom:4px">
+        ${items.slice(0, 12).map(i => html`
+          <div key=${i.type+i.id} style="min-width:220px;max-width:220px;
+            border:1px solid var(--filet);border-radius:8px;padding:14px">
+            <span class=${'tag ' + (i.type==='evenement' ? 'bleu' : 'vert')}>
+              ${i.type === 'evenement' ? 'Événement' : 'Projet'}</span>
+            <div style="font-weight:600;margin-top:8px">${i.titre}</div>
+            <div class="small muted" style="margin-top:4px">
+              ${i.date ? jour(i.date) : ''}${i.lieu ? ' · ' + i.lieu : ''}
+            </div>
+            ${i.sous && html`<div class="small muted">${i.sous}</div>`}
+          </div>`)}
+      </div>
+    </div>`;
+}
+
 export function Evenements({ p }){
   const [l, setL] = useState([]);
   const [filtre, setFiltre] = useState('a_venir');
@@ -61,6 +104,8 @@ export function Evenements({ p }){
 
       ${msg && html`<div class=${'alerte '+(msg.startsWith('Erreur')?'err':'ok')}
         style="margin-top:20px">${msg}</div>`}
+
+      <${AutourDeVous} />
 
       <div class="row" style="margin:24px 0 20px;gap:8px;flex-wrap:wrap">
         ${[['a_venir','À venir'],['inscrit','Où je suis inscrit'],
@@ -228,6 +273,9 @@ export function Evenement({ p, id, fermer }){
   const [choix, setChoix] = useState([]);
   const [besoin, setBesoin] = useState('');
 
+  const [catsExtra, setCatsExtra] = useState({});
+  const [niveaux, setNiveaux] = useState([]);
+
   const charger = useCallback(async () => {
     const [l, t] = await Promise.all([
       db.rpc('mes_evenements', { p_filtre: 'tous' }),
@@ -236,8 +284,14 @@ export function Evenement({ p, id, fermer }){
     const ev = (l.data || []).find(x => x.id === id) || null;
     setE(ev); setTb(t.data);
     if (ev && ev.je_tiens){
-      const { data } = await db.rpc('liste_inscrits', { p_evenement: id, p_filtre: 'tous' });
-      setInscrits(data || []);
+      const [{data: insc}, {data: ce}, {data: nv}] = await Promise.all([
+        db.rpc('liste_inscrits', { p_evenement: id, p_filtre: 'tous' }),
+        db.from('evenement_categories').select('id,code,couleur,actif').eq('evenement_id', id),
+        db.from('niveaux_accreditation').select('*').eq('evenement_id', id).order('ordre')
+      ]);
+      setInscrits(insc || []);
+      const m = {}; (ce||[]).forEach(x => { m[x.code] = x; });
+      setCatsExtra(m); setNiveaux(nv || []);
     }
   }, [id]);
   useEffect(() => { charger(); }, [charger]);
@@ -362,10 +416,10 @@ export function Evenement({ p, id, fermer }){
 
       ${onglet === 'inscrits' && html`
         <${ListeInscrits} id=${id} inscrits=${inscrits} appel=${appel}
-          titre=${e.titre} setMsg=${setMsg} />`}
+          niveaux=${e.avance ? niveaux : []} titre=${e.titre} setMsg=${setMsg} />`}
 
       ${onglet === 'entrees' && html`
-        <${ControleEntrees} cats=${cats} setMsg=${setMsg} recharger=${charger} />`}
+        <${ControleEntrees} cats=${cats} inscrits=${inscrits} setMsg=${setMsg} recharger=${charger} />`}
 
       ${onglet === 'reglages' && html`
         <${ReglagesEvenement} e=${e} cats=${cats} lienPublic=${lienPublic}
@@ -395,6 +449,17 @@ function MonBillet({ id, statut }){
   const m = qrMatrice(String(b.jeton));
   const N = m.length;
 
+  function telecharger(){
+    const carres = m.map((ligne,y) => ligne.map((v,x) => v
+      ? `<rect x="${x}" y="${y}" width="1" height="1" fill="#1E2A38"/>` : '').join('')).join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${N} ${N}" width="600" height="600">`
+      + `<rect width="${N}" height="${N}" fill="#fff"/>${carres}</svg>`;
+    const url = URL.createObjectURL(new Blob([svg], { type:'image/svg+xml' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'billet-' + b.jeton.slice(-8) + '.svg';
+    a.click(); URL.revokeObjectURL(url);
+  }
+
   return html`
     <div class="panneau" style="margin-top:20px;border-color:var(--vert)">
       <div class="tete" style="border-bottom-color:var(--vert)">
@@ -419,13 +484,15 @@ function MonBillet({ id, statut }){
             Présentez ce code à l\u2019entrée. Il ne couvre que ce qui est listé
             ci-dessus, et ne donne accès à aucune donnée de votre compte.
           </p>
+          <button class="btn sm light" style="margin-top:10px" onClick=${telecharger}>
+            Télécharger le billet</button>
         </div>
       </div>
     </div>`;
 }
 
 /* --- La liste des inscrits ---------------------------------------------- */
-function ListeInscrits({ id, inscrits, appel, titre, setMsg }){
+function ListeInscrits({ id, inscrits, appel, niveaux, titre, setMsg }){
   const [filtre, setFiltre] = useState('tous');
   const liste = inscrits.filter(x =>
     filtre === 'tous' ? true
@@ -484,6 +551,14 @@ function ListeInscrits({ id, inscrits, appel, titre, setMsg }){
                 </div>
                 ${x.besoin && html`<div class="small" style="margin-top:5px;
                   color:var(--laiton)">Besoin : ${x.besoin}</div>`}
+                ${x.statut === 'validee' && niveaux && niveaux.length > 0 && html`
+                <select style="margin-top:6px" onChange=${ev => {
+                  if (ev.target.value) appel('assigner_niveau',
+                    { p_inscription: x.id, p_niveau: ev.target.value }, 'Niveau assigné.');
+                }}>
+                  <option value="">Assigner un niveau…</option>
+                  ${niveaux.map(n => html`<option value=${n.id}>${n.nom}</option>`)}
+                </select>`}
               </div>
               ${x.statut === 'deposee' && html`
                 <div class="row" style="gap:6px">
@@ -506,22 +581,37 @@ function ListeInscrits({ id, inscrits, appel, titre, setMsg }){
    en silence : une porte qui refuse sans expliquer crée une file et un
    conflit ; une porte qui informe laisse l'humain décider.
    --------------------------------------------------------------------- */
-function ControleEntrees({ cats, setMsg, recharger }){
+function ControleEntrees({ cats, inscrits, setMsg, recharger }){
   const [categorie, setCategorie] = useState(cats[0]?.code || 'general');
   const [jeton, setJeton] = useState('');
   const [res, setRes] = useState(null);
   const [journal, setJournal] = useState([]);
+  const [recherche, setRecherche] = useState('');
+  const [parListe, setParListe] = useState(false);
 
-  async function scanner(e){
-    e.preventDefault();
-    if (!jeton.trim()) return;
+  async function controler(jetonComplet){
     const { data, error } = await db.rpc('controler_entree',
-      { p_jeton: jeton.trim(), p_categorie: categorie });
+      { p_jeton: jetonComplet, p_categorie: categorie });
     if (error) return setMsg('Erreur : ' + error.message);
     setRes(data); setJeton('');
     setJournal(j => [{ ...data, quand: new Date(), cat: categorie }, ...j].slice(0, 30));
     if (data.ok && !data.deja) recharger();
   }
+
+  async function scanner(e){
+    e.preventDefault();
+    if (!jeton.trim()) return;
+    controler(jeton.trim());
+  }
+
+  const sansCode = (inscrits||[])
+    .filter(x => x.statut === 'validee')
+    .filter(x => {
+      const q = recherche.trim().toLowerCase();
+      if (!q) return true;
+      return (x.nom||'').toLowerCase().includes(q) || String(x.jeton||'').slice(-4) === q;
+    })
+    .sort((a,b) => (a.nom||'').localeCompare(b.nom||''));
 
   const teinte = !res ? '' : !res.ok ? 'err' : res.deja ? '' : 'ok';
 
@@ -542,6 +632,27 @@ function ControleEntrees({ cats, setMsg, recharger }){
               onInput=${e=>setJeton(e.target.value)} />
             <button class="btn">Contrôler</button>
           </form>
+
+          <button class="btn sm light" style="align-self:flex-start"
+            onClick=${()=>setParListe(!parListe)}>
+            ${parListe ? 'Revenir au scan' : 'Pas de code ? Chercher dans la liste'}</button>
+
+          ${parListe && html`
+            <div>
+              <input placeholder="Nom, ou les 4 derniers chiffres du billet"
+                value=${recherche} style="width:100%;margin-bottom:10px"
+                onInput=${e=>setRecherche(e.target.value)} />
+              <div class="panneau" style="max-height:320px;overflow-y:auto">
+                ${sansCode.length === 0
+                  ? html`<div class="corps muted">Aucun résultat.</div>`
+                  : sansCode.map(x => html`
+                    <div class="ligne" key=${x.id} style="cursor:pointer"
+                      onClick=${()=>{ controler(x.jeton); setParListe(false); }}>
+                      <span>${x.nom}</span>
+                      <span class="mono small muted">…${String(x.jeton||'').slice(-4)}</span>
+                    </div>`)}
+              </div>
+            </div>`}
 
           ${res && html`
             <div class=${'alerte ' + teinte} style=${'margin:0;border-left:3px solid '
@@ -604,7 +715,13 @@ function ReglagesEvenement({ e, cats, lienPublic, appel, setMsg }){
           <div class="panneau" style="margin-bottom:20px">
             <div class="tete spread">
               <h3 style="font-size:17px">L\u2019événement</h3>
-              <button class="btn sm light" onClick=${()=>setModif(true)}>Modifier</button>
+              <div class="row" style="gap:8px">
+                <button class="btn sm light" onClick=${()=>appel('regler_options_avancees',
+                  { p_evenement: e.id, p_avance: !e.avance },
+                  e.avance ? 'Options avancées masquées.' : 'Options avancées activées.')}>
+                  ${e.avance ? 'Masquer les options avancées' : 'Activer les options avancées'}</button>
+                <button class="btn sm light" onClick=${()=>setModif(true)}>Modifier</button>
+              </div>
             </div>
             <div class="corps row" style="gap:10px;flex-wrap:wrap">
               ${e.statut === 'projet' && html`
@@ -618,6 +735,10 @@ function ReglagesEvenement({ e, cats, lienPublic, appel, setMsg }){
                 <button class="btn sm light" onClick=${()=>appel('changer_statut_evenement',
                   { p_id: e.id, p_statut: 'clos', p_motif: null },
                   'Inscriptions closes.')}>Clore les inscriptions</button>`}
+              ${(e.statut === 'complet' || e.statut === 'clos') && html`
+                <button class="btn sm" onClick=${()=>appel('changer_statut_evenement',
+                  { p_id: e.id, p_statut: 'ouvert', p_motif: null },
+                  'Inscriptions rouvertes.')}>Rouvrir les inscriptions</button>`}
               ${e.statut !== 'annule' && html`
                 <button class="btn sm danger" onClick=${()=>{
                   const m = prompt('Motif de l\u2019annulation (obligatoire) — '
@@ -656,19 +777,34 @@ function ReglagesEvenement({ e, cats, lienPublic, appel, setMsg }){
           pour tous, atelier sur inscription, repas pour ceux qui l\u2019ont
           demandé.
         </div>
-        ${cats.map(x => html`
-          <div class="ligne" key=${x.code}>
+        ${cats.map(x => { const extra = catsExtra[x.code] || {}; return html`
+          <div class="ligne" key=${x.code} style=${extra.actif === false ? 'opacity:0.5' : ''}>
             <div style="flex:1;min-width:200px">
-              <div class="row" style="gap:8px;flex-wrap:wrap">
+              <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center">
+                ${extra.couleur && html`<span style=${'display:inline-block;width:10px;'+
+                  'height:10px;border-radius:50%;background:'+extra.couleur}></span>`}
                 <span>${x.nom}</span>
                 <span class="mono muted small">${x.code}</span>
                 ${!x.externe_admis && html`<span class="tag">Membres seulement</span>`}
+                ${extra.actif === false && html`<span class="tag">Désactivée</span>`}
               </div>
               <div class="small muted">${x.horaire || ''}
                 ${x.capacite ? ' · ' + x.capacite + ' places' : ' · sans limite'}</div>
+              ${e.avance && extra.id && html`
+                <div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">
+                  ${['#00325B','#A5053C','#1E2A38','#6B4C3B','#0045D1','#E80855'].map(hex => html`
+                    <button key=${hex} onClick=${()=>appel('regler_couleur_categorie',
+                      { p_categorie: extra.id, p_couleur: hex })}
+                      style=${'width:18px;height:18px;border-radius:50%;background:'+hex+
+                        ';border:2px solid '+(extra.couleur===hex?'#000':'transparent')}></button>`)}
+                  <button class="btn sm light" onClick=${()=>appel('regler_actif_categorie',
+                    { p_categorie: extra.id, p_actif: extra.actif === false },
+                    extra.actif === false ? 'Entrée réactivée.' : 'Entrée désactivée.')}>
+                    ${extra.actif === false ? 'Réactiver' : 'Désactiver'}</button>
+                </div>`}
             </div>
             <span class="mono small muted">${x.inscrits} inscrit(s)</span>
-          </div>`)}
+          </div>`; })}
 
         <form class="corps stack" onSubmit=${async ev => {
           ev.preventDefault();
@@ -699,6 +835,76 @@ function ReglagesEvenement({ e, cats, lienPublic, appel, setMsg }){
           <div><button class="btn sm">Ajouter ou modifier</button></div>
         </form>
       </div>
+
+      ${e.avance && html`<${NiveauxAccreditation} evenement=${e.id} cats=${cats}
+        niveaux=${niveaux} appel=${appel} />`}
+    </div>`;
+}
+
+/* --- Niveaux d'accréditation ---------------------------------------------
+   Un raccourci, pas un nouveau pouvoir : assigner un niveau pose en une
+   fois le même tableau de catégories qu'on pourrait cocher une par une.
+   --------------------------------------------------------------------- */
+function NiveauxAccreditation({ evenement, cats, niveaux, appel }){
+  const [ouvert, setOuvert] = useState(false);
+  const [f, setF] = useState({ id:null, nom:'', couleur:'#0045D1', categories:[] });
+
+  function editer(n){
+    setF({ id:n.id, nom:n.nom, couleur:n.couleur||'#0045D1', categories:n.categories||[] });
+    setOuvert(true);
+  }
+
+  return html`
+    <div class="panneau" style="margin-top:20px">
+      <div class="tete spread">
+        <h3 style="font-size:17px">Niveaux d\u2019accréditation</h3>
+        <button class="btn sm light" onClick=${()=>{
+          setF({ id:null, nom:'', couleur:'#0045D1', categories:[] }); setOuvert(!ouvert);
+        }}>${ouvert ? 'Fermer' : 'Nouveau niveau'}</button>
+      </div>
+      <div class="corps small muted" style="padding-bottom:0">
+        Un niveau regroupe plusieurs entrées sous un seul nom \u2014 « Intervenant »,
+        « Presse », « VIP » \u2014 pour l\u2019assigner en un geste plutôt que de cocher
+        chaque entrée une par une.
+      </div>
+      ${niveaux.map(n => html`
+        <div class="ligne" key=${n.id}>
+          <div class="row" style="gap:8px;align-items:center;flex:1">
+            <span style=${'display:inline-block;width:10px;height:10px;border-radius:50%;'+
+              'background:'+(n.couleur||'#0045D1')}></span>
+            <span>${n.nom}</span>
+            <span class="small muted">${(n.categories||[]).join(', ')}</span>
+          </div>
+          <div class="row" style="gap:6px">
+            <button class="btn sm light" onClick=${()=>editer(n)}>Modifier</button>
+            <button class="btn sm light" onClick=${()=>appel('supprimer_niveau',
+              { p_id: n.id, p_evenement: evenement }, 'Niveau supprimé.')}>Supprimer</button>
+          </div>
+        </div>`)}
+      ${ouvert && html`
+        <form class="corps stack" onSubmit=${async ev => {
+          ev.preventDefault();
+          const r = await appel('regler_niveau', { p_evenement: evenement, p_id: f.id,
+            p_nom: f.nom, p_couleur: f.couleur, p_categories: f.categories, p_ordre: 100 },
+            'Niveau enregistré.');
+          if (r) setOuvert(false);
+        }}>
+          <div class="field" style="margin:0"><label>Nom</label>
+            <input required value=${f.nom}
+              onInput=${ev=>setF(o=>({...o,nom:ev.target.value}))} /></div>
+          <div class="field" style="margin:0"><label>Entrées ouvertes par ce niveau</label>
+            <div class="row" style="gap:12px;flex-wrap:wrap">
+              ${cats.map(c => html`
+                <label class="row" style="gap:5px;align-items:center">
+                  <input type="checkbox" style="width:auto"
+                    checked=${f.categories.includes(c.code)}
+                    onChange=${ev => setF(o => ({...o, categories: ev.target.checked
+                      ? [...o.categories, c.code] : o.categories.filter(x=>x!==c.code)}))} />
+                  <span class="small">${c.nom}</span>
+                </label>`)}
+            </div></div>
+          <div><button class="btn sm">Enregistrer</button></div>
+        </form>`}
     </div>`;
 }
 
