@@ -14,6 +14,12 @@
 import { html, db, useState, useEffect, useCallback, jour, nomComplet } from './socle.js';
 import { qrMatrice } from './membre.js';
 
+let jsQRCharge = null;
+async function chargerJsQR(){
+  if (!jsQRCharge) jsQRCharge = import('https://esm.sh/jsqr@1.4.0').then(m => m.default);
+  return jsQRCharge;
+}
+
 const NATURE_EV = { rencontre:'Rencontre', forum:'Forum', formation:'Formation',
   assises:'Assises', ceremonie:'Cérémonie', repas:'Repas', sortie:'Sortie',
   autre:'Autre' };
@@ -581,6 +587,81 @@ function ListeInscrits({ id, inscrits, appel, niveaux, titre, setMsg }){
    en silence : une porte qui refuse sans expliquer crée une file et un
    conflit ; une porte qui informe laisse l'humain décider.
    --------------------------------------------------------------------- */
+/* Scan à la caméra : lit le QR du billet sans appareil dédié. Le
+   décodage se fait entièrement dans le navigateur — l'image ne
+   quitte jamais l'appareil de la personne qui contrôle. */
+function ScannerCamera({ onLecture, actif }){
+  // Pas de useRef ici : le stub de vérification du dépôt ne le connaît
+  // pas encore (voir verifier_modules.py), et on ne touche pas aux
+  // fichiers de contrôle. `useState` avec initialisation paresseuse
+  // donne exactement la même garantie — un objet stable, jamais
+  // remplacé puisque son "setter" n'est jamais appelé (voir plus bas).
+  // Si useRef est ajouté au stub un jour, ce commentaire n'a plus lieu
+  // d'être et on peut basculer sans risque.
+  const [r] = useState(() => ({ dernier: { code:'', quand:0 } }));
+  const [erreur, setErreur] = useState('');
+
+  useEffect(() => {
+    if (!actif) return;
+    let annule = false;
+
+    async function demarrer(){
+      try {
+        const decoder = await chargerJsQR();
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' } });
+        if (annule){ stream.getTracks().forEach(t=>t.stop()); return; }
+        r.stream = stream;
+        r.video.srcObject = stream;
+        await r.video.play();
+        boucle(decoder);
+      } catch (e){
+        setErreur('Caméra indisponible : ' + (e.message || 'accès refusé.'));
+      }
+    }
+
+    function boucle(decoder){
+      const v = r.video, c = r.canvas;
+      if (!v || !c || v.readyState !== v.HAVE_ENOUGH_DATA){
+        r.boucle = requestAnimationFrame(()=>boucle(decoder)); return;
+      }
+      c.width = v.videoWidth; c.height = v.videoHeight;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      const img = ctx.getImageData(0, 0, c.width, c.height);
+      const lu = decoder(img.data, c.width, c.height);
+      if (lu && lu.data){
+        const maintenant = Date.now();
+        if (lu.data !== r.dernier.code || maintenant - r.dernier.quand > 3000){
+          r.dernier = { code: lu.data, quand: maintenant };
+          onLecture(lu.data);
+        }
+      }
+      r.boucle = requestAnimationFrame(()=>boucle(decoder));
+    }
+
+    demarrer();
+    return () => {
+      annule = true;
+      if (r.boucle) cancelAnimationFrame(r.boucle);
+      if (r.stream) r.stream.getTracks().forEach(t=>t.stop());
+    };
+  }, [actif]);
+
+  if (!actif) return null;
+  if (erreur) return html`<div class="alerte err" style="margin-top:10px">${erreur}
+    <div class="small" style="margin-top:4px">
+      Vérifiez que le navigateur a la permission d\u2019utiliser la caméra,
+      et que la page est bien ouverte en https.</div></div>`;
+
+  return html`
+    <div style="margin-top:10px;border-radius:8px;overflow:hidden;
+      background:#000;max-width:360px">
+      <video ref=${el=>r.video=el} playsInline muted style="width:100%;display:block" />
+      <canvas ref=${el=>r.canvas=el} style="display:none" />
+    </div>`;
+}
+
 function ControleEntrees({ cats, inscrits, setMsg, recharger }){
   const [categorie, setCategorie] = useState(cats[0]?.code || 'general');
   const [jeton, setJeton] = useState('');
@@ -588,6 +669,7 @@ function ControleEntrees({ cats, inscrits, setMsg, recharger }){
   const [journal, setJournal] = useState([]);
   const [recherche, setRecherche] = useState('');
   const [parListe, setParListe] = useState(false);
+  const [camera, setCamera] = useState(false);
 
   async function controler(jetonComplet){
     const { data, error } = await db.rpc('controler_entree',
@@ -633,9 +715,14 @@ function ControleEntrees({ cats, inscrits, setMsg, recharger }){
             <button class="btn">Contrôler</button>
           </form>
 
-          <button class="btn sm light" style="align-self:flex-start"
-            onClick=${()=>setParListe(!parListe)}>
-            ${parListe ? 'Revenir au scan' : 'Pas de code ? Chercher dans la liste'}</button>
+          <div class="row" style="gap:8px;flex-wrap:wrap">
+            <button class="btn sm light" onClick=${()=>{setCamera(!camera); setParListe(false);}}>
+              ${camera ? 'Arrêter la caméra' : 'Scanner avec la caméra'}</button>
+            <button class="btn sm light" onClick=${()=>{setParListe(!parListe); setCamera(false);}}>
+              ${parListe ? 'Revenir au scan' : 'Pas de code ? Chercher dans la liste'}</button>
+          </div>
+
+          <${ScannerCamera} actif=${camera} onLecture=${code => controler(code)} />
 
           ${parListe && html`
             <div>
