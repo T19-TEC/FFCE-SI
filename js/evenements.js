@@ -11,9 +11,8 @@
    · un double passage est signalé, pas refusé. Une porte qui refuse
      sans expliquer crée une file et un conflit.
    ===================================================================== */
-import { html, db, useState, useEffect, useCallback, useRef, jour, nomComplet } from './socle.js';
+import { html, db, useState, useEffect, useCallback, useRef, jour, nomComplet, jsQR } from './socle.js';
 import { qrMatrice } from './membre.js';
-import jsQR from 'https://esm.sh/jsqr@1.4.0';
 
 const NATURE_EV = { rencontre:'Rencontre', forum:'Forum', formation:'Formation',
   assises:'Assises', ceremonie:'Cérémonie', repas:'Repas', sortie:'Sortie',
