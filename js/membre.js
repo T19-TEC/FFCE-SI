@@ -369,10 +369,12 @@ function ReglagesAffichage({ p, bloc, titre, description }){
 
 export function Annuaire({ p }){
   const [membres, setMembres] = useState(null);
+  const [erreur, setErreur] = useState('');
   const [q, setQ] = useState('');
   const [fiche, setFiche] = useState(null);
   useEffect(() => {
-    db.rpc('mon_perimetre').then(({data}) => {
+    db.rpc('mon_perimetre').then(({data, error}) => {
+      if (error){ setErreur(error.message); setMembres([]); return; }
       const m = (data || []).filter(x => x.statut !== 'archive');
       m.sort((a,b) => (b.niveau - a.niveau) || String(a.nom||'').localeCompare(String(b.nom||'')));
       setMembres(m);
@@ -380,6 +382,7 @@ export function Annuaire({ p }){
   }, []);
 
   if (fiche) return html`<${FicheMembre} id=${fiche} fermer=${()=>setFiche(null)} />`;
+  if (erreur) return html`<div class="alerte err">Erreur : ${erreur}</div>`;
   if (!membres) return html`<div class="vide">Chargement…</div>`;
   const filtre = membres.filter(m => {
     const s = (nomComplet(m)+' '+(m.territoire_nom||'')+' '+m.fonction_nom).toLowerCase();
