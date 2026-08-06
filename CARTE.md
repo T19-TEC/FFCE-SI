@@ -13,13 +13,13 @@
 | `js/evenements.js` | 1188 | 11 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
 | `js/finances.js` | 2841 | 18 |  |
 | `js/formation.js` | 1230 | 9 |  |
-| `js/membre.js` | 2685 | 29 |  |
+| `js/membre.js` | 2688 | 29 |  |
 | `js/socle.js` | 518 | 6 |  |
 | `js/statutaire.js` | 1802 | 11 |  |
 | `js/structure.js` | 2167 | 20 |  |
 | `js/vitrine.js` | 647 | 17 | Tout ce qui se voit sans compte : accueil, présentation de la fédération, actions, réseau, actualités, pages de texte, adhésion, connexion et inscription. |
 
-**Total : 19324 lignes d'interface.**
+**Total : 19327 lignes d'interface.**
 
 ---
 
@@ -240,7 +240,7 @@ Fonctions SQL appelées : `avancement`, `bareme_echelons`, `chancellerie_synthes
 
 ## `js/membre.js`
 
-*2685 lignes · 29 composants*
+*2688 lignes · 29 composants*
 
 - **`MonDossier`** — 292 lignes  
   --- Ce que voit un membre : bandeau, ou page entière si suspendu
@@ -260,7 +260,7 @@ Fonctions SQL appelées : `avancement`, `bareme_echelons`, `chancellerie_synthes
 - **`BilanAnnee`** — 90 lignes  
   LE BILAN DE L'ANNÉE « Mon engagement » listait sans totaliser.
 - **`MesCreneaux`** — 80 lignes
-- **`Annuaire`** — 76 lignes
+- **`Annuaire`** — 79 lignes
 - **`CarteAdherent`** — 69 lignes
 - **`MonRib`** — 65 lignes
 - **`MesVirements`** — 65 lignes  
