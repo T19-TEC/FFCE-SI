@@ -10,7 +10,7 @@
 | `js/collectif.js` | 1325 | 11 |  |
 | `js/direction.js` | 3755 | 35 |  |
 | `js/espace.js` | 1155 | 12 | La charpente de l'intranet : le menu latéral, le routeur des applications, le tableau de bord, le fil d'actualité, la file de travail, le guichet des demandes et le référentiel des droits. |
-| `js/evenements.js` | 1137 | 11 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
+| `js/evenements.js` | 1188 | 11 | Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées. |
 | `js/finances.js` | 2841 | 18 |  |
 | `js/formation.js` | 1230 | 9 |  |
 | `js/membre.js` | 2685 | 29 |  |
@@ -19,7 +19,7 @@
 | `js/structure.js` | 2167 | 20 |  |
 | `js/vitrine.js` | 647 | 17 | Tout ce qui se voit sans compte : accueil, présentation de la fédération, actions, réseau, actualités, pages de texte, adhésion, connexion et inscription. |
 
-**Total : 19273 lignes d'interface.**
+**Total : 19324 lignes d'interface.**
 
 ---
 
@@ -152,22 +152,22 @@ Fonctions SQL appelées : `ce_qui_attend`, `chemin_territoire`, `completude_bloq
 
 Créer, ouvrir les inscriptions, tenir la liste, contrôler les entrées.
 
-*1137 lignes · 11 composants*
+*1188 lignes · 11 composants*
 
-- **`Evenement`** — 167 lignes  
+- **`Evenement`** — 169 lignes  
   --- Un événement ouvert
 - **`ReglagesEvenement`** *(interne)* — 153 lignes  
   --- Les réglages
 - **`EvenementPublic`** — 135 lignes  
   --- La page publique d'inscription Elle s'ouvre sans compte.
-- **`ControleEntrees`** *(interne)* — 117 lignes
+- **`ControleEntrees`** *(interne)* — 132 lignes
+- **`ScannerCamera`** *(interne)* — 106 lignes  
+  Scan à la caméra : lit le QR du billet sans appareil dédié.
 - **`Evenements`** — 101 lignes
 - **`FormulaireEvenement`** *(interne)* — 98 lignes  
   --- Le formulaire de création
 - **`ListeInscrits`** *(interne)* — 92 lignes  
   --- La liste des inscrits
-- **`ScannerCamera`** *(interne)* — 72 lignes  
-  Scan à la caméra : lit le QR du billet sans appareil dédié.
 - **`NiveauxAccreditation`** *(interne)* — 69 lignes  
   --- Niveaux d'accréditation Un raccourci, pas un nouveau pouvoir : assigner un niveau pose en une fois le même tableau de catégories qu'on pourrait cocher une par une.
 - **`MonBillet`** *(interne)* — 61 lignes  

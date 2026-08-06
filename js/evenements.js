@@ -283,11 +283,13 @@ export function Evenement({ p, id, fermer }){
   const [niveaux, setNiveaux] = useState([]);
 
   const charger = useCallback(async () => {
-    const [l, t] = await Promise.all([
+    const [l, t, av] = await Promise.all([
       db.rpc('mes_evenements', { p_filtre: 'tous' }),
-      db.rpc('tableau_evenement', { p_evenement: id })
+      db.rpc('tableau_evenement', { p_evenement: id }),
+      db.from('evenements').select('avance').eq('id', id).maybeSingle()
     ]);
     const ev = (l.data || []).find(x => x.id === id) || null;
+    if (ev) ev.avance = av.data ? av.data.avance : false;
     setE(ev); setTb(t.data);
     if (ev && ev.je_tiens){
       const [{data: insc}, {data: ce}, {data: nv}] = await Promise.all([
@@ -425,7 +427,7 @@ export function Evenement({ p, id, fermer }){
           niveaux=${e.avance ? niveaux : []} titre=${e.titre} setMsg=${setMsg} />`}
 
       ${onglet === 'entrees' && html`
-        <${ControleEntrees} cats=${cats} inscrits=${inscrits} setMsg=${setMsg} recharger=${charger} />`}
+        <${ControleEntrees} id=${id} cats=${cats} setMsg=${setMsg} recharger=${charger} />`}
 
       ${onglet === 'reglages' && html`
         <${ReglagesEvenement} e=${e} cats=${cats} lienPublic=${lienPublic}
@@ -598,8 +600,10 @@ function ScannerCamera({ onLecture, actif }){
   // remplacé puisque son "setter" n'est jamais appelé (voir plus bas).
   // Si useRef est ajouté au stub un jour, ce commentaire n'a plus lieu
   // d'être et on peut basculer sans risque.
-  const [r] = useState(() => ({ dernier: { code:'', quand:0 } }));
+  const [r] = useState(() => ({ dernier: { code:'', quand:0 }, pause:false }));
   const [erreur, setErreur] = useState('');
+  const [pret, setPret] = useState(false);
+  const [apercu, setApercu] = useState(null);
 
   useEffect(() => {
     if (!actif) return;
@@ -608,12 +612,13 @@ function ScannerCamera({ onLecture, actif }){
     async function demarrer(){
       try {
         const decoder = await chargerJsQR();
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' } });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: {
+          facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } });
         if (annule){ stream.getTracks().forEach(t=>t.stop()); return; }
         r.stream = stream;
         r.video.srcObject = stream;
         await r.video.play();
+        setPret(true);
         boucle(decoder);
       } catch (e){
         setErreur('Caméra indisponible : ' + (e.message || 'accès refusé.'));
@@ -621,20 +626,30 @@ function ScannerCamera({ onLecture, actif }){
     }
 
     function boucle(decoder){
+      if (r.pause){ r.boucle = requestAnimationFrame(()=>boucle(decoder)); return; }
       const v = r.video, c = r.canvas;
       if (!v || !c || v.readyState !== v.HAVE_ENOUGH_DATA){
         r.boucle = requestAnimationFrame(()=>boucle(decoder)); return;
       }
       c.width = v.videoWidth; c.height = v.videoHeight;
       const ctx = c.getContext('2d', { willReadFrequently: true });
+      // On ne lit que le carré central : c'est là que le cadre de visée
+      // pointe, et ça évite qu'un second billet dans le champ ne
+      // perturbe la lecture.
+      const cote = Math.round(Math.min(c.width, c.height) * 0.7);
+      const ox = Math.round((c.width - cote) / 2), oy = Math.round((c.height - cote) / 2);
       ctx.drawImage(v, 0, 0, c.width, c.height);
-      const img = ctx.getImageData(0, 0, c.width, c.height);
-      const lu = decoder(img.data, c.width, c.height);
+      const img = ctx.getImageData(ox, oy, cote, cote);
+      const lu = decoder(img.data, cote, cote);
       if (lu && lu.data){
         const maintenant = Date.now();
-        if (lu.data !== r.dernier.code || maintenant - r.dernier.quand > 3000){
+        if (lu.data !== r.dernier.code || maintenant - r.dernier.quand > 4000){
           r.dernier = { code: lu.data, quand: maintenant };
-          onLecture(lu.data);
+          r.pause = true;
+          Promise.resolve(onLecture(lu.data)).then(res => {
+            setApercu(res || { ok:false, message:'Pas de réponse.' });
+            setTimeout(() => { setApercu(null); r.pause = false; }, 2200);
+          });
         }
       }
       r.boucle = requestAnimationFrame(()=>boucle(decoder));
@@ -654,15 +669,36 @@ function ScannerCamera({ onLecture, actif }){
       Vérifiez que le navigateur a la permission d\u2019utiliser la caméra,
       et que la page est bien ouverte en https.</div></div>`;
 
+  const teinte = !apercu ? null : !apercu.ok ? '#A5053C' : apercu.deja ? '#B08D2B' : '#166534';
+
   return html`
     <div style="margin-top:10px;border-radius:8px;overflow:hidden;
-      background:#000;max-width:360px">
-      <video ref=${el=>r.video=el} playsInline muted style="width:100%;display:block" />
+      background:#000;max-width:400px;position:relative;aspect-ratio:1/1">
+      <video ref=${el=>r.video=el} playsInline muted
+        style="width:100%;height:100%;object-fit:cover;display:block" />
       <canvas ref=${el=>r.canvas=el} style="display:none" />
+
+      ${!apercu && pret && html`
+        <div style="position:absolute;inset:12%;border:3px solid rgba(255,255,255,.85);
+          border-radius:16px;pointer-events:none"></div>`}
+      ${!apercu && html`
+        <div style="position:absolute;bottom:10px;left:0;right:0;text-align:center;
+          color:#fff;font-size:13px;text-shadow:0 1px 3px rgba(0,0,0,.8)">
+          ${pret ? 'Cadrez le billet dans le carré' : 'Ouverture de la caméra…'}
+        </div>`}
+
+      ${apercu && html`
+        <div style=${'position:absolute;inset:0;display:flex;flex-direction:column;'+
+          'align-items:center;justify-content:center;gap:10px;background:'+teinte+
+          ';color:#fff;text-align:center;padding:20px'}>
+          <div style="font-size:32px">${apercu.ok ? (apercu.deja ? '↻' : '✓') : '✕'}</div>
+          <div style="font-weight:600">${apercu.message ||
+            (apercu.ok ? (apercu.deja ? 'Déjà entré' : 'Entrée validée') : 'Billet refusé')}</div>
+        </div>`}
     </div>`;
 }
 
-function ControleEntrees({ cats, inscrits, setMsg, recharger }){
+function ControleEntrees({ id, cats, setMsg, recharger }){
   const [categorie, setCategorie] = useState(cats[0]?.code || 'general');
   const [jeton, setJeton] = useState('');
   const [res, setRes] = useState(null);
@@ -670,14 +706,26 @@ function ControleEntrees({ cats, inscrits, setMsg, recharger }){
   const [recherche, setRecherche] = useState('');
   const [parListe, setParListe] = useState(false);
   const [camera, setCamera] = useState(false);
+  const [inscrits, setInscrits] = useState(null);
+
+  useEffect(() => {
+    if (!parListe || inscrits) return;
+    db.from('inscriptions_evenement').select('id,nom,prenom,jeton,statut')
+      .eq('evenement_id', id).eq('statut', 'validee')
+      .then(({data, error}) => {
+        if (error) return setMsg('Erreur en chargeant la liste : ' + error.message);
+        setInscrits(data || []);
+      });
+  }, [parListe, inscrits, id]);
 
   async function controler(jetonComplet){
     const { data, error } = await db.rpc('controler_entree',
       { p_jeton: jetonComplet, p_categorie: categorie });
-    if (error) return setMsg('Erreur : ' + error.message);
+    if (error){ setMsg('Erreur : ' + error.message); return { ok:false, message: error.message }; }
     setRes(data); setJeton('');
     setJournal(j => [{ ...data, quand: new Date(), cat: categorie }, ...j].slice(0, 30));
     if (data.ok && !data.deja) recharger();
+    return data;
   }
 
   async function scanner(e){
@@ -687,11 +735,12 @@ function ControleEntrees({ cats, inscrits, setMsg, recharger }){
   }
 
   const sansCode = (inscrits||[])
-    .filter(x => x.statut === 'validee')
     .filter(x => {
       const q = recherche.trim().toLowerCase();
       if (!q) return true;
-      return (x.nom||'').toLowerCase().includes(q) || String(x.jeton||'').slice(-4) === q;
+      return (x.nom||'').toLowerCase().includes(q)
+        || (x.prenom||'').toLowerCase().includes(q)
+        || String(x.jeton||'').slice(-4) === q;
     })
     .sort((a,b) => (a.nom||'').localeCompare(b.nom||''));
 
@@ -730,12 +779,14 @@ function ControleEntrees({ cats, inscrits, setMsg, recharger }){
                 value=${recherche} style="width:100%;margin-bottom:10px"
                 onInput=${e=>setRecherche(e.target.value)} />
               <div class="panneau" style="max-height:320px;overflow-y:auto">
-                ${sansCode.length === 0
+                ${inscrits === null
+                  ? html`<div class="corps muted">Chargement…</div>`
+                  : sansCode.length === 0
                   ? html`<div class="corps muted">Aucun résultat.</div>`
                   : sansCode.map(x => html`
                     <div class="ligne" key=${x.id} style="cursor:pointer"
                       onClick=${()=>{ controler(x.jeton); setParListe(false); }}>
-                      <span>${x.nom}</span>
+                      <span>${[x.prenom,x.nom].filter(Boolean).join(' ')}</span>
                       <span class="mono small muted">…${String(x.jeton||'').slice(-4)}</span>
                     </div>`)}
               </div>
